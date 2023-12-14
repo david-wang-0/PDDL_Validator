@@ -1,9 +1,9 @@
 section \<open>PDDL and STRIPS Semantics\<close>
 theory PDDL_STRIPS_Semantics
 imports
-  "Propositional_Proof_Systems.Formulas"
-  "Propositional_Proof_Systems.Sema"
-  "Propositional_Proof_Systems.Consistency"
+  "FO-proof-systems/Formulas"
+  "FO-proof-systems/Sema"
+  "FO-proof-systems/Consistency"
   "Automatic_Refinement.Misc"
   "Automatic_Refinement.Refine_Util"
 begin
@@ -129,7 +129,28 @@ datatype ground_action = Ground_Action
   (precondition: "(object atom) formula")
   (effect: "object ast_effect")
 
+fun t_subst::"variable \<Rightarrow> variable \<Rightarrow> term \<Rightarrow> term" where
+"t_subst v v1 (term.VAR x) = (if v = x then term.VAR v1 else term.VAR x)" |
+"t_subst _ _ (term.CONST c) = (term.CONST c)"
 
+abbreviation ta_subst::"variable \<Rightarrow> variable \<Rightarrow> term atom \<Rightarrow> term atom" where
+"ta_subst v v1 \<equiv> map_atom (t_subst v v1)"
+
+global_interpretation term_form: form_syntax ta_subst
+  defines tafsubst = term_form.fsubst
+  done
+
+fun o_subst::"name \<Rightarrow> name \<Rightarrow> object \<Rightarrow> object" where
+"o_subst v v1 (Obj n) = (if v = n then (Obj v1) else (Obj n))"
+
+abbreviation oa_subst::"name \<Rightarrow> name \<Rightarrow> object atom \<Rightarrow> object atom" where
+"oa_subst v v1 \<equiv> map_atom (o_subst v v1)"
+
+global_interpretation obj_form: form_syntax oa_subst
+  defines oafsubst = obj_form.fsubst
+  done
+
+term "oafsubst"
 
 subsection \<open>Closed-World Assumption, Equality, and Negation\<close>
   text \<open>Discriminator for atomic predicate formulas.\<close>
@@ -162,7 +183,7 @@ subsection \<open>Closed-World Assumption, Equality, and Negation\<close>
     apply (auto 0 3) (* no blast 0 but instead more general solver 3 in more depth *)
     by (metis atom.exhaust)
 
-  
+
   abbreviation cw_entailment (infix "\<^sup>c\<TTurnstile>\<^sub>=" 53) where
     "M \<^sup>c\<TTurnstile>\<^sub>= \<phi> \<equiv> close_world M \<TTurnstile> \<phi>"
 
