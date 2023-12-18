@@ -7,19 +7,51 @@ type_synonym 'a valuation = "'a \<Rightarrow> bool"
 text\<open>The implicit statement here is that an assignment or valuation is always defined on all atoms (because HOL is a total logic).
 Thus, there are no unsuitable assignments.\<close>
 
-primrec formula_semantics :: "'a valuation \<Rightarrow> 'a formula \<Rightarrow> bool" (infix "\<Turnstile>" 51) where
+term "Nil"
+
+term "None"
+
+locale formula_semantics = formula_syntax subst
+  for subst::"'v \<Rightarrow> 'v \<Rightarrow> 'p \<Rightarrow> 'p"
++
+fixes dom::"'t \<Rightarrow> 'v list"
+begin
+
+find_theorems name: "list*find"
+
+fun height::"('p valuation \<times> ('p, 'v, 't) formula) \<Rightarrow> nat" where
+"height (v, (Atom _)) = 0" |
+"height (v, \<bottom>) = 0" |
+"height (v, (Not f)) = 1 + height (v, f)" |
+"height (v, (And f g)) = 1 + max (height (v, f)) (height (v, g))" |
+"height (v, (Or f g)) = 1 + max (height (v, f)) (height (v, g))" |
+"height (v, (Imp f g)) = 1 + max (height (v, f)) (height (v, g))" |
+"height (v, (Exists t x f)) = 1 + height (v, f)" |
+"height (v, (All t x f)) = 1 + height (v, f)"
+
+lemma fsubst_maintains_height: "height (v, f) = height (v, fsubst x x1 f)"
+  by (induction f) auto
+
+function formula_semantics :: "'p valuation \<Rightarrow> ('p, 'v, 't) formula \<Rightarrow> bool" (infix "\<Turnstile>" 51) where
 "\<A> \<Turnstile> Atom k = \<A> k" |
 "_ \<Turnstile> \<bottom> = False" |
 "\<A> \<Turnstile> Not F = (\<not> \<A> \<Turnstile> F)" |
 "\<A> \<Turnstile> And F G = (\<A> \<Turnstile> F \<and> \<A> \<Turnstile> G)" |
 "\<A> \<Turnstile> Or F G = (\<A> \<Turnstile> F \<or> \<A> \<Turnstile> G)" |
-"\<A> \<Turnstile> Imp F G = (\<A> \<Turnstile> F \<longrightarrow> \<A> \<Turnstile> G)"
+"\<A> \<Turnstile> Imp F G = (\<A> \<Turnstile> F \<longrightarrow> \<A> \<Turnstile> G)" |
+"\<A> \<Turnstile> Exists t x F = (find (\<lambda>v. \<A> \<Turnstile> (fsubst x v F)) (dom t) \<noteq> None)" |
+"\<A> \<Turnstile> All t x F = (list_all (\<lambda>v. \<A> \<Turnstile> (fsubst x v F)) (dom t))"
+  by (pat_completeness) auto
+termination formula_semantics
+  by (relation "measure height")(auto simp add: sym[OF fsubst_maintains_height])
 
 abbreviation valid ("\<Turnstile> _" 51) where
 "\<Turnstile> F \<equiv> \<forall>A. A \<Turnstile> F"
 
+end
+(*
 lemma irrelevant_atom[simp]: "A \<notin> atoms F \<Longrightarrow> (\<A>(A := V)) \<Turnstile> F \<longleftrightarrow> \<A> \<Turnstile> F"
-  by (induction F; simp)
+  by (induction F; auto)
 lemma relevant_atoms_same_semantics: "\<forall>k \<in> atoms F. \<A>\<^sub>1 k = \<A>\<^sub>2 k \<Longrightarrow> \<A>\<^sub>1 \<Turnstile> F \<longleftrightarrow> \<A>\<^sub>2 \<Turnstile> F"
   by(induction F; simp)
 
@@ -143,5 +175,5 @@ qed simp_all
   
 lemma const_simplifier_correct: "\<A> \<Turnstile> simplify_consts F \<longleftrightarrow> \<A> \<Turnstile> F"
   by (induction F) (auto simp add: Let_def isstop_def Top_def split: formula.splits) 
- 
+ *)
 end

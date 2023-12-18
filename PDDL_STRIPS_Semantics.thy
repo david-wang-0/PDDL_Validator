@@ -6,7 +6,9 @@ imports
   "FO-proof-systems/Consistency"
   "Automatic_Refinement.Misc"
   "Automatic_Refinement.Refine_Util"
+  "Show.Show_Instances" 
 begin
+
 no_notation insert ("_ \<triangleright> _" [56,55] 55)
 
 subsection \<open>Utility Functions\<close>
@@ -60,7 +62,9 @@ datatype type = Either (primitives: "name list")
 
 text \<open>An effect contains a list of values to be added, and a list of values
   to be removed.\<close>
-datatype 'ent ast_effect = Effect (adds: "('ent atom formula) list") (dels: "('ent atom formula) list")
+datatype ('ent, 'var, 'ty) ast_effect = 
+  Effect  (adds: "(('ent atom, 'var, 'ty) formula) list") 
+          (dels: "(('ent atom, 'var, 'ty) formula) list")
 
 text \<open>Variables are identified by their names.\<close>
 datatype variable = varname: Var name
@@ -71,7 +75,14 @@ datatype "term" = VAR variable | CONST object
 hide_const (open) VAR CONST \<comment> \<open>Refer to constructors by qualified names only\<close>
 
 
+datatype ground_term =  VAR variable | OBJ object
+hide_const (open) VAR OBJ
 
+type_synonym schematic_formula = "(term atom, variable, type) formula"
+type_synonym schematic_effect = "(term, variable, type) ast_effect"
+
+type_synonym ground_formula = "(ground_term atom, variable, type) formula"
+type_synonym ground_effect = "(ground_term, variable, type) ast_effect"
 
 subsubsection \<open>Domains\<close>
 
@@ -80,8 +91,8 @@ text \<open>An action schema has a name, a typed parameter list, a precondition,
 datatype ast_action_schema = Action_Schema
   (name: name)
   (parameters: "(variable \<times> type) list")
-  (precondition: "(term atom) formula")
-  (effect: "term ast_effect")
+  (precondition: "schematic_formula")
+  (effect: "schematic_effect")
 
 
 text \<open>A predicate declaration contains the predicate's name and its
@@ -109,8 +120,8 @@ text \<open>A problem consists of a domain, a list of objects,
 datatype ast_problem = Problem
   (domain: ast_domain)
   (objects: "(object \<times> type) list")
-  (init: "object atom formula list")
-  (goal: "object atom formula")
+  (init: "ground_formula list")
+  (goal: "ground_formula")
 
 
 subsubsection \<open>Plans\<close>
@@ -126,8 +137,8 @@ text \<open>The following datatype represents an action scheme that has been
   also called ground action.
 \<close>
 datatype ground_action = Ground_Action
-  (precondition: "(object atom) formula")
-  (effect: "object ast_effect")
+  (precondition: "ground_formula")
+  (effect: "ground_effect")
 
 fun t_subst::"variable \<Rightarrow> variable \<Rightarrow> term \<Rightarrow> term" where
 "t_subst v v1 (term.VAR x) = (if v = x then term.VAR v1 else term.VAR x)" |
@@ -159,7 +170,7 @@ subsection \<open>Closed-World Assumption, Equality, and Negation\<close>
 
 
   text \<open>The world model is a set of (atomic) formulas\<close>
-  type_synonym world_model = "object atom formula set"
+  type_synonym world_model = "(object atom, name, type) formula set"
 
   text \<open>It is basic, if it only contains atoms\<close>
   definition "wm_basic M \<equiv> \<forall>a\<in>M. is_predAtom a"
@@ -401,8 +412,35 @@ context ast_domain begin
   fun subtype_edge where
     "subtype_edge (ty,superty) = (superty,ty)"
 
-  definition "subtype_rel \<equiv> set (map subtype_edge (types D))"
+definition "subtype_rel \<equiv> set (map subtype_edge (types D))"
 
+fun refl where
+  "refl (a, b) = (b, a)"
+
+term "[]"
+
+term "consts (domain P)"
+
+term "map refl (consts (domain P))"
+
+term "map subtype_edge (types (domain P))"
+
+definition flatten::"'a list list \<Rightarrow> 'a list" where
+"flatten xs = fold (@) xs []"
+
+definition flatten2l::"('a list list \<times> 'b) \<Rightarrow> ('a list \<times> 'b) list" where
+"flatten2l p \<equiv> map (\<lambda>x. (x, snd p)) (fst p)"
+
+definition flatten2r::"('a \<times> 'b list list) \<Rightarrow> ('a \<times> 'b list) list" where
+"flatten2r p \<equiv> map (\<lambda>x. (fst p, x)) (snd p)"
+
+term "(flatten o (map flatten2l) o (map (\<lambda>(Either l, obj) \<Rightarrow> (l, obj))) o (map refl)) (consts (domain P))"
+
+find_theorems "fst"
+
+
+term "(map_of ((flatten o (map flatten2l) o (map (\<lambda>(Either l, obj) \<Rightarrow> (l, obj))) o (map refl)) (consts (domain P)))) o (the o (map_of (map subtype_edge (types (domain P)))))"
+                          
   (*
   definition "subtype_rel \<equiv> {''object''}\<times>UNIV"
   *)
@@ -625,10 +663,41 @@ context ast_domain begin
     "subst_term psubst (term.VAR x) = psubst x"
   | "subst_term psubst (term.CONST c) = c"
 
+
+  value "(the o [''a'' \<mapsto> a, ''c'' \<mapsto> c]) ''d''"
+
+value "show (0::nat)"
+
+
+(* We know that we have a map from variables to objects, which contains every
+   bound variable. We need to generate a unique object, so that our substitution
+   of a variable for an object does not insert an object that is a constant or
+   *)
+fun subst_params::"(variable \<rightharpoonup> object) 
+  \<Rightarrow> nat
+  \<Rightarrow> schematic_formula 
+  \<Rightarrow> ground_formula"
+  where
+"subst_params s n (Atom p) = Atom (map_atom (subst_term (the o s)) p)" |
+"subst_params s n \<bottom> = \<bottom>" |
+"subst_params s n (Not F) = Not (subst_params s n F)" |
+"subst_params s n (And F G) = And (subst_params s n F) (subst_params s n G)" |
+"subst_params s n (Or F G) = Or (subst_params s n F) (subst_params s n G)" |
+"subst_params s n (Imp F G) = Imp (subst_params s n F) (subst_params s n G)" |
+"subst_params s n (Exists t x F) = (
+  let nm = show n in
+  Exists t nm (subst_params (s(x \<mapsto> (Obj nm))) (Suc n) F)
+)" |
+"subst_params s n (All t x F) = (
+  let nm = show n in
+  All t nm (subst_params (s(x \<mapsto> (Obj nm))) (Suc n) F)
+)"
+
   text \<open>To instantiate an action schema, we first compute a substitution from
     parameters to objects, and then apply this substitution to the
     precondition and effect. The substitution is applied via the \<open>map_xxx\<close>
-    functions generated by the datatype package.
+    functions generated by the datatype package. The substitution must somehow
+    deal with bound variables.
     \<close>
   fun instantiate_action_schema
     :: "ast_action_schema \<Rightarrow> object list \<Rightarrow> ground_action"

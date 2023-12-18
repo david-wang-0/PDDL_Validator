@@ -7,13 +7,15 @@ begin
 (* unrelated, but I need this in too many places. *)
 notation insert ("_ \<triangleright> _" [56,55] 55)
 
-datatype (atoms: 'a) formula = 
-    Atom 'a
-  | Bot                              ("\<bottom>")  
-  | Not "'a formula"                 ("\<^bold>\<not>")
-  | And "'a formula" "'a formula"    (infix "\<^bold>\<and>" 68)
-  | Or "'a formula" "'a formula"     (infix "\<^bold>\<or>" 68)
-  | Imp "'a formula" "'a formula"    (infixr "\<^bold>\<rightarrow>" 68)
+datatype (atoms: 'p, vars: 'v, types: 't) formula = 
+    Atom 'p
+  | Bot                                                   ("\<bottom>")  
+  | Not "('p, 'v, 't) formula"                            ("\<^bold>\<not>")
+  | And "('p, 'v, 't) formula" "('p, 'v, 't) formula"     (infix "\<^bold>\<and>" 68)
+  | Or "('p, 'v, 't) formula" "('p, 'v, 't) formula"      (infix "\<^bold>\<or>" 68)
+  | Imp "('p, 'v, 't) formula" "('p, 'v, 't) formula"     (infixr "\<^bold>\<rightarrow>" 68)
+  | Exists 't 'v "('p, 'v, 't) formula"                   ("\<^bold>\<exists>\<^sub>_ _._ " 0)
+  | All 't 'v "('p, 'v, 't) formula"                      ("\<^bold>\<forall>\<^sub>_ _._" 0)
 (* In a standard Isabelle/jEdit config, bold can be done with C-e rightarrow.
    I learned that way too late. *)
 (* I'm not sure I'm happy about the definition of what is an atom.
@@ -31,7 +33,9 @@ primrec subformulae where
 "subformulae (Not F) = Not F # subformulae F" |
 "subformulae (And F G) = And F G # subformulae F @ subformulae G" |
 "subformulae (Imp F G) = Imp F G # subformulae F @ subformulae G" |
-"subformulae (Or F G) = Or F G # subformulae F @ subformulae G"
+"subformulae (Or F G) = Or F G # subformulae F @ subformulae G" |
+"subformulae (Exists t x F) = (Exists t x F) # subformulae F" |
+"subformulae (All t x F) = (All t x F) # subformulae F"
 
 lemma atoms_are_subformulae: "Atom ` atoms F \<subseteq> set (subformulae F)"
   by (induction F) auto
@@ -60,41 +64,36 @@ definition Top ("\<top>") where
 "\<top> \<equiv> \<bottom> \<^bold>\<rightarrow> \<bottom>"
 lemma top_atoms_simp[simp]: "atoms \<top> = {}" unfolding Top_def by simp
 
-primrec BigAnd :: "'a formula list \<Rightarrow> 'a formula" ("\<^bold>\<And>_") where
+primrec BigAnd :: "('p, 'v, 't) formula list \<Rightarrow> ('p, 'v, 't) formula" ("\<^bold>\<And>_") where
 "\<^bold>\<And>Nil = (\<^bold>\<not>\<bottom>)" \<comment> \<open>essentially, it doesn't matter what I use here. But since I want to use this in CNFs, implication is not a nice thing to have.\<close> |
 "\<^bold>\<And>(F#Fs) = F \<^bold>\<and> \<^bold>\<And>Fs"
 
 lemma atoms_BigAnd[simp]: "atoms (\<^bold>\<And>Fs) = \<Union>(atoms ` set Fs)"
   by(induction Fs; simp)
 
-primrec BigOr :: "'a formula list \<Rightarrow> 'a formula" ("\<^bold>\<Or>_") where
+primrec BigOr :: "('p, 'v, 't) formula list \<Rightarrow> ('p, 'v, 't) formula" ("\<^bold>\<Or>_") where
 "\<^bold>\<Or>Nil = \<bottom>" |
 "\<^bold>\<Or>(F#Fs) = F \<^bold>\<or> \<^bold>\<Or>Fs"
 
 
-locale form_syntax =
-  fixes subst::"'v \<Rightarrow> 'v \<Rightarrow> 'a \<Rightarrow> 'a"
+locale formula_syntax =
+  fixes subst::"'v \<Rightarrow> 'v \<Rightarrow> 'p \<Rightarrow> 'p"
 begin
-fun fsubst::"'v \<Rightarrow> 'v \<Rightarrow> 'a formula \<Rightarrow> 'a formula" where
+fun fsubst::"'v \<Rightarrow> 'v \<Rightarrow> ('p, 'v, 't) formula \<Rightarrow> ('p, 'v, 't) formula" where
   "fsubst v v1 (Atom p) = Atom (subst v v1 p)" |
   "fsubst _ _ \<bottom> = \<bottom>" |
   "fsubst v v1 (Not F) = Not (fsubst v v1 F)" |
   "fsubst v v1 (And F G) = And (fsubst v v1 F) (fsubst v v1 G)" |
   "fsubst v v1 (Or F G) = Or (fsubst v v1 F) (fsubst v v1 G)" |
-  "fsubst v v1 (Imp F G) = Imp (fsubst v v1 F) (fsubst v v1 G)"
-
-
-(* We have the issue that we could capture variables twice*)
-abbreviation ForAll::"'v \<Rightarrow> 'v list \<Rightarrow> 'a formula \<Rightarrow> 'a formula" ("\<^bold>\<forall> _ \<^bold>\<in> _ \<^bold>. _") where
-  "\<^bold>\<forall>v\<^bold>\<in>X\<^bold>.F \<equiv> \<^bold>\<And> (map (\<lambda>x. fsubst v x F) X)"
-
-abbreviation Exists::"'v \<Rightarrow> 'v list \<Rightarrow> 'a formula \<Rightarrow> 'a formula"  ("\<^bold>\<exists> _ \<^bold>\<in> _ \<^bold>. _") where
-  "\<^bold>\<exists>v\<^bold>\<in>X\<^bold>.F \<equiv> \<^bold>\<Or> (map (\<lambda>x. fsubst v x F) X)"
+  "fsubst v v1 (Imp F G) = Imp (fsubst v v1 F) (fsubst v v1 G)" |
+  "fsubst v v1 (Exists t x F) = (if x = v then Exists t x F else Exists t x (fsubst v v1 F))" |
+  "fsubst v v1 (All t x F) = (if x = v then All t x F else All t x (fsubst v v1 F))"
 
 end
 
+
 text\<open>Formulas are countable if their atoms are, and @{method countable_datatype} is really helpful with that.\<close> 
-instance formula :: (countable) countable by countable_datatype
+instance formula :: (countable, countable, countable) countable by countable_datatype
 
 definition "prod_unions A B \<equiv> case A of (a,b) \<Rightarrow> case B of (c,d) \<Rightarrow> (a \<union> c, b \<union> d)"
 primrec pn_atoms where
@@ -104,6 +103,7 @@ primrec pn_atoms where
 "pn_atoms (And F G) = prod_unions (pn_atoms F) (pn_atoms G)" |
 "pn_atoms (Or F G) = prod_unions (pn_atoms F) (pn_atoms G)" |
 "pn_atoms (Imp F G) = prod_unions (prod.swap (pn_atoms F)) (pn_atoms G)"
+
 lemma pn_atoms_atoms: "atoms F = fst (pn_atoms F) \<union> snd (pn_atoms F)"
   by(induction F) (auto simp add: prod_unions_def split: prod.splits)
 
