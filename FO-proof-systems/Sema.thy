@@ -12,9 +12,9 @@ term "Nil"
 term "None"
 
 locale formula_semantics = formula_syntax subst
-  for subst::"'v \<Rightarrow> 'v \<Rightarrow> 'p \<Rightarrow> 'p"
+  for subst::"'v \<Rightarrow> 'c \<Rightarrow> 'p \<Rightarrow> 'p"
 +
-fixes dom::"'t \<Rightarrow> 'v list"
+fixes dom::"'t \<Rightarrow> 'c list"
 begin
 
 find_theorems name: "list*find"
@@ -47,6 +47,9 @@ termination formula_semantics
 
 abbreviation valid ("\<Turnstile> _" 51) where
 "\<Turnstile> F \<equiv> \<forall>A. A \<Turnstile> F"
+
+definition entailment :: "('p, 'v, 't) formula set \<Rightarrow> ('p, 'v, 't) formula \<Rightarrow> bool" ("(_ \<TTurnstile>/ _)" (* \TTurnstile *) [53,53] 53) where
+"\<Gamma> \<TTurnstile> F \<equiv> (\<forall>\<A>. ((\<forall>G \<in> \<Gamma>. \<A> \<Turnstile> G) \<longrightarrow> (\<A> \<Turnstile> F)))"
 
 end
 (*

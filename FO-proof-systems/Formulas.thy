@@ -77,9 +77,9 @@ primrec BigOr :: "('p, 'v, 't) formula list \<Rightarrow> ('p, 'v, 't) formula" 
 
 
 locale formula_syntax =
-  fixes subst::"'v \<Rightarrow> 'v \<Rightarrow> 'p \<Rightarrow> 'p"
+  fixes subst::"'v \<Rightarrow> 'c \<Rightarrow> 'p \<Rightarrow> 'p"
 begin
-fun fsubst::"'v \<Rightarrow> 'v \<Rightarrow> ('p, 'v, 't) formula \<Rightarrow> ('p, 'v, 't) formula" where
+fun fsubst::"'v \<Rightarrow> 'c \<Rightarrow> ('p, 'v, 't) formula \<Rightarrow> ('p, 'v, 't) formula" where
   "fsubst v v1 (Atom p) = Atom (subst v v1 p)" |
   "fsubst _ _ \<bottom> = \<bottom>" |
   "fsubst v v1 (Not F) = Not (fsubst v v1 F)" |
@@ -91,7 +91,7 @@ fun fsubst::"'v \<Rightarrow> 'v \<Rightarrow> ('p, 'v, 't) formula \<Rightarrow
 
 end
 
-
+(* 
 text\<open>Formulas are countable if their atoms are, and @{method countable_datatype} is really helpful with that.\<close> 
 instance formula :: (countable, countable, countable) countable by countable_datatype
 
@@ -267,5 +267,5 @@ qed
 (* At first I thought: why would I prove anything about all_formulas_of_size, I only want to test a conjecture with it.
    Guess why: it was broken.
    Granted, I spent too much time on this. *)
-
+ *)
 end

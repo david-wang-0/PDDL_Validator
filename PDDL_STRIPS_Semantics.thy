@@ -3,7 +3,6 @@ theory PDDL_STRIPS_Semantics
 imports
   "FO-proof-systems/Formulas"
   "FO-proof-systems/Sema"
-  "FO-proof-systems/Consistency"
   "Automatic_Refinement.Misc"
   "Automatic_Refinement.Refine_Util"
   "Show.Show_Instances" 
@@ -101,13 +100,17 @@ datatype predicate_decl = PredDecl
   (pred: predicate)
   (argTs: "type list")
 
+datatype type_env = TypeEnv
+  (types: "(name \<times> name) list") \<comment> \<open> \<open>(type, supertype)\<close> declarations. \<close>
+  ("consts": "(object \<times> type) list")
+   
+
 text \<open>A domain contains the declarations of primitive types, predicates,
   and action schemas.\<close>
 datatype ast_domain = Domain
-  (types: "(name \<times> name) list") \<comment> \<open> \<open>(type, supertype)\<close> declarations. \<close>
   (predicates: "predicate_decl list")
-  ("consts": "(object \<times> type) list")
   (actions: "ast_action_schema list")
+  (type_env: "type_env")
 
 subsubsection \<open>Problems\<close>
 
@@ -140,43 +143,66 @@ datatype ground_action = Ground_Action
   (precondition: "ground_formula")
   (effect: "ground_effect")
 
-fun t_subst::"variable \<Rightarrow> variable \<Rightarrow> term \<Rightarrow> term" where
-"t_subst v v1 (term.VAR x) = (if v = x then term.VAR v1 else term.VAR x)" |
-"t_subst _ _ (term.CONST c) = (term.CONST c)"
+(* substitution of variables for constants *)
+fun ground_term_subst::"variable \<Rightarrow> object \<Rightarrow> ground_term \<Rightarrow> ground_term" where
+"ground_term_subst v obj (ground_term.VAR x) = (if (x = v) then (ground_term.OBJ obj) else ground_term.VAR x)" |
+"ground_term_subst _ _ (ground_term.OBJ obj) = ground_term.OBJ obj"
 
-abbreviation ta_subst::"variable \<Rightarrow> variable \<Rightarrow> term atom \<Rightarrow> term atom" where
-"ta_subst v v1 \<equiv> map_atom (t_subst v v1)"
-
-global_interpretation term_form: form_syntax ta_subst
-  defines tafsubst = term_form.fsubst
-  done
-
-fun o_subst::"name \<Rightarrow> name \<Rightarrow> object \<Rightarrow> object" where
-"o_subst v v1 (Obj n) = (if v = n then (Obj v1) else (Obj n))"
-
-abbreviation oa_subst::"name \<Rightarrow> name \<Rightarrow> object atom \<Rightarrow> object atom" where
-"oa_subst v v1 \<equiv> map_atom (o_subst v v1)"
-
-global_interpretation obj_form: form_syntax oa_subst
-  defines oafsubst = obj_form.fsubst
-  done
-
-term "oafsubst"
+abbreviation ground_term_atom_subst where
+"ground_term_atom_subst v obj \<equiv> map_atom (ground_term_subst v obj)"
 
 subsection \<open>Closed-World Assumption, Equality, and Negation\<close>
-  text \<open>Discriminator for atomic predicate formulas.\<close>
+text \<open>Discriminator for atomic predicate formulas.\<close>
+
+(* A type environment is necessary for the valuation of a formula *)
+locale ClosedWorld =
+  fixes type_env::"type_env"
+begin
+
   fun is_predAtom where
     "is_predAtom (Atom (predAtm _ _)) = True" | "is_predAtom _ = False"
 
-
   text \<open>The world model is a set of (atomic) formulas\<close>
-  type_synonym world_model = "(object atom, name, type) formula set"
+  type_synonym world_model = "(ground_term atom, variable, type) formula set"
 
+  fun subtype_edge where
+    "subtype_edge (ty,superty) = (superty,ty)"
+
+  definition "subtype_rel \<equiv> set (map subtype_edge (types type_env))"
+
+  text \<open>We use a flat subtype hierarchy, where every type is a subtype
+    of object, and there are no other subtype relations.
+
+    Note that we do not need to restrict this relation to declared types,
+    as we will explicitly ensure that all types used in the problem are
+    declared.
+    \<close>
+
+  (*
+  definition "subtype_rel \<equiv> {''object''}\<times>UNIV"
+  *)
+
+  definition of_type :: "type \<Rightarrow> type \<Rightarrow> bool" where
+    "of_type oT T \<equiv> set (primitives oT) \<subseteq> subtype_rel\<^sup>* `` set (primitives T)"
+  text \<open>This checks that every primitive on the LHS is contained in or a
+    subtype of a primitive on the RHS\<close>
+
+  text \<open>Filter those constants in the domain that belong to the type.\<close>
+  definition t_dom::"type \<Rightarrow> object list" where
+  "t_dom typ \<equiv> map (\<lambda>(c, t) \<Rightarrow> c) (filter (\<lambda>(c, t) \<Rightarrow> of_type t typ) (consts type_env))"
+
+sublocale f_sem: formula_semantics ground_term_atom_subst t_dom
+  defines
+  semantics ("_ \<Turnstile> _") = f_sem.formula_semantics
+  and
+  entailment ("_ \<TTurnstile> _") = f_sem.entailment
+  .
+  
   text \<open>It is basic, if it only contains atoms\<close>
-  definition "wm_basic M \<equiv> \<forall>a\<in>M. is_predAtom a"
+  definition "wm_basic M \<equiv> \<forall>a\<in>(M::world_model). is_predAtom a"
 
   text \<open>A valuation extracted from the atoms of the world model\<close>
-  definition valuation :: "world_model \<Rightarrow> object atom valuation"
+  definition valuation :: "world_model \<Rightarrow> ground_term atom valuation"
     where "valuation M \<equiv> \<lambda>(predAtm p xs) \<Rightarrow> Atom (predAtm p xs) \<in> M | Eq a b \<Rightarrow> a=b"
 
   value "\<lambda>(predAtm p xs) \<Rightarrow> Atom (predAtm p xs) \<in> M | Eq a b \<Rightarrow> a=b"
@@ -193,7 +219,6 @@ subsection \<open>Closed-World Assumption, Equality, and Negation\<close>
     apply clarsimp
     apply (auto 0 3) (* no blast 0 but instead more general solver 3 in more depth *)
     by (metis atom.exhaust)
-
 
   abbreviation cw_entailment (infix "\<^sup>c\<TTurnstile>\<^sub>=" 53) where
     "M \<^sup>c\<TTurnstile>\<^sub>= \<phi> \<equiv> close_world M \<TTurnstile> \<phi>"
@@ -214,9 +239,10 @@ subsection \<open>Closed-World Assumption, Equality, and Negation\<close>
     )"
     by (auto simp: close_world_def)
 
+  find_theorems name: "local*semantics"
 
   lemma valuation_aux_1:
-    fixes M :: world_model and \<phi> :: "object atom formula"
+    fixes M :: world_model and \<phi> :: "ground_formula"
     defines "C \<equiv> close_world M"
     assumes A: "\<forall>\<phi>\<in>C. \<A> \<Turnstile> \<phi>"
     shows "\<A> = valuation M"
@@ -226,10 +252,9 @@ subsection \<open>Closed-World Assumption, Equality, and Negation\<close>
     apply (subst (asm) in_close_world_conv)
     (* How did you find this step? *)
     apply (auto simp: valuation_def intro!: ext split: atom.split)
-    apply (metis formula_semantics.simps(1) formula_semantics.simps(3))
-    apply (metis formula_semantics.simps(1) formula_semantics.simps(3))
-    by (metis atom.collapse(2) formula_semantics.simps(1) is_predAtm_def)
-
+    apply (metis f_sem.formula_semantics.simps(1) f_sem.formula_semantics.simps(3))
+    apply (metis f_sem.formula_semantics.simps(1) f_sem.formula_semantics.simps(3))
+    by (metis atom.collapse(2) f_sem.formula_semantics.simps(1) is_predAtm_def)
 
 
   (* the valuation is an abstract state, which maps variables to truth-values  *)
@@ -241,12 +266,14 @@ subsection \<open>Closed-World Assumption, Equality, and Negation\<close>
 
   lemma val_imp_close_world: "valuation M \<Turnstile> \<phi> \<Longrightarrow> M \<^sup>c\<TTurnstile>\<^sub>= \<phi>"
     unfolding entailment_def
-    using valuation_aux_1
-    by blast
+    using valuation_aux_1 ClosedWorld.entailment_def f_sem.entailment_def 
+    by auto
 
   lemma close_world_imp_val:
     "wm_basic M \<Longrightarrow> M \<^sup>c\<TTurnstile>\<^sub>= \<phi> \<Longrightarrow> valuation M \<Turnstile> \<phi>"
-    unfolding entailment_def using valuation_aux_2 by blast
+    unfolding entailment_def
+    using valuation_aux_2 ClosedWorld.entailment_def f_sem.entailment_def 
+    by auto
 
   text \<open>Main theorem of this section:
     If a world model \<open>M\<close> contains only atoms, its induced valuation
@@ -260,109 +287,65 @@ subsection \<open>Closed-World Assumption, Equality, and Negation\<close>
     shows "valuation M \<Turnstile> \<phi> \<longleftrightarrow> M \<^sup>c\<TTurnstile>\<^sub>= \<phi>"
     using assms val_imp_close_world close_world_imp_val by blast
 
-
-subsubsection \<open>Proper Generalization\<close>
-text \<open>Adding negation and equality is a proper generalization of the
-  case without negation and equality\<close>
-
-(* STRIPS formulae don't have equality and negation (except that true in our language is defined as the negation of false) *)
-fun is_STRIPS_fmla :: "'ent atom formula \<Rightarrow> bool" where
-  "is_STRIPS_fmla (Atom (predAtm _ _)) \<longleftrightarrow> True"
-| "is_STRIPS_fmla (\<bottom>) \<longleftrightarrow> True"
-| "is_STRIPS_fmla (\<phi>\<^sub>1 \<^bold>\<and> \<phi>\<^sub>2) \<longleftrightarrow> is_STRIPS_fmla \<phi>\<^sub>1 \<and> is_STRIPS_fmla \<phi>\<^sub>2"
-| "is_STRIPS_fmla (\<phi>\<^sub>1 \<^bold>\<or> \<phi>\<^sub>2) \<longleftrightarrow> is_STRIPS_fmla \<phi>\<^sub>1 \<and> is_STRIPS_fmla \<phi>\<^sub>2"
-| "is_STRIPS_fmla (\<^bold>\<not>\<bottom>) \<longleftrightarrow> True"
-| "is_STRIPS_fmla _ \<longleftrightarrow> False"
-
-lemma aux1: "\<lbrakk>wm_basic M; is_STRIPS_fmla \<phi>; valuation M \<Turnstile> \<phi>; \<forall>G\<in>M. \<A> \<Turnstile> G\<rbrakk> \<Longrightarrow> \<A> \<Turnstile> \<phi>"
-  apply(induction \<phi> rule: is_STRIPS_fmla.induct)
-  by (auto simp: valuation_def)
-(* If some valuation entails every formula in M, then it must entail anything that the valuation of M entails *)
-
-lemma aux2: "\<lbrakk>wm_basic M; is_STRIPS_fmla \<phi>; \<forall>\<A>. (\<forall>G\<in>M. \<A> \<Turnstile> G) \<longrightarrow> \<A> \<Turnstile> \<phi>\<rbrakk> \<Longrightarrow> valuation M \<Turnstile> \<phi>"
-  apply(induction \<phi> rule: is_STRIPS_fmla.induct)
-             apply simp_all
-  (* How did you find the next step? *)
-  apply (metis in_close_world_conv valuation_aux_2)
-  using in_close_world_conv valuation_aux_2 apply blast
-  using in_close_world_conv valuation_aux_2 by auto
-
-thm bspec
-
-lemma valuation_iff_STRIPS:
-  assumes "wm_basic M"
-  assumes "is_STRIPS_fmla \<phi>"
-  shows "valuation M \<Turnstile> \<phi> \<longleftrightarrow> M \<TTurnstile> \<phi>"
-proof -
-  have aux1: "\<And>\<A>. \<lbrakk>valuation M \<Turnstile> \<phi>; \<forall>G\<in>M. \<A> \<Turnstile> G\<rbrakk> \<Longrightarrow> \<A> \<Turnstile> \<phi>"
-    using assms apply(induction \<phi> rule: is_STRIPS_fmla.induct)
-    by (auto simp: valuation_def)
-  have aux2: "\<lbrakk>\<forall>\<A>. (\<forall>G\<in>M. \<A> \<Turnstile> G) \<longrightarrow> \<A> \<Turnstile> \<phi>\<rbrakk> \<Longrightarrow> valuation M \<Turnstile> \<phi>"
-    using assms
+  subsubsection \<open>Proper Generalization\<close>
+  text \<open>Adding negation and equality is a proper generalization of the
+    case without negation and equality\<close>
+  
+  (* STRIPS formulae don't have quantifiers, negation, or equality.
+    (except that true in our language is defined as the negation of false) *)
+  fun is_STRIPS_fmla :: "('t atom, 'v , 't) formula \<Rightarrow> bool" where
+    "is_STRIPS_fmla (Atom (predAtm _ _)) \<longleftrightarrow> True"
+  | "is_STRIPS_fmla (\<bottom>) \<longleftrightarrow> True"
+  | "is_STRIPS_fmla (\<phi>\<^sub>1 \<^bold>\<and> \<phi>\<^sub>2) \<longleftrightarrow> is_STRIPS_fmla \<phi>\<^sub>1 \<and> is_STRIPS_fmla \<phi>\<^sub>2"
+  | "is_STRIPS_fmla (\<phi>\<^sub>1 \<^bold>\<or> \<phi>\<^sub>2) \<longleftrightarrow> is_STRIPS_fmla \<phi>\<^sub>1 \<and> is_STRIPS_fmla \<phi>\<^sub>2"
+  | "is_STRIPS_fmla (\<^bold>\<not>\<bottom>) \<longleftrightarrow> True"
+  | "is_STRIPS_fmla _ \<longleftrightarrow> False"
+  
+  lemma aux1: "\<lbrakk>wm_basic M; is_STRIPS_fmla \<phi>; valuation M \<Turnstile> \<phi>; \<forall>G\<in>M. \<A> \<Turnstile> G\<rbrakk> \<Longrightarrow> \<A> \<Turnstile> \<phi>"
     apply(induction \<phi> rule: is_STRIPS_fmla.induct)
-    apply simp_all
+    by (auto simp: valuation_def)
+  (* If some valuation entails every formula in M, then it must entail anything that the valuation of M entails *)
+  
+  lemma aux2: "\<lbrakk>wm_basic M; is_STRIPS_fmla \<phi>; \<forall>\<A>. (\<forall>G\<in>M. \<A> \<Turnstile> G) \<longrightarrow> \<A> \<Turnstile> \<phi>\<rbrakk> \<Longrightarrow> valuation M \<Turnstile> \<phi>"
+    apply(induction \<phi> rule: is_STRIPS_fmla.induct)
+               apply simp_all
+    (* How did you find the next step? *)
     apply (metis in_close_world_conv valuation_aux_2)
     using in_close_world_conv valuation_aux_2 apply blast
     using in_close_world_conv valuation_aux_2 by auto
-  show ?thesis
-    by (auto simp: entailment_def intro: aux1 aux2)
-qed
+  
+  thm bspec
+  
+  lemma valuation_iff_STRIPS:
+    assumes "wm_basic M"
+    assumes "is_STRIPS_fmla \<phi>"
+    shows "valuation M \<Turnstile> \<phi> \<longleftrightarrow> M \<TTurnstile> \<phi>"
+  proof -
+    have aux1: "\<And>\<A>. \<lbrakk>valuation M \<Turnstile> \<phi>; \<forall>G\<in>M. \<A> \<Turnstile> G\<rbrakk> \<Longrightarrow> \<A> \<Turnstile> \<phi>"
+      using assms apply(induction \<phi> rule: is_STRIPS_fmla.induct)
+      by (auto simp: valuation_def)
+    have aux2: "\<lbrakk>\<forall>\<A>. (\<forall>G\<in>M. \<A> \<Turnstile> G) \<longrightarrow> \<A> \<Turnstile> \<phi>\<rbrakk> \<Longrightarrow> valuation M \<Turnstile> \<phi>"
+      using assms
+      apply(induction \<phi> rule: is_STRIPS_fmla.induct)
+      apply simp_all
+      apply (metis in_close_world_conv valuation_aux_2)
+      using in_close_world_conv valuation_aux_2 apply blast
+      using in_close_world_conv valuation_aux_2 by auto
+    show ?thesis
+      by (auto simp: entailment_def intro: aux1 aux2)
+  qed
+  
+  text \<open>Our extension to negation and equality is a proper generalization of the
+    standard STRIPS semantics for formula without negation and equality\<close>
+  theorem proper_STRIPS_generalization:
+    "\<lbrakk>wm_basic M; is_STRIPS_fmla \<phi>\<rbrakk> \<Longrightarrow> M \<^sup>c\<TTurnstile>\<^sub>= \<phi> \<longleftrightarrow> M \<TTurnstile> \<phi>"
+    by (simp add: valuation_iff_close_world[symmetric] valuation_iff_STRIPS)
 
-text \<open>Our extension to negation and equality is a proper generalization of the
-  standard STRIPS semantics for formula without negation and equality\<close>
-theorem proper_STRIPS_generalization:
-  "\<lbrakk>wm_basic M; is_STRIPS_fmla \<phi>\<rbrakk> \<Longrightarrow> M \<^sup>c\<TTurnstile>\<^sub>= \<phi> \<longleftrightarrow> M \<TTurnstile> \<phi>"
-  by (simp add: valuation_iff_close_world[symmetric] valuation_iff_STRIPS)
-
-subsection \<open>STRIPS Semantics\<close>
-
-text \<open>For this section, we fix a domain \<open>D\<close>, using Isabelle's
-  locale mechanism.\<close>
-locale ast_domain =
-  fixes D :: ast_domain
-begin                 
-  text \<open>It seems to be agreed upon that, in case of a contradictory effect,
-    addition overrides deletion. We model this behaviour by first executing
-    the deletions, and then the additions.\<close>
-  fun apply_effect :: "object ast_effect \<Rightarrow> world_model \<Rightarrow> world_model"
-  where
-     "apply_effect (Effect a d) s = (s - set d) \<union> (set a)"
-
-  text \<open>Execute a ground action\<close>
-  definition execute_ground_action :: "ground_action \<Rightarrow> world_model \<Rightarrow> world_model"
-  where
-    "execute_ground_action a M = apply_effect (effect a) M"
-
-  text \<open>Predicate to model that the given list of action instances is
-    executable, and transforms an initial world model \<open>M\<close> into a final
-    model \<open>M'\<close>.
-
-    Note that this definition over the list structure is more convenient in HOL
-    than to explicitly define an indexed sequence \<open>M\<^sub>0\<dots>M\<^sub>N\<close> of intermediate world
-     models, as done in [Lif87].
-  \<close>
-  fun ground_action_path
-    :: "world_model \<Rightarrow> ground_action list \<Rightarrow> world_model \<Rightarrow> bool"
-  where
-    "ground_action_path M [] M' \<longleftrightarrow> (M = M')"
-  | "ground_action_path M (\<alpha>#\<alpha>s) M' \<longleftrightarrow> M \<^sup>c\<TTurnstile>\<^sub>= precondition \<alpha>
-    \<and> ground_action_path (execute_ground_action \<alpha> M) \<alpha>s M'"
-
-  text \<open>Function equations as presented in paper,
-    with inlined @{const execute_ground_action}.\<close>
-  lemma ground_action_path_in_paper:
-    "ground_action_path M [] M' \<longleftrightarrow> (M = M')"
-    "ground_action_path M (\<alpha>#\<alpha>s) M' \<longleftrightarrow> M \<^sup>c\<TTurnstile>\<^sub>= precondition \<alpha>
-    \<and> (ground_action_path (apply_effect (effect \<alpha>) M) \<alpha>s M')"
-    by (auto simp: execute_ground_action_def)
-
-  thm ground_action_path_in_paper
-
-end \<comment> \<open>Context of \<open>ast_domain\<close>\<close>
-
-
+end
 
 subsection \<open>Well-Formedness of PDDL\<close>
+
+
 
 (* Well-formedness *)
 
@@ -394,61 +377,13 @@ lemma ty_term_mono: "varT \<subseteq>\<^sub>m varT' \<Longrightarrow> objT \<sub
   done
 
 
-context ast_domain begin
-
+locale ast_domain =
+  fixes D :: ast_domain
+begin     
   text \<open>The signature is a partial function that maps the predicates
     of the domain to lists of argument types.\<close>
   definition sig :: "predicate \<rightharpoonup> type list" where
     "sig \<equiv> map_of (map (\<lambda>PredDecl p n \<Rightarrow> (p,n)) (predicates D))"
-
-  text \<open>We use a flat subtype hierarchy, where every type is a subtype
-    of object, and there are no other subtype relations.
-
-    Note that we do not need to restrict this relation to declared types,
-    as we will explicitly ensure that all types used in the problem are
-    declared.
-    \<close>
-
-  fun subtype_edge where
-    "subtype_edge (ty,superty) = (superty,ty)"
-
-definition "subtype_rel \<equiv> set (map subtype_edge (types D))"
-
-fun refl where
-  "refl (a, b) = (b, a)"
-
-term "[]"
-
-term "consts (domain P)"
-
-term "map refl (consts (domain P))"
-
-term "map subtype_edge (types (domain P))"
-
-definition flatten::"'a list list \<Rightarrow> 'a list" where
-"flatten xs = fold (@) xs []"
-
-definition flatten2l::"('a list list \<times> 'b) \<Rightarrow> ('a list \<times> 'b) list" where
-"flatten2l p \<equiv> map (\<lambda>x. (x, snd p)) (fst p)"
-
-definition flatten2r::"('a \<times> 'b list list) \<Rightarrow> ('a \<times> 'b list) list" where
-"flatten2r p \<equiv> map (\<lambda>x. (fst p, x)) (snd p)"
-
-term "(flatten o (map flatten2l) o (map (\<lambda>(Either l, obj) \<Rightarrow> (l, obj))) o (map refl)) (consts (domain P))"
-
-find_theorems "fst"
-
-
-term "(map_of ((flatten o (map flatten2l) o (map (\<lambda>(Either l, obj) \<Rightarrow> (l, obj))) o (map refl)) (consts (domain P)))) o (the o (map_of (map subtype_edge (types (domain P)))))"
-                          
-  (*
-  definition "subtype_rel \<equiv> {''object''}\<times>UNIV"
-  *)
-
-  definition of_type :: "type \<Rightarrow> type \<Rightarrow> bool" where
-    "of_type oT T \<equiv> set (primitives oT) \<subseteq> subtype_rel\<^sup>* `` set (primitives T)"
-  text \<open>This checks that every primitive on the LHS is contained in or a
-    subtype of a primitive on the RHS\<close>
 
 
   text \<open>For the next few definitions, we fix a partial function that maps
@@ -484,13 +419,15 @@ term "(map_of ((flatten o (map flatten2l) o (map (\<lambda>(Either l, obj) \<Rig
     text \<open>A formula is well-formed if it consists of valid atoms,
       and does not contain negations, except for the encoding \<open>\<^bold>\<not>\<bottom>\<close> of true.
     \<close>
-    fun wf_fmla :: "('ent atom) formula \<Rightarrow> bool" where
+    fun wf_fmla :: "('ent atom, 'var, 'type) formula \<Rightarrow> bool" where
       "wf_fmla (Atom a) \<longleftrightarrow> wf_atom a"
     | "wf_fmla (\<bottom>) \<longleftrightarrow> True"
     | "wf_fmla (\<phi>1 \<^bold>\<and> \<phi>2) \<longleftrightarrow> (wf_fmla \<phi>1 \<and> wf_fmla \<phi>2)"
     | "wf_fmla (\<phi>1 \<^bold>\<or> \<phi>2) \<longleftrightarrow> (wf_fmla \<phi>1 \<and> wf_fmla \<phi>2)"
     | "wf_fmla (\<^bold>\<not>\<phi>) \<longleftrightarrow> wf_fmla \<phi>"
     | "wf_fmla (\<phi>1 \<^bold>\<rightarrow> \<phi>2) \<longleftrightarrow> (wf_fmla \<phi>1 \<and> wf_fmla \<phi>2)"
+    | "wf_fmla (\<^bold>\<forall>\<^sub>\<tau> v. \<phi>) \<longleftrightarrow> (wf_fmla \<phi>)"
+    | "wf_fmla (\<^bold>\<exists>\<^sub>\<tau> v. \<phi>) \<longleftrightarrow> (wf_fmla \<phi>)"
 
     lemma "wf_fmla \<phi> = (\<forall>a\<in>formula.atoms \<phi>. wf_atom a)"
       by (induction \<phi>) auto
@@ -520,18 +457,6 @@ term "(map_of ((flatten o (map flatten2l) o (map (\<lambda>(Either l, obj) \<Rig
 
   definition constT :: "object \<rightharpoonup> type" where
     "constT \<equiv> map_of (consts D)"
-
-  value "(Var ''1234'', Either [''1234''])"
-
-  value "constT"
-
-  term "ty_term"
-
-  term "ty_term (map_of [(Var ''1234'', Either [''1234''])]) "
-
-  term "ty_term (map_of [(Var ''1234'', Either [''1234''])]) constT"
-
-  term "wf_fmla "
 
   text \<open>An action schema is well-formed if the parameter names are distinct,
     and the precondition and effect is well-formed wrt.\ the parameters.
@@ -576,7 +501,52 @@ term "(map_of ((flatten o (map flatten2l) o (map (\<lambda>(Either l, obj) \<Rig
 
 end \<comment> \<open>locale \<open>ast_domain\<close>\<close>
 
-thm ast_domain.wf_fmla_atom_alt
+
+subsection \<open>STRIPS Semantics\<close>
+
+text \<open>For this section, we fix a domain \<open>D\<close>, using Isabelle's
+  locale mechanism.\<close>
+context ast_domain    
+begin
+  text \<open>It seems to be agreed upon that, in case of a contradictory effect,
+    addition overrides deletion. We model this behaviour by first executing
+    the deletions, and then the additions.\<close>
+  fun apply_effect :: "object ast_effect \<Rightarrow> world_model \<Rightarrow> world_model"
+  where
+     "apply_effect (Effect a d) s = (s - set d) \<union> (set a)"
+
+  text \<open>Execute a ground action\<close>
+  definition execute_ground_action :: "ground_action \<Rightarrow> world_model \<Rightarrow> world_model"
+  where
+    "execute_ground_action a M = apply_effect (effect a) M"
+
+  text \<open>Predicate to model that the given list of action instances is
+    executable, and transforms an initial world model \<open>M\<close> into a final
+    model \<open>M'\<close>.
+
+    Note that this definition over the list structure is more convenient in HOL
+    than to explicitly define an indexed sequence \<open>M\<^sub>0\<dots>M\<^sub>N\<close> of intermediate world
+     models, as done in [Lif87].
+  \<close>
+  fun ground_action_path
+    :: "world_model \<Rightarrow> ground_action list \<Rightarrow> world_model \<Rightarrow> bool"
+  where
+    "ground_action_path M [] M' \<longleftrightarrow> (M = M')"
+  | "ground_action_path M (\<alpha>#\<alpha>s) M' \<longleftrightarrow> M \<^sup>c\<TTurnstile>\<^sub>= precondition \<alpha>
+    \<and> ground_action_path (execute_ground_action \<alpha> M) \<alpha>s M'"
+
+  text \<open>Function equations as presented in paper,
+    with inlined @{const execute_ground_action}.\<close>
+  lemma ground_action_path_in_paper:
+    "ground_action_path M [] M' \<longleftrightarrow> (M = M')"
+    "ground_action_path M (\<alpha>#\<alpha>s) M' \<longleftrightarrow> M \<^sup>c\<TTurnstile>\<^sub>= precondition \<alpha>
+    \<and> (ground_action_path (apply_effect (effect \<alpha>) M) \<alpha>s M')"
+    by (auto simp: execute_ground_action_def)
+
+  thm ground_action_path_in_paper
+
+end \<comment> \<open>Context of \<open>ast_domain\<close>\<close>
+
 
 text \<open>We fix a problem, and also include the definitions for the domain
   of this problem.\<close>
