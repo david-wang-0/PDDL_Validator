@@ -581,16 +581,17 @@ end \<comment> \<open>Context of \<open>ast_domain\<close>\<close>
 text \<open>We fix a problem, and also include the definitions for the domain
   of this problem.\<close>
 locale ast_problem = ast_domain "domain P"
-  for P :: ast_problem
+  for P :: ast_problem +
+  defines "t \<equiv> type_env (domain P)" (* not necessary *)
 begin
   text \<open>We refer to the problem domain as \<open>D\<close>\<close>
   abbreviation "D \<equiv> ast_problem.domain P"
 
   (* constants are from the domain, objects are from the problem *)
-  definition objT :: "ground_term \<rightharpoonup> type" where
+  definition objT :: "object \<rightharpoonup> type" where
     "objT \<equiv> map_of (objects P) ++ constT"
 
-  lemma objT_alt: "objT = map_of (consts D @ objects P)"
+  lemma objT_alt: "objT = map_of (consts t @ objects P)"
     unfolding objT_def constT_def
     apply (clarsimp)
     done
@@ -608,7 +609,7 @@ begin
   definition wf_problem where
     "wf_problem \<equiv>
       wf_domain
-    \<and> distinct (map fst (objects P) @ map fst (consts D))
+    \<and> distinct (map fst (objects P) @ map fst (consts t))
     \<and> (\<forall>(n,T)\<in>set (objects P). wf_type T)
     \<and> distinct (init P)
     \<and> wf_world_model (set (init P))
