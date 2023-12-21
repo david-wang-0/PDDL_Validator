@@ -197,7 +197,17 @@ sublocale f_sem: formula_semantics ground_term_atom_subst t_dom
   and
   entailment ("_ \<TTurnstile> _") = f_sem.entailment
   .
-  
+  (* A lot of these proofs rely on implicit assumptions on the type relationship
+    and substitution function. It might be a good idea to abstract away from the 
+    details and lifts facts into locales using lemmas. On the other hand, we are 
+    reasoning about ground terms specifically, so there is currently no need. 
+    Arguments:
+    + substitution is a syntactic operation and we are reasoning about semantics
+    - the semantics of ground terms are inherently tied to their syntax
+    ? we cannot predict every possible change that we might make in the future and 
+      can save some effort right now
+  *)
+
   text \<open>It is basic, if it only contains atoms\<close>
   definition "wm_basic M \<equiv> \<forall>a\<in>(M::world_model). is_predAtom a"
 
@@ -293,7 +303,7 @@ sublocale f_sem: formula_semantics ground_term_atom_subst t_dom
   
   (* STRIPS formulae don't have quantifiers, negation, or equality.
     (except that true in our language is defined as the negation of false) *)
-  fun is_STRIPS_fmla :: "('t atom, 'v , 't) formula \<Rightarrow> bool" where
+  fun is_STRIPS_fmla :: "('tm atom, 'v , 'ty) formula \<Rightarrow> bool" where
     "is_STRIPS_fmla (Atom (predAtm _ _)) \<longleftrightarrow> True"
   | "is_STRIPS_fmla (\<bottom>) \<longleftrightarrow> True"
   | "is_STRIPS_fmla (\<phi>\<^sub>1 \<^bold>\<and> \<phi>\<^sub>2) \<longleftrightarrow> is_STRIPS_fmla \<phi>\<^sub>1 \<and> is_STRIPS_fmla \<phi>\<^sub>2"
@@ -332,6 +342,7 @@ sublocale f_sem: formula_semantics ground_term_atom_subst t_dom
       using in_close_world_conv valuation_aux_2 apply blast
       using in_close_world_conv valuation_aux_2 by auto
     show ?thesis
+      using f_sem.entailment_def
       by (auto simp: entailment_def intro: aux1 aux2)
   qed
   
@@ -340,7 +351,6 @@ sublocale f_sem: formula_semantics ground_term_atom_subst t_dom
   theorem proper_STRIPS_generalization:
     "\<lbrakk>wm_basic M; is_STRIPS_fmla \<phi>\<rbrakk> \<Longrightarrow> M \<^sup>c\<TTurnstile>\<^sub>= \<phi> \<longleftrightarrow> M \<TTurnstile> \<phi>"
     by (simp add: valuation_iff_close_world[symmetric] valuation_iff_STRIPS)
-
 end
 
 subsection \<open>Well-Formedness of PDDL\<close>
