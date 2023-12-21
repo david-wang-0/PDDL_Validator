@@ -191,12 +191,17 @@ begin
   definition t_dom::"type \<Rightarrow> object list" where
   "t_dom typ \<equiv> map (\<lambda>(c, t) \<Rightarrow> c) (filter (\<lambda>(c, t) \<Rightarrow> of_type t typ) (consts type_env))"
 
-sublocale f_sem: formula_semantics ground_term_atom_subst t_dom
-  defines
-  semantics (infix "\<Turnstile>" 55) = f_sem.formula_semantics
+end
+
+sublocale ClosedWorld \<subseteq> formula_semantics ground_term_atom_subst t_dom
+  defines                            
+  semantics (infix "\<Turnstile>" 55) = formula_semantics
   and
-  entailment (infix "\<TTurnstile>" 55) = f_sem.entailment
+  entailment (infix "\<TTurnstile>" 55) = formula_entailment
   .
+
+context ClosedWorld
+begin
   (* A lot of these proofs rely on implicit assumptions on the type relationship
     and substitution function. It might be a good idea to abstract away from the 
     details and lifts facts into locales using lemmas. On the other hand, we are 
@@ -263,9 +268,9 @@ sublocale f_sem: formula_semantics ground_term_atom_subst t_dom
     apply (subst (asm) in_close_world_conv)
     (* How did you find this step? *)
     apply (auto simp: valuation_def intro!: ext split: atom.split)
-    apply (metis f_sem.formula_semantics.simps(1) f_sem.formula_semantics.simps(3))
-    apply (metis f_sem.formula_semantics.simps(1) f_sem.formula_semantics.simps(3))
-    by (metis atom.collapse(2) f_sem.formula_semantics.simps(1) is_predAtm_def)
+    apply (metis formula_semantics.simps(1) formula_semantics.simps(3))
+    apply (metis formula_semantics.simps(1) formula_semantics.simps(3))
+    by (metis atom.collapse(2) formula_semantics.simps(1) is_predAtm_def)
 
 
   (* the valuation is an abstract state, which maps variables to truth-values  *)
@@ -277,13 +282,13 @@ sublocale f_sem: formula_semantics ground_term_atom_subst t_dom
 
   lemma val_imp_close_world: "valuation M \<Turnstile> \<phi> \<Longrightarrow> M \<^sup>c\<TTurnstile>\<^sub>= \<phi>"
     unfolding entailment_def
-    using valuation_aux_1 ClosedWorld.entailment_def f_sem.entailment_def 
+    using valuation_aux_1 entailment_def formula_entailment_def
     by auto
 
   lemma close_world_imp_val:
     "wm_basic M \<Longrightarrow> M \<^sup>c\<TTurnstile>\<^sub>= \<phi> \<Longrightarrow> valuation M \<Turnstile> \<phi>"
     unfolding entailment_def
-    using valuation_aux_2 ClosedWorld.entailment_def f_sem.entailment_def 
+    using valuation_aux_2 entailment_def formula_entailment_def 
     by auto
 
   text \<open>Main theorem of this section:
@@ -342,9 +347,9 @@ sublocale f_sem: formula_semantics ground_term_atom_subst t_dom
       apply (metis in_close_world_conv valuation_aux_2)
       using in_close_world_conv valuation_aux_2 apply blast
       using in_close_world_conv valuation_aux_2 by auto
-    show ?thesis
-      using f_sem.entailment_def
-      by (auto simp: entailment_def intro: aux1 aux2)
+    show ?thesis          
+      using entailment_def formula_entailment_def
+      by (auto intro: aux1 aux2)
   qed
   
   text \<open>Our extension to negation and equality is a proper generalization of the
@@ -352,7 +357,7 @@ sublocale f_sem: formula_semantics ground_term_atom_subst t_dom
   theorem proper_STRIPS_generalization:
     "\<lbrakk>wm_basic M; is_STRIPS_fmla \<phi>\<rbrakk> \<Longrightarrow> M \<^sup>c\<TTurnstile>\<^sub>= \<phi> \<longleftrightarrow> M \<TTurnstile> \<phi>"
     by (simp add: valuation_iff_close_world[symmetric] valuation_iff_STRIPS)
-
+  
 end
 
 subsection \<open>Well-Formedness of PDDL\<close>
@@ -388,17 +393,23 @@ lemma ty_term_mono: "varT \<subseteq>\<^sub>m varT' \<Longrightarrow> objT \<sub
     done
   done
 
-locale ast_domain = ClosedWorld t 
-  for t :: type_env +
-  fixes D :: ast_domain
+locale ast_domain = ClosedWorld "type_env D" 
+  for D :: ast_domain +
+  fixes t :: type_env
   defines "t \<equiv> type_env D"
 begin     
+
+(* having to redeclare syntax is weird *)
+notation entailment (infix "\<TTurnstile>" 55)
+notation semantics (infix "\<Turnstile>" 55)
+notation cw_entailment (infix "\<^sup>c\<TTurnstile>\<^sub>=" 55)
+
+
   text \<open>The signature is a partial function that maps the predicates
     of the domain to lists of argument types.\<close>
   definition sig :: "predicate \<rightharpoonup> type list" where
     "sig \<equiv> map_of (map (\<lambda>PredDecl p n \<Rightarrow> (p,n)) (predicates D))"
 
-  print_locale "ClosedWorld"
 
   text \<open>For the next few definitions, we fix a partial function that maps
     a polymorphic entity type @{typ "'e"} to types. An entity can be
@@ -512,7 +523,7 @@ begin
     \<and> distinct (map ast_action_schema.name (actions D))
     \<and> (\<forall>a\<in>set (actions D). wf_action_schema a)
     "
-
+  print_interps formula_semantics
 end \<comment> \<open>locale \<open>ast_domain\<close>\<close>
 
 
@@ -522,6 +533,8 @@ text \<open>For this section, we fix a domain \<open>D\<close>, using Isabelle's
   locale mechanism.\<close>
 context ast_domain
 begin
+
+print_interps formula_semantics
   text \<open>It seems to be agreed upon that, in case of a contradictory effect,
     addition overrides deletion. We model this behaviour by first executing
     the deletions, and then the additions.\<close>
@@ -534,8 +547,6 @@ begin
   where
     "execute_ground_action a M = apply_effect (effect a) M"
 
-  find_theorems name: "f_sem"
-
 
   text \<open>Predicate to model that the given list of action instances is
     executable, and transforms an initial world model \<open>M\<close> into a final
@@ -545,11 +556,13 @@ begin
     than to explicitly define an indexed sequence \<open>M\<^sub>0\<dots>M\<^sub>N\<close> of intermediate world
      models, as done in [Lif87].
   \<close>
+
+  
   fun ground_action_path
     :: "world_model \<Rightarrow> ground_action list \<Rightarrow> world_model \<Rightarrow> bool"
   where
     "ground_action_path M [] M' = (M = M')"
-  | "ground_action_path M (\<alpha>#\<alpha>s) M' = (M \<TTurnstile> M
+  | "ground_action_path M (\<alpha>#\<alpha>s) M' = (M \<^sup>c\<TTurnstile>\<^sub>= precondition \<alpha>
     \<and> ground_action_path (execute_ground_action \<alpha> M) \<alpha>s M')"
 
   text \<open>Function equations as presented in paper,
@@ -574,7 +587,7 @@ begin
   abbreviation "D \<equiv> ast_problem.domain P"
 
   (* constants are from the domain, objects are from the problem *)
-  definition objT :: "object \<rightharpoonup> type" where
+  definition objT :: "ground_term \<rightharpoonup> type" where
     "objT \<equiv> map_of (objects P) ++ constT"
 
   lemma objT_alt: "objT = map_of (consts D @ objects P)"
