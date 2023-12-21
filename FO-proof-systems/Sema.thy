@@ -32,7 +32,7 @@ fun height::"('p valuation \<times> ('p, 'v, 't) formula) \<Rightarrow> nat" whe
 lemma fsubst_maintains_height: "height (v, f) = height (v, fsubst x x1 f)"
   by (induction f) auto
 
-function formula_semantics :: "'p valuation \<Rightarrow> ('p, 'v, 't) formula \<Rightarrow> bool" (infix "\<Turnstile>" 51) where
+function formula_semantics :: "'p valuation \<Rightarrow> ('p, 'v, 't) formula \<Rightarrow> bool" (infix "\<Turnstile>" 61) where
 "\<A> \<Turnstile> Atom k = \<A> k" |
 "_ \<Turnstile> \<bottom> = False" |
 "\<A> \<Turnstile> Not F = (\<not> \<A> \<Turnstile> F)" |
@@ -48,7 +48,8 @@ termination formula_semantics
 abbreviation valid ("\<Turnstile> _" 51) where
 "\<Turnstile> F \<equiv> \<forall>A. A \<Turnstile> F"
 
-definition entailment :: "('p, 'v, 't) formula set \<Rightarrow> ('p, 'v, 't) formula \<Rightarrow> bool" ("(_ \<TTurnstile>/ _)" (* \TTurnstile *) [53,53] 53) where
+definition entailment :: "('p, 'v, 't) formula set \<Rightarrow> ('p, 'v, 't) formula \<Rightarrow> bool" 
+  (infix "\<TTurnstile>" 63) where
 "\<Gamma> \<TTurnstile> F \<equiv> (\<forall>\<A>. ((\<forall>G \<in> \<Gamma>. \<A> \<Turnstile> G) \<longrightarrow> (\<A> \<Turnstile> F)))"
 
 end

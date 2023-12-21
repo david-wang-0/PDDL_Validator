@@ -163,7 +163,7 @@ begin
     "is_predAtom (Atom (predAtm _ _)) = True" | "is_predAtom _ = False"
 
   text \<open>The world model is a set of (atomic) formulas\<close>
-  type_synonym world_model = "(ground_term atom, variable, type) formula set"
+  type_synonym world_model = "ground_formula set"
 
   fun subtype_edge where
     "subtype_edge (ty,superty) = (superty,ty)"
@@ -193,9 +193,9 @@ begin
 
 sublocale f_sem: formula_semantics ground_term_atom_subst t_dom
   defines
-  semantics ("_ \<Turnstile> _") = f_sem.formula_semantics
+  semantics (infix "\<Turnstile>" 55) = f_sem.formula_semantics
   and
-  entailment ("_ \<TTurnstile> _") = f_sem.entailment
+  entailment (infix "\<TTurnstile>" 55) = f_sem.entailment
   .
   (* A lot of these proofs rely on implicit assumptions on the type relationship
     and substitution function. It might be a good idea to abstract away from the 
@@ -230,7 +230,8 @@ sublocale f_sem: formula_semantics ground_term_atom_subst t_dom
     apply (auto 0 3) (* no blast 0 but instead more general solver 3 in more depth *)
     by (metis atom.exhaust)
 
-  abbreviation cw_entailment (infix "\<^sup>c\<TTurnstile>\<^sub>=" 53) where
+  abbreviation cw_entailment::"world_model \<Rightarrow> ground_formula \<Rightarrow> bool" 
+      (infix "\<^sup>c\<TTurnstile>\<^sub>=" 53) where
     "M \<^sup>c\<TTurnstile>\<^sub>= \<phi> \<equiv> close_world M \<TTurnstile> \<phi>"
 
   (* the closed-world assumption refers to the closure of the set
@@ -351,6 +352,7 @@ sublocale f_sem: formula_semantics ground_term_atom_subst t_dom
   theorem proper_STRIPS_generalization:
     "\<lbrakk>wm_basic M; is_STRIPS_fmla \<phi>\<rbrakk> \<Longrightarrow> M \<^sup>c\<TTurnstile>\<^sub>= \<phi> \<longleftrightarrow> M \<TTurnstile> \<phi>"
     by (simp add: valuation_iff_close_world[symmetric] valuation_iff_STRIPS)
+
 end
 
 subsection \<open>Well-Formedness of PDDL\<close>
@@ -386,15 +388,17 @@ lemma ty_term_mono: "varT \<subseteq>\<^sub>m varT' \<Longrightarrow> objT \<sub
     done
   done
 
-
-locale ast_domain =
+locale ast_domain = ClosedWorld t 
+  for t :: type_env +
   fixes D :: ast_domain
+  defines "t \<equiv> type_env D"
 begin     
   text \<open>The signature is a partial function that maps the predicates
     of the domain to lists of argument types.\<close>
   definition sig :: "predicate \<rightharpoonup> type list" where
     "sig \<equiv> map_of (map (\<lambda>PredDecl p n \<Rightarrow> (p,n)) (predicates D))"
 
+  print_locale "ClosedWorld"
 
   text \<open>For the next few definitions, we fix a partial function that maps
     a polymorphic entity type @{typ "'e"} to types. An entity can be
@@ -466,7 +470,7 @@ begin
 
 
   definition constT :: "object \<rightharpoonup> type" where
-    "constT \<equiv> map_of (consts D)"
+    "constT \<equiv> map_of (consts t)"
 
   text \<open>An action schema is well-formed if the parameter names are distinct,
     and the precondition and effect is well-formed wrt.\ the parameters.
@@ -483,14 +487,14 @@ begin
   text \<open>A type is well-formed if it consists only of declared primitive types,
      and the type object.\<close>
   fun wf_type where
-    "wf_type (Either Ts) \<longleftrightarrow> set Ts \<subseteq> insert ''object'' (fst`set (types D))"
+    "wf_type (Either Ts) \<longleftrightarrow> set Ts \<subseteq> insert ''object'' (fst`set (types t))"
 
   text \<open>A predicate is well-formed if its argument types are well-formed.\<close>
   fun wf_predicate_decl where
     "wf_predicate_decl (PredDecl p Ts) \<longleftrightarrow> (\<forall>T\<in>set Ts. wf_type T)"
 
   text \<open>The types declaration is well-formed, if all supertypes are declared types (or object)\<close>
-  definition "wf_types \<equiv> snd`set (types D) \<subseteq> insert ''object'' (fst`set (types D))"
+  definition "wf_types \<equiv> snd`set (types t) \<subseteq> insert ''object'' (fst`set (types t))"
 
   text \<open>A domain is well-formed if
     \<^item> there are no duplicate declared predicate names,
@@ -503,8 +507,8 @@ begin
       wf_types
     \<and> distinct (map (predicate_decl.pred) (predicates D))
     \<and> (\<forall>p\<in>set (predicates D). wf_predicate_decl p)
-    \<and> distinct (map fst (consts D))
-    \<and> (\<forall>(n,T)\<in>set (consts D). wf_type T)
+    \<and> distinct (map fst (consts t))
+    \<and> (\<forall>(n,T)\<in>set (consts t). wf_type T)
     \<and> distinct (map ast_action_schema.name (actions D))
     \<and> (\<forall>a\<in>set (actions D). wf_action_schema a)
     "
@@ -516,12 +520,12 @@ subsection \<open>STRIPS Semantics\<close>
 
 text \<open>For this section, we fix a domain \<open>D\<close>, using Isabelle's
   locale mechanism.\<close>
-context ast_domain    
+context ast_domain
 begin
   text \<open>It seems to be agreed upon that, in case of a contradictory effect,
     addition overrides deletion. We model this behaviour by first executing
     the deletions, and then the additions.\<close>
-  fun apply_effect :: "object ast_effect \<Rightarrow> world_model \<Rightarrow> world_model"
+  fun apply_effect :: "ground_effect \<Rightarrow> world_model \<Rightarrow> world_model"
   where
      "apply_effect (Effect a d) s = (s - set d) \<union> (set a)"
 
@@ -529,6 +533,9 @@ begin
   definition execute_ground_action :: "ground_action \<Rightarrow> world_model \<Rightarrow> world_model"
   where
     "execute_ground_action a M = apply_effect (effect a) M"
+
+  find_theorems name: "f_sem"
+
 
   text \<open>Predicate to model that the given list of action instances is
     executable, and transforms an initial world model \<open>M\<close> into a final
@@ -541,9 +548,9 @@ begin
   fun ground_action_path
     :: "world_model \<Rightarrow> ground_action list \<Rightarrow> world_model \<Rightarrow> bool"
   where
-    "ground_action_path M [] M' \<longleftrightarrow> (M = M')"
-  | "ground_action_path M (\<alpha>#\<alpha>s) M' \<longleftrightarrow> M \<^sup>c\<TTurnstile>\<^sub>= precondition \<alpha>
-    \<and> ground_action_path (execute_ground_action \<alpha> M) \<alpha>s M'"
+    "ground_action_path M [] M' = (M = M')"
+  | "ground_action_path M (\<alpha>#\<alpha>s) M' = (M \<TTurnstile> M
+    \<and> ground_action_path (execute_ground_action \<alpha> M) \<alpha>s M')"
 
   text \<open>Function equations as presented in paper,
     with inlined @{const execute_ground_action}.\<close>
