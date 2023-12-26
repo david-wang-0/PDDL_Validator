@@ -80,6 +80,7 @@ hide_const (open) VAR OBJ
 type_synonym schematic_formula = "(term atom, variable, type) formula"
 type_synonym schematic_effect = "(term, variable, type) ast_effect"
 
+(* should not be called ground, but instantiated *)
 type_synonym ground_formula = "(ground_term atom, variable, type) formula"
 type_synonym ground_effect = "(ground_term, variable, type) ast_effect"
 
@@ -116,7 +117,11 @@ subsubsection \<open>Problems\<close>
 
 
 text \<open>A fact is a predicate applied to objects.\<close>
-type_synonym fact = "predicate \<times> object list"
+text \<open>Changed to ground_term, because this makes some other changes easier.
+    However, the change from object term to ground term in general requires
+    us to assert that variables in instantiations are bound.\<close>
+text \<open> Question: are facts only using in effects? See \<open>wf_fact\<close> as well. \<close>
+type_synonym fact = "predicate \<times> ground_term list"
 
 text \<open>A problem consists of a domain, a list of objects,
   a description of the initial state, and a description of the goal state. \<close>
@@ -145,8 +150,8 @@ datatype ground_action = Ground_Action
 
 (* substitution of variables for constants *)
 fun ground_term_subst::"variable \<Rightarrow> object \<Rightarrow> ground_term \<Rightarrow> ground_term" where
-"ground_term_subst v obj (ground_term.VAR x) = (if (x = v) then (ground_term.OBJ obj) else ground_term.VAR x)" |
-"ground_term_subst _ _ (ground_term.OBJ obj) = ground_term.OBJ obj"
+  "ground_term_subst v obj (ground_term.VAR x) = (if (x = v) then (ground_term.OBJ obj) else ground_term.VAR x)" 
+| "ground_term_subst _ _ (ground_term.OBJ obj) = ground_term.OBJ obj"
 
 abbreviation ground_term_atom_subst where
 "ground_term_atom_subst v obj \<equiv> map_atom (ground_term_subst v obj)"
@@ -377,9 +382,14 @@ subsection \<open>Well-Formedness of PDDL\<close>
 *)
 
 
-fun ty_term where
+fun ty_term::"(variable \<Rightarrow> type option) \<Rightarrow> (object \<Rightarrow> type option) \<Rightarrow> term \<Rightarrow> type option" where
   "ty_term varT objT (term.VAR v) = varT v"
 | "ty_term varT objT (term.CONST c) = objT c"
+
+definition upd_te::"(term \<Rightarrow> type option) \<Rightarrow> variable \<Rightarrow> type \<Rightarrow> term \<Rightarrow> type option" where
+"upd_te te var ty \<equiv> 
+  \<lambda>(term.VAR v) \<Rightarrow> (if (v = var) then Some ty else te (term.VAR v)) |
+  (term.CONST c) \<Rightarrow> te (term.CONST c)"
 
 
 find_theorems name: "ty_term"
@@ -410,14 +420,16 @@ notation cw_entailment (infix "\<^sup>c\<TTurnstile>\<^sub>=" 55)
   definition sig :: "predicate \<rightharpoonup> type list" where
     "sig \<equiv> map_of (map (\<lambda>PredDecl p n \<Rightarrow> (p,n)) (predicates D))"
 
+type_synonym ('ent) ty_ent = "'ent \<rightharpoonup> type"
 
   text \<open>For the next few definitions, we fix a partial function that maps
     a polymorphic entity type @{typ "'e"} to types. An entity can be
     instantiated by variables or objects later.\<close>
   context
-    fixes ty_ent :: "'ent \<rightharpoonup> type"  \<comment> \<open>Entity's type, None if invalid\<close>
+    fixes ty_ent :: "'ent ty_ent"  \<comment> \<open>Entity's type, None if invalid\<close>
   begin
-
+    (* there must be a way to update the typing function 
+       while recursing without knowing the type *)
     text \<open>Checks whether an entity has a given type\<close>
     definition is_of_type :: "'ent \<Rightarrow> type \<Rightarrow> bool" where
       "is_of_type v T \<longleftrightarrow> (
@@ -440,45 +452,53 @@ notation cw_entailment (infix "\<^sup>c\<TTurnstile>\<^sub>=" 55)
     fun wf_atom :: "'ent atom \<Rightarrow> bool" where
       "wf_atom (predAtm p vs) \<longleftrightarrow> wf_pred_atom (p,vs)"
     | "wf_atom (Eq a b) \<longleftrightarrow> ty_ent a \<noteq> None \<and> ty_ent b \<noteq> None"
+  end \<comment> \<open>Context fixing \<open>ty_ent\<close>\<close>
 
+  context
+    fixes upd :: "'ent ty_ent \<Rightarrow> 'var \<Rightarrow> 'type \<Rightarrow> 'ent ty_ent"
+  begin
     text \<open>A formula is well-formed if it consists of valid atoms,
       and does not contain negations, except for the encoding \<open>\<^bold>\<not>\<bottom>\<close> of true.
     \<close>
-    fun wf_fmla :: "('ent atom, 'var, 'type) formula \<Rightarrow> bool" where
-      "wf_fmla (Atom a) \<longleftrightarrow> wf_atom a"
-    | "wf_fmla (\<bottom>) \<longleftrightarrow> True"
-    | "wf_fmla (\<phi>1 \<^bold>\<and> \<phi>2) \<longleftrightarrow> (wf_fmla \<phi>1 \<and> wf_fmla \<phi>2)"
-    | "wf_fmla (\<phi>1 \<^bold>\<or> \<phi>2) \<longleftrightarrow> (wf_fmla \<phi>1 \<and> wf_fmla \<phi>2)"
-    | "wf_fmla (\<^bold>\<not>\<phi>) \<longleftrightarrow> wf_fmla \<phi>"
-    | "wf_fmla (\<phi>1 \<^bold>\<rightarrow> \<phi>2) \<longleftrightarrow> (wf_fmla \<phi>1 \<and> wf_fmla \<phi>2)"
-    | "wf_fmla (\<^bold>\<forall>\<^sub>\<tau> v. \<phi>) \<longleftrightarrow> (wf_fmla \<phi>)"
-    | "wf_fmla (\<^bold>\<exists>\<^sub>\<tau> v. \<phi>) \<longleftrightarrow> (wf_fmla \<phi>)"
+    
+    fun wf_fmla :: "'ent ty_ent \<Rightarrow> ('ent atom, 'var, 'type) formula \<Rightarrow> bool" where
+      "wf_fmla te (Atom a) \<longleftrightarrow> wf_atom te a"
+    | "wf_fmla te (\<bottom>) \<longleftrightarrow> True"
+    | "wf_fmla te (\<phi>1 \<^bold>\<and> \<phi>2) \<longleftrightarrow> (wf_fmla te \<phi>1 \<and> wf_fmla te \<phi>2)"
+    | "wf_fmla te (\<phi>1 \<^bold>\<or> \<phi>2) \<longleftrightarrow> (wf_fmla te \<phi>1 \<and> wf_fmla te \<phi>2)"
+    | "wf_fmla te (\<^bold>\<not>\<phi>) \<longleftrightarrow> wf_fmla te \<phi>"
+    | "wf_fmla te (\<phi>1 \<^bold>\<rightarrow> \<phi>2) \<longleftrightarrow> (wf_fmla te \<phi>1 \<and> wf_fmla te \<phi>2)"
+    | "wf_fmla te (\<^bold>\<forall>\<^sub>\<tau> v. \<phi>) \<longleftrightarrow> (wf_fmla (upd te v \<tau>) \<phi>)"
+    | "wf_fmla te (\<^bold>\<exists>\<^sub>\<tau> v. \<phi>) \<longleftrightarrow> (wf_fmla (upd te v \<tau>) \<phi>)" 
 
-    lemma "wf_fmla \<phi> = (\<forall>a\<in>formula.atoms \<phi>. wf_atom a)"
-      by (induction \<phi>) auto
+    (* When considering the well-typedness of formulae, when variables 
+       are bound, we update the type. When we know that  *)
+
+    (* this no longer holds *)
+    (* lemma "wf_fmla \<phi> = (\<forall>a\<in>formula.atoms \<phi>. wf_atom a)"
+      by (induction \<phi>) auto *)
 
     (*lemma wf_fmla_add_simps[simp]: "wf_fmla (\<^bold>\<not>\<phi>) \<longleftrightarrow> \<phi>=\<bottom>"
       by (cases \<phi>) auto*)
 
+    (* the following need a function to type entities *)
     text \<open>Special case for a well-formed atomic predicate formula\<close>
     fun wf_fmla_atom where
-      "wf_fmla_atom (Atom (predAtm a vs)) \<longleftrightarrow> wf_pred_atom (a,vs)"
-    | "wf_fmla_atom _ \<longleftrightarrow> False"
+      "wf_fmla_atom te (Atom (predAtm a vs)) \<longleftrightarrow> wf_pred_atom te (a,vs)"
+    | "wf_fmla_atom _ _ \<longleftrightarrow> False"
 
-    lemma wf_fmla_atom_alt: "wf_fmla_atom \<phi> \<longleftrightarrow> is_predAtom \<phi> \<and> wf_fmla \<phi>"
-      by (cases \<phi> rule: wf_fmla_atom.cases) auto
+    (* same as the above *)
+    lemma wf_fmla_atom_alt: "wf_fmla_atom te \<phi> \<longleftrightarrow> is_predAtom \<phi> \<and> wf_fmla te \<phi>"
+      by (cases "(te, \<phi>)" rule: wf_fmla_atom.cases) auto
 
-    thm wf_fmla_atom_alt
-
+    thm wf_fmla_atom.cases
     text \<open>An effect is well-formed if the added and removed formulas
       are atomic\<close>
     fun wf_effect where
-      "wf_effect (Effect a d) \<longleftrightarrow>
-          (\<forall>ae\<in>set a. wf_fmla_atom ae)
-        \<and> (\<forall>de\<in>set d.  wf_fmla_atom de)"
-
-  end \<comment> \<open>Context fixing \<open>ty_ent\<close>\<close>
-
+      "wf_effect te (Effect a d) \<longleftrightarrow>
+          (\<forall>ae\<in>set a. wf_fmla_atom te ae)
+        \<and> (\<forall>de\<in>set d. wf_fmla_atom te de)"
+  end \<comment> \<open>context fixing the update function for ty_ent\<close>
 
   definition constT :: "object \<rightharpoonup> type" where
     "constT \<equiv> map_of (consts t)"
@@ -486,13 +506,14 @@ notation cw_entailment (infix "\<^sup>c\<TTurnstile>\<^sub>=" 55)
   text \<open>An action schema is well-formed if the parameter names are distinct,
     and the precondition and effect is well-formed wrt.\ the parameters.
   \<close>
+  (* we need to provide a way to update the ty_ent *)
   fun wf_action_schema :: "ast_action_schema \<Rightarrow> bool" where
     "wf_action_schema (Action_Schema n params pre eff) \<longleftrightarrow> (
       let
         tyt = ty_term (map_of params) constT
       in
         distinct (map fst params)
-      \<and> wf_fmla tyt pre
+      \<and> wf_fmla upd_te tyt pre
       \<and> wf_effect tyt eff)"
              
   text \<open>A type is well-formed if it consists only of declared primitive types,
@@ -523,7 +544,7 @@ notation cw_entailment (infix "\<^sup>c\<TTurnstile>\<^sub>=" 55)
     \<and> distinct (map ast_action_schema.name (actions D))
     \<and> (\<forall>a\<in>set (actions D). wf_action_schema a)
     "
-  print_interps formula_semantics
+
 end \<comment> \<open>locale \<open>ast_domain\<close>\<close>
 
 
@@ -557,7 +578,6 @@ print_interps formula_semantics
      models, as done in [Lif87].
   \<close>
 
-  
   fun ground_action_path
     :: "world_model \<Rightarrow> ground_action list \<Rightarrow> world_model \<Rightarrow> bool"
   where
@@ -578,11 +598,32 @@ print_interps formula_semantics
 end \<comment> \<open>Context of \<open>ast_domain\<close>\<close>
 
 
+fun ty_ground_term::"(variable \<Rightarrow> type option) \<Rightarrow> (object \<Rightarrow> type option) \<Rightarrow> ground_term \<Rightarrow> type option" where
+  "ty_ground_term varT objT (ground_term.VAR v) = varT v"
+| "ty_ground_term varT objT (ground_term.OBJ obj) = objT obj"
+
+definition upd_gt_te::"(ground_term \<Rightarrow> type option) \<Rightarrow> variable \<Rightarrow> type \<Rightarrow> ground_term \<Rightarrow> type option" where
+"upd_gt_te te var ty \<equiv> 
+  \<lambda>(ground_term.VAR v) \<Rightarrow> (if (v = var) then Some ty else te (ground_term.VAR v)) |
+  (ground_term.OBJ c) \<Rightarrow> te (ground_term.OBJ c)"
+
+
+find_theorems name: "ty_term"
+
+lemma ty_ground_term_mono: "varT \<subseteq>\<^sub>m varT' \<Longrightarrow> objT \<subseteq>\<^sub>m objT' \<Longrightarrow>
+  ty_ground_term varT objT \<subseteq>\<^sub>m ty_ground_term varT' objT'"
+  apply (rule map_leI)
+  subgoal for x v
+    apply (cases x)
+    apply (auto dest: map_leD)
+    done
+  done
+
 text \<open>We fix a problem, and also include the definitions for the domain
   of this problem.\<close>
 locale ast_problem = ast_domain "domain P"
   for P :: ast_problem +
-  defines "t \<equiv> type_env (domain P)" (* not necessary *)
+  defines "t \<equiv> type_env (domain P)" (* for clarity *)
 begin
   text \<open>We refer to the problem domain as \<open>D\<close>\<close>
   abbreviation "D \<equiv> ast_problem.domain P"
@@ -597,13 +638,19 @@ begin
     done
 
   definition wf_fact :: "fact \<Rightarrow> bool" where
-    "wf_fact = wf_pred_atom objT"
+    "wf_fact = wf_pred_atom (ty_ground_term (\<lambda>_. None) objT)"
+  (* TODO: what is a fact? My assumption is that they are not quantified. *)
+
 
   text \<open>This definition is needed for well-formedness of the initial model,
     and forward-references to the concept of world model.
   \<close>
-  definition wf_world_model where
-    "wf_world_model M = (\<forall>f\<in>M. wf_fmla_atom objT f)"
+  (* What makes a world-model well-formed? Since the initial state is essentially
+      equivalent to the effect of a non-action, it being well-formed means, that it
+      is unquantified. *)
+definition wf_world_model::
+"ground_formula set \<Rightarrow> bool" where
+    "wf_world_model M = (\<forall>f\<in>M. wf_fmla_atom (ty_ground_term (\<lambda>_. None) objT) f)"
 
   (*Note: current semantics assigns each object a unique type *)
   definition wf_problem where
@@ -613,17 +660,18 @@ begin
     \<and> (\<forall>(n,T)\<in>set (objects P). wf_type T)
     \<and> distinct (init P)
     \<and> wf_world_model (set (init P))
-    \<and> wf_fmla objT (goal P)
+    \<and> wf_fmla upd_gt_te (ty_ground_term (\<lambda>_.None) objT) (goal P)
     "
 
-  fun wf_effect_inst :: "object ast_effect \<Rightarrow> bool" where
+  (* Effects are atomic predicate, which also makes them quantifier-free and thus
+     actually ground. Maybe effects should use the object atom type, while preconditions
+     should use the "ground" (instantiated) type. *)
+  fun wf_effect_inst :: "ground_effect \<Rightarrow> bool" where
     "wf_effect_inst (Effect (a) (d))
-      \<longleftrightarrow> (\<forall>a\<in>set a \<union> set d. wf_fmla_atom objT a)"
-                                        
-lemma wf_effect_inst_alt: "wf_effect_inst eff = wf_effect objT eff"
-    by (cases eff) auto
-
-  thm wf_effect_inst_alt
+      \<longleftrightarrow> (\<forall>a\<in>set a \<union> set d. wf_fmla_atom (ty_ground_term (\<lambda>_. None) objT) a)"
+                                          
+  lemma wf_effect_inst_alt: "wf_effect_inst eff = wf_effect (ty_ground_term (\<lambda>_. None) objT) eff"
+      by (cases eff) auto
 
 end \<comment> \<open>locale \<open>ast_problem\<close>\<close>
 
@@ -634,8 +682,10 @@ text \<open>Locale to express a well-formed domain\<close>
 locale wf_ast_domain = ast_domain +
   assumes wf_domain: wf_domain
 
+print_locale ast_problem
+
 text \<open>Locale to express a well-formed problem\<close>
-locale wf_ast_problem = ast_problem P for P +
+locale wf_ast_problem = ast_problem t P for t P +
   assumes wf_problem: wf_problem
 begin
   sublocale wf_ast_domain "domain P"
@@ -664,55 +714,32 @@ context ast_domain begin
     "subst_term psubst (term.VAR x) = psubst x"
   | "subst_term psubst (term.CONST c) = c"
 
+  fun ground::"(variable \<rightharpoonup> object) \<Rightarrow> term \<Rightarrow> ground_term" where
+    "ground psubst (term.VAR x) = (case psubst x of 
+      Some obj \<Rightarrow> ground_term.OBJ obj
+    | None \<Rightarrow> ground_term.VAR x)" 
+  | "ground psubst (term.CONST obj) = ground_term.OBJ obj"
 
-  value "(the o [''a'' \<mapsto> a, ''c'' \<mapsto> c]) ''d''"
-
-value "show (0::nat)"
-
-
-(* We know that we have a map from variables to objects, which contains every
-   bound variable. We need to generate a unique object, so that our substitution
-   of a variable for an object does not insert an object that is a constant or
-   *)
-fun subst_params::"(variable \<rightharpoonup> object) 
-  \<Rightarrow> nat
-  \<Rightarrow> schematic_formula 
-  \<Rightarrow> ground_formula"
-  where
-"subst_params s n (Atom p) = Atom (map_atom (subst_term (the o s)) p)" |
-"subst_params s n \<bottom> = \<bottom>" |
-"subst_params s n (Not F) = Not (subst_params s n F)" |
-"subst_params s n (And F G) = And (subst_params s n F) (subst_params s n G)" |
-"subst_params s n (Or F G) = Or (subst_params s n F) (subst_params s n G)" |
-"subst_params s n (Imp F G) = Imp (subst_params s n F) (subst_params s n G)" |
-"subst_params s n (Exists t x F) = (
-  let nm = show n in
-  Exists t nm (subst_params (s(x \<mapsto> (Obj nm))) (Suc n) F)
-)" |
-"subst_params s n (All t x F) = (
-  let nm = show n in
-  All t nm (subst_params (s(x \<mapsto> (Obj nm))) (Suc n) F)
-)"
-
+  (* Not every variable is mapped to an object. Some are left *)
   text \<open>To instantiate an action schema, we first compute a substitution from
     parameters to objects, and then apply this substitution to the
     precondition and effect. The substitution is applied via the \<open>map_xxx\<close>
     functions generated by the datatype package. The substitution must somehow
     deal with bound variables.
     \<close>
+
+  (* Because the types have multiple parameters, each needs a mapping. 
+      Therefore we use the identity function for the other types *)
   fun instantiate_action_schema
     :: "ast_action_schema \<Rightarrow> object list \<Rightarrow> ground_action"
   where
     "instantiate_action_schema (Action_Schema n params pre eff) args = (let
-        tsubst = subst_term (the o (map_of (zip (map fst params) args)));
-        pre_inst = (map_formula o map_atom) tsubst pre;
-        eff_inst = (map_ast_effect) tsubst eff
+        tsubst = ground (map_of (zip (map fst params) args));
+        pre_inst = (map_formula o map_atom) tsubst id id pre;
+        eff_inst = (map_ast_effect) tsubst id id eff 
       in
         Ground_Action pre_inst eff_inst
       )"
-
-  term map_atom
-  term the
 
 end \<comment> \<open>Context of \<open>ast_domain\<close>\<close>
 
@@ -818,8 +845,8 @@ context ast_problem begin
 
   fun wf_ground_action :: "ground_action \<Rightarrow> bool" where
     "wf_ground_action (Ground_Action pre eff) \<longleftrightarrow> (
-        wf_fmla objT pre
-      \<and> wf_effect objT eff
+        wf_fmla upd_gt_te (ty_ground_term (\<lambda>_. None) objT) pre
+      \<and> wf_effect (ty_ground_term (\<lambda>_. None) objT) eff
       )
     "
 
@@ -872,7 +899,7 @@ context ast_problem begin
     assumes SS: "tys \<subseteq>\<^sub>m tys'"
         and "list_all2 (is_of_type tys) xs Ts" 
       shows "list_all2 (is_of_type tys') xs Ts"
-  proof - (* why can I not do this without the default proof method? *)
+  proof - 
     have "list_all2 (is_of_type tys') xs Ts" 
       if "list_all2 (is_of_type tys) xs Ts" for xs Ts
       using that
@@ -906,7 +933,8 @@ context ast_problem begin
     shows "wf_fmla_atom tys' a"
   proof -
     from list_all_mono[OF SS] WF show ?thesis
-      by (cases a rule: wf_fmla_atom.cases) (auto split: option.splits dest: map_leD[OF SS])
+      by (cases "(tys, a)" rule: wf_fmla_atom.cases) 
+        (auto split: option.splits dest: map_leD[OF SS])
   qed
                                     
   lemma constT_ss_objT: "constT \<subseteq>\<^sub>m objT"
@@ -925,10 +953,15 @@ context ast_problem begin
     by (simp_all add: constT_ss_objT)
 
   context
-    fixes Q and f :: "variable \<Rightarrow> object"
-    assumes INST: "is_of_type Q x T \<Longrightarrow> is_of_type objT (f x) T"
-  begin
+    fixes Q and f :: "variable \<rightharpoonup> object"
+    assumes INST: "is_of_type Q x T \<Longrightarrow> is_of_type objT (the (f x)) T"
+begin 
 
+    (* f is the manner in which parameters are substituted for arguments *)
+
+    (* if f x is none, then the ground formula must leave it as a variable *)
+  
+    
     lemma is_of_type_var_conv: "is_of_type (ty_term Q objT) (term.VAR x) T  \<longleftrightarrow> is_of_type Q x T"
       unfolding is_of_type_def by (auto)
 
@@ -936,9 +969,13 @@ context ast_problem begin
       unfolding is_of_type_def
       by (auto split: option.split)
 
-    lemma INST': "is_of_type (ty_term Q objT) x T \<Longrightarrow> is_of_type objT (subst_term f x) T"
-      apply (cases x) using INST apply (auto simp: is_of_type_var_conv is_of_type_const_conv)
-      done
+    lemma INST': "is_of_type (ty_term Q objT) x T \<Longrightarrow> is_of_type (ty_ground_term Q objT) (ground f x) T"
+      apply (cases x) using INST 
+      apply (auto simp: is_of_type_var_conv is_of_type_const_conv)
+      apply (auto split: option.split)
+        apply (simp add: ast_domain.is_of_type_def)
+       apply (metis is_of_type_def option.sel ty_ground_term.simps(2))
+      by (simp add: ast_domain.is_of_type_def)
 
 
     lemma wf_inst_eq_aux: "Q x = Some T \<Longrightarrow> objT (f x) \<noteq> None"
@@ -951,7 +988,7 @@ context ast_problem begin
       hence "is_of_type Q x T" unfolding is_of_type_def by simp
       from this[THEN INST] have "is_of_type objT (f x) T" .
       then obtain T' where
-        "objT (f x) = Some T'" 
+        "objT (the (f x)) = Some T'" 
         "of_type T' T"
         unfolding is_of_type_def
         by (auto split: option.splits)
@@ -959,8 +996,9 @@ context ast_problem begin
         by auto
     qed
 
-    lemma wf_inst_eq_aux': "ty_term Q objT x = Some T \<Longrightarrow> objT (subst_term f x) \<noteq> None"
-      by (cases x) (auto simp: wf_inst_eq_aux)
+    lemma wf_inst_eq_aux': "ty_term Q objT x = Some T \<Longrightarrow> ty_ground_term (\<lambda>_. None) objT (ground f x) \<noteq> None"
+      apply (cases x) 
+       apply (auto simp: wf_inst_eq_aux split: option.split)
 
 
     lemma wf_inst_atom:
@@ -981,7 +1019,7 @@ context ast_problem begin
 
     lemma wf_inst_formula_atom:
       assumes "wf_fmla_atom (ty_term Q constT) a"
-      shows "wf_fmla_atom objT ((map_formula o map_atom o subst_term) f a)"
+      shows "wf_fmla_atom objT ((map_formula o map_atom) ground id id f a)"
       using assms[THEN wf_fmla_atom_constT_imp_objT] wf_inst_atom
       apply (cases a rule: wf_fmla_atom.cases; auto split: option.splits)
       by (simp add: INST' list.rel_map(1) list_all2_mono)
@@ -997,7 +1035,7 @@ context ast_problem begin
 
     lemma wf_inst_formula:
       assumes "wf_fmla (ty_term Q constT) \<phi>"
-      shows "wf_fmla objT ((map_formula o map_atom o subst_term) f \<phi>)"
+      shows "wf_fmla (ty_ground_term (\<lambda>_. None) objT) ((map_formula o map_atom o ground) f \<phi>)"
       using assms
       by (induction \<phi>) (auto simp: wf_inst_atom dest: wf_inst_eq_aux)
 
