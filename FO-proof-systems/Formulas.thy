@@ -77,7 +77,12 @@ primrec BigOr :: "('p, 'v, 't) formula list \<Rightarrow> ('p, 'v, 't) formula" 
 
 
 locale formula_syntax =
-  fixes subst::"'v \<Rightarrow> 'c \<Rightarrow> 'p \<Rightarrow> 'p"
+  fixes subst ::"'v \<Rightarrow> 'c \<Rightarrow> 'p \<Rightarrow> 'p"
+    (* TODO: move the capture-avoiding map function here and possibly combine 
+              it with 
+    and id_upd::"'v \<Rightarrow> ('v \<Rightarrow> 'c \<Rightarrow> 'p \<Rightarrow> 'q) \<Rightarrow> ('v \<Rightarrow> 'c \<Rightarrow> 'p \<Rightarrow> 'q)"
+    and vars  ::"'p \<Rightarrow> 'v set"
+  where *)
 begin
 fun fsubst::"'v \<Rightarrow> 'c \<Rightarrow> ('p, 'v, 't) formula \<Rightarrow> ('p, 'v, 't) formula" where
   "fsubst v v1 (Atom p) = Atom (subst v v1 p)" |
@@ -89,6 +94,19 @@ fun fsubst::"'v \<Rightarrow> 'c \<Rightarrow> ('p, 'v, 't) formula \<Rightarrow
   "fsubst v v1 (Exists t x F) = (if x = v then Exists t x F else Exists t x (fsubst v v1 F))" |
   "fsubst v v1 (All t x F) = (if x = v then All t x F else All t x (fsubst v v1 F))"
 
+(*
+  fun cap_avoid_map::"('p \<Rightarrow> 'q) \<Rightarrow> ('p, 'v, 't) formula \<Rightarrow> ('q, 'v, 't) formula"
+    where
+    "cap_avoid_map f (Atom x) = Atom (map_atom f x)"
+  | "cap_avoid_map f \<bottom> = \<bottom>"
+  | "cap_avoid_map f (\<^bold>\<not>f1) = \<^bold>\<not> (cap_avoid_map f f1)"
+  | "cap_avoid_map f (f1 \<^bold>\<and> f2) = cap_avoid_map f f1 \<^bold>\<and> cap_avoid_map f f2"
+  | "cap_avoid_map f (f1 \<^bold>\<or> f2) = cap_avoid_map f f1 \<^bold>\<or> cap_avoid_map f f2"
+  | "cap_avoid_map f (f1 \<^bold>\<rightarrow> f2) = cap_avoid_map f f1 \<^bold>\<rightarrow> cap_avoid_map f f2"
+  | "cap_avoid_map f (\<^bold>\<exists>\<^sub>T x. f1) = (\<^bold>\<exists>\<^sub>T x. (cap_avoid_map (id_upd x f) f1))"
+  | "cap_avoid_map f (\<^bold>\<forall>\<^sub>T x. f1) = (\<^bold>\<forall>\<^sub>T x. (cap_avoid_map (id_upd x f) f1))"
+
+*)
 end
 
 (* 
