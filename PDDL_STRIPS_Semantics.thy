@@ -686,19 +686,24 @@ definition wf_world_model::
     \<and> wf_fmla upd_gt_te (ty_inst_term (\<lambda>_.None) objT) (goal P)
     "
 
+
+
+  definition wf_inst_fmla::"inst_formula \<Rightarrow> bool" where
+  "wf_inst_fmla f \<equiv> (wf_fmla upd_gt_te (ty_inst_term (\<lambda>_. None) objT) f \<and> free_vars f = {})"
   (* Effects are atomic predicate, which also makes them quantifier-free and thus
      actually ground. Maybe effects should use the object atom type, while preconditions
      should use the "ground" (instantiated) type. *)
   fun wf_effect_inst :: "inst_effect \<Rightarrow> bool" where
     "wf_effect_inst (Effect (a) (d))
-      \<longleftrightarrow> (\<forall>a\<in>set a \<union> set d. wf_fmla_atom (ty_inst_term (\<lambda>_. None) objT) a)"
+      \<longleftrightarrow> (\<forall>a\<in>set a \<union> set d. wf_inst_fmla  a)"
                                           
-  lemma wf_effect_inst_alt: "wf_effect_inst eff = wf_effect (ty_inst_term (\<lambda>_. None) objT) eff"
-      by (cases eff) auto
+(* lemma wf_effect_inst_alt: 
+  "wf_effect_inst eff = (wf_effect (ty_inst_term (\<lambda>_. None) objT) eff 
+    \<and> eff = Effect add del \<and> (\<forall> a \<in> set add. free_vars a = {}) \<and> (\<forall> d \<in> set del. free_vars d = {}))"
+  apply (auto simp: wf_inst_fmla_def) *)
 
 end \<comment> \<open>locale \<open>ast_problem\<close>\<close>
 
-thm ast_problem.wf_effect_inst_alt
 thm ast_problem.objT_alt
 
 text \<open>Locale to express a well-formed domain\<close>
@@ -1042,7 +1047,6 @@ context ast_problem begin
       then show ?thesis
         using assms[THEN wf_atom_constT_imp_objT] wf_inst_eq_aux'
         by (cases a; auto split: option.splits)
-
     qed
 
     lemma wf_inst_formula_atom:
@@ -1116,14 +1120,16 @@ context ast_problem begin
       hence 1: "wf_atom (ty_inst_term (\<lambda>_. None) objT) ((map_atom o ground) f x)" 
         using wf_inst_atom by auto
       hence "wf_fmla upd_gt_te (ty_inst_term (\<lambda>_. None) objT) ((cap_avoid_map o ground) f (Atom x))" by auto
-      then show ?case unfolding wf_inst_fmla_def using 1 wf_atom_no_vars by auto
+      then show ?case unfolding wf_inst_fmla_def 
+        using 1 wf_atom_no_vars by auto
     next
       case (Exists x1a x2 \<phi>)
+      (* can't work *)
       then show ?case sorry
     next
       case (All x1a x2 \<phi>)
       then show ?case sorry
-    qed auto
+    qed (auto simp add: wf_inst_fmla_def)
   end
 
 
