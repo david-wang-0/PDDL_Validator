@@ -78,8 +78,9 @@ primrec BigOr :: "('p, 'v, 't) formula list \<Rightarrow> ('p, 'v, 't) formula" 
 
 locale formula_syntax =
   fixes subst ::"'v \<Rightarrow> 'c \<Rightarrow> 'p \<Rightarrow> 'p"
+    and vars  ::"'p \<Rightarrow> 'v set"
     (* TODO: move the capture-avoiding map function here and possibly combine 
-              it with 
+              it with subst
     and id_upd::"'v \<Rightarrow> ('v \<Rightarrow> 'c \<Rightarrow> 'p \<Rightarrow> 'q) \<Rightarrow> ('v \<Rightarrow> 'c \<Rightarrow> 'p \<Rightarrow> 'q)"
     and vars  ::"'p \<Rightarrow> 'v set"
   where *)
@@ -93,6 +94,17 @@ fun fsubst::"'v \<Rightarrow> 'c \<Rightarrow> ('p, 'v, 't) formula \<Rightarrow
   "fsubst v v1 (Imp F G) = Imp (fsubst v v1 F) (fsubst v v1 G)" |
   "fsubst v v1 (Exists t x F) = (if x = v then Exists t x F else Exists t x (fsubst v v1 F))" |
   "fsubst v v1 (All t x F) = (if x = v then All t x F else All t x (fsubst v v1 F))"
+
+fun free_vars::"('p, 'v, 't) formula \<Rightarrow> 'v set" where
+  "free_vars (Atom p) = vars p" 
+| "free_vars Bot = {}"
+| "free_vars (Not F) = free_vars F"
+| "free_vars (And F G) = free_vars F \<union> free_vars G"
+| "free_vars (Or F G) = free_vars F \<union> free_vars G"
+| "free_vars (Imp F G) = free_vars F \<union> free_vars G"
+| "free_vars (Exists t x F) = free_vars F - {x}"
+| "free_vars (All t x F) = free_vars F - {x}"
+
 
 (*
   fun cap_avoid_map::"('p \<Rightarrow> 'q) \<Rightarrow> ('p, 'v, 't) formula \<Rightarrow> ('q, 'v, 't) formula"
