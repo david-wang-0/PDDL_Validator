@@ -15,12 +15,12 @@ locale formula_semantics = formula_syntax subst vars
   for subst::"'v \<Rightarrow> 'c \<Rightarrow> 'p \<Rightarrow> 'p"
   and vars ::"'p \<Rightarrow> 'v set"
   +
-  fixes dom::"'t \<Rightarrow> 'c list"
+  fixes dom::"'ty \<Rightarrow> 'c list"
 begin
 
 find_theorems name: "list*find"
 
-fun height::"('p valuation \<times> ('p, 'v, 't) formula) \<Rightarrow> nat" where
+fun height::"('p valuation \<times> ('p, 'v, 'ty) formula) \<Rightarrow> nat" where
 "height (v, (Atom _)) = 0" |
 "height (v, \<bottom>) = 0" |
 "height (v, (Not f)) = 1 + height (v, f)" |
@@ -33,7 +33,7 @@ fun height::"('p valuation \<times> ('p, 'v, 't) formula) \<Rightarrow> nat" whe
 lemma fsubst_maintains_height: "height (v, f) = height (v, fsubst x x1 f)"
   by (induction f) auto
 
-function formula_semantics :: "'p valuation \<Rightarrow> ('p, 'v, 't) formula \<Rightarrow> bool" (infix "\<Turnstile>" 61) where
+function formula_semantics :: "'p valuation \<Rightarrow> ('p, 'v, 'ty) formula \<Rightarrow> bool" (infix "\<Turnstile>" 61) where
 "\<A> \<Turnstile> Atom k = \<A> k" |
 "_ \<Turnstile> \<bottom> = False" |
 "\<A> \<Turnstile> Not F = (\<not> \<A> \<Turnstile> F)" |
@@ -49,7 +49,7 @@ termination formula_semantics
 abbreviation valid ("\<Turnstile> _" 51) where
 "\<Turnstile> F \<equiv> \<forall>A. A \<Turnstile> F"
 
-definition formula_entailment :: "('p, 'v, 't) formula set \<Rightarrow> ('p, 'v, 't) formula \<Rightarrow> bool" 
+definition formula_entailment :: "('p, 'v, 'ty) formula set \<Rightarrow> ('p, 'v, 'ty) formula \<Rightarrow> bool" 
   (infix "\<TTurnstile>" 63) where
 "\<Gamma> \<TTurnstile> F \<equiv> (\<forall>\<A>. ((\<forall>G \<in> \<Gamma>. \<A> \<Turnstile> G) \<longrightarrow> (\<A> \<Turnstile> F)))"
 

@@ -7,15 +7,15 @@ begin
 (* unrelated, but I need this in too many places. *)
 notation insert ("_ \<triangleright> _" [56,55] 55)
 
-datatype (atoms: 'p, vars: 'v, types: 't) formula = 
+datatype (atoms: 'p, vars: 'v, types: 'ty) formula = 
     Atom 'p
-  | Bot                                                   ("\<bottom>")  
-  | Not "('p, 'v, 't) formula"                            ("\<^bold>\<not>")
-  | And "('p, 'v, 't) formula" "('p, 'v, 't) formula"     (infix "\<^bold>\<and>" 68)
-  | Or "('p, 'v, 't) formula" "('p, 'v, 't) formula"      (infix "\<^bold>\<or>" 68)
-  | Imp "('p, 'v, 't) formula" "('p, 'v, 't) formula"     (infixr "\<^bold>\<rightarrow>" 68)
-  | Exists 't 'v "('p, 'v, 't) formula"                   ("\<^bold>\<exists>\<^sub>_ _._ " 0)
-  | All 't 'v "('p, 'v, 't) formula"                      ("\<^bold>\<forall>\<^sub>_ _._" 0)
+  | Bot                                                     ("\<bottom>")  
+  | Not "('p, 'v, 'ty) formula"                             ("\<^bold>\<not>")
+  | And "('p, 'v, 'ty) formula" "('p, 'v, 'ty) formula"     (infix "\<^bold>\<and>" 68)
+  | Or "('p, 'v, 'ty) formula" "('p, 'v, 'ty) formula"      (infix "\<^bold>\<or>" 68)
+  | Imp "('p, 'v, 'ty) formula" "('p, 'v, 'ty) formula"     (infixr "\<^bold>\<rightarrow>" 68)
+  | Exists 'ty 'v "('p, 'v, 'ty) formula"                   ("\<^bold>\<exists>\<^sub>_ _._ " 0)
+  | All 'ty 'v "('p, 'v, 'ty) formula"                      ("\<^bold>\<forall>\<^sub>_ _._" 0)
 (* In a standard Isabelle/jEdit config, bold can be done with C-e rightarrow.
    I learned that way too late. *)
 (* I'm not sure I'm happy about the definition of what is an atom.
@@ -64,14 +64,14 @@ definition Top ("\<top>") where
 "\<top> \<equiv> \<bottom> \<^bold>\<rightarrow> \<bottom>"
 lemma top_atoms_simp[simp]: "atoms \<top> = {}" unfolding Top_def by simp
 
-primrec BigAnd :: "('p, 'v, 't) formula list \<Rightarrow> ('p, 'v, 't) formula" ("\<^bold>\<And>_") where
+primrec BigAnd :: "('p, 'v, 'ty) formula list \<Rightarrow> ('p, 'v, 'ty) formula" ("\<^bold>\<And>_") where
 "\<^bold>\<And>Nil = (\<^bold>\<not>\<bottom>)" \<comment> \<open>essentially, it doesn't matter what I use here. But since I want to use this in CNFs, implication is not a nice thing to have.\<close> |
 "\<^bold>\<And>(F#Fs) = F \<^bold>\<and> \<^bold>\<And>Fs"
 
 lemma atoms_BigAnd[simp]: "atoms (\<^bold>\<And>Fs) = \<Union>(atoms ` set Fs)"
   by(induction Fs; simp)
 
-primrec BigOr :: "('p, 'v, 't) formula list \<Rightarrow> ('p, 'v, 't) formula" ("\<^bold>\<Or>_") where
+primrec BigOr :: "('p, 'v, 'ty) formula list \<Rightarrow> ('p, 'v, 'ty) formula" ("\<^bold>\<Or>_") where
 "\<^bold>\<Or>Nil = \<bottom>" |
 "\<^bold>\<Or>(F#Fs) = F \<^bold>\<or> \<^bold>\<Or>Fs"
 
@@ -79,13 +79,8 @@ primrec BigOr :: "('p, 'v, 't) formula list \<Rightarrow> ('p, 'v, 't) formula" 
 locale formula_syntax =
   fixes subst ::"'v \<Rightarrow> 'c \<Rightarrow> 'p \<Rightarrow> 'p"
     and vars  ::"'p \<Rightarrow> 'v set"
-    (* TODO: move the capture-avoiding map function here and possibly combine 
-              it with subst
-    and id_upd::"'v \<Rightarrow> ('v \<Rightarrow> 'c \<Rightarrow> 'p \<Rightarrow> 'q) \<Rightarrow> ('v \<Rightarrow> 'c \<Rightarrow> 'p \<Rightarrow> 'q)"
-    and vars  ::"'p \<Rightarrow> 'v set"
-  where *)
 begin
-fun fsubst::"'v \<Rightarrow> 'c \<Rightarrow> ('p, 'v, 't) formula \<Rightarrow> ('p, 'v, 't) formula" where
+fun fsubst::"'v \<Rightarrow> 'c \<Rightarrow> ('p, 'v, 'ty) formula \<Rightarrow> ('p, 'v, 'ty) formula" where
   "fsubst v v1 (Atom p) = Atom (subst v v1 p)" |
   "fsubst _ _ \<bottom> = \<bottom>" |
   "fsubst v v1 (Not F) = Not (fsubst v v1 F)" |
@@ -95,7 +90,7 @@ fun fsubst::"'v \<Rightarrow> 'c \<Rightarrow> ('p, 'v, 't) formula \<Rightarrow
   "fsubst v v1 (Exists t x F) = (if x = v then Exists t x F else Exists t x (fsubst v v1 F))" |
   "fsubst v v1 (All t x F) = (if x = v then All t x F else All t x (fsubst v v1 F))"
 
-fun free_vars::"('p, 'v, 't) formula \<Rightarrow> 'v set" where
+fun free_vars::"('p, 'v, 'ty) formula \<Rightarrow> 'v set" where
   "free_vars (Atom p) = vars p" 
 | "free_vars Bot = {}"
 | "free_vars (Not F) = free_vars F"
@@ -106,20 +101,26 @@ fun free_vars::"('p, 'v, 't) formula \<Rightarrow> 'v set" where
 | "free_vars (All t x F) = free_vars F - {x}"
 
 
-(*
-  fun cap_avoid_map::"('p \<Rightarrow> 'q) \<Rightarrow> ('p, 'v, 't) formula \<Rightarrow> ('q, 'v, 't) formula"
-    where
-    "cap_avoid_map f (Atom x) = Atom (map_atom f x)"
-  | "cap_avoid_map f \<bottom> = \<bottom>"
-  | "cap_avoid_map f (\<^bold>\<not>f1) = \<^bold>\<not> (cap_avoid_map f f1)"
-  | "cap_avoid_map f (f1 \<^bold>\<and> f2) = cap_avoid_map f f1 \<^bold>\<and> cap_avoid_map f f2"
-  | "cap_avoid_map f (f1 \<^bold>\<or> f2) = cap_avoid_map f f1 \<^bold>\<or> cap_avoid_map f f2"
-  | "cap_avoid_map f (f1 \<^bold>\<rightarrow> f2) = cap_avoid_map f f1 \<^bold>\<rightarrow> cap_avoid_map f f2"
-  | "cap_avoid_map f (\<^bold>\<exists>\<^sub>T x. f1) = (\<^bold>\<exists>\<^sub>T x. (cap_avoid_map (id_upd x f) f1))"
-  | "cap_avoid_map f (\<^bold>\<forall>\<^sub>T x. f1) = (\<^bold>\<forall>\<^sub>T x. (cap_avoid_map (id_upd x f) f1))"
 
-*)
+fun cap_avoid_map::"('t \<Rightarrow> 'u) \<Rightarrow> ('p, 'v, 'ty) formula \<Rightarrow> ('q, 'v, 'ty) formula"
+  where
+  "cap_avoid_map f (Atom x) = Atom (map_pred f x)"
+| "cap_avoid_map f \<bottom> = \<bottom>"
+| "cap_avoid_map f (\<^bold>\<not>f1) = \<^bold>\<not> (cap_avoid_map f f1)"
+| "cap_avoid_map f (f1 \<^bold>\<and> f2) = cap_avoid_map f f1 \<^bold>\<and> cap_avoid_map f f2"
+| "cap_avoid_map f (f1 \<^bold>\<or> f2) = cap_avoid_map f f1 \<^bold>\<or> cap_avoid_map f f2"
+| "cap_avoid_map f (f1 \<^bold>\<rightarrow> f2) = cap_avoid_map f f1 \<^bold>\<rightarrow> cap_avoid_map f f2"
+| "cap_avoid_map f (\<^bold>\<exists>\<^sub>T x. f1) = (\<^bold>\<exists>\<^sub>T x. (cap_avoid_map (id_upd x f) f1))"
+| "cap_avoid_map f (\<^bold>\<forall>\<^sub>T x. f1) = (\<^bold>\<forall>\<^sub>T x. (cap_avoid_map (id_upd x f) f1))"
+
 end
+
+locale additional_syntax = formula_syntax subst vars 
+    for subst ::"'v \<Rightarrow> 'c \<Rightarrow> 'p \<Rightarrow> 'p"
+    and vars  ::"'p \<Rightarrow> 'v set" +
+  fixes map_pred::"('t \<Rightarrow> 'u) \<Rightarrow> 'p \<Rightarrow> 'q"
+    and id_upd::"'v \<Rightarrow> ('t \<Rightarrow> 'u) \<Rightarrow> ('t \<Rightarrow> 'u)"
+
 
 (* 
 text\<open>Formulas are countable if their atoms are, and @{method countable_datatype} is really helpful with that.\<close> 

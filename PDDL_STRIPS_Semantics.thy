@@ -158,12 +158,20 @@ fun schematic_term_subst::"variable \<Rightarrow> object \<Rightarrow> term \<Ri
 abbreviation schematic_term_atom_subst where
 "schematic_term_atom_subst v obj \<equiv> map_atom (schematic_term_subst v obj)"
 
+fun schematic_term_vars where
+  "schematic_term_vars (term.VAR x) = {x}" 
+| "schematic_term_vars (term.CONST c) = {}"
+
 definition schematic_term_atom_vars where
-"schematic_term_atom_vars \<equiv> ent o (map_atom (the o (\<lambda>(term.VAR x) \<Rightarrow> Some x | _ \<Rightarrow> None)))"
+"schematic_term_atom_vars \<equiv> \<Union> o ent o (map_atom schematic_term_vars)"
+
+definition schematic_term_upd::"variable \<Rightarrow> (term \<Rightarrow> inst_term) \<Rightarrow> (term \<Rightarrow> inst_term)" where
+"schematic_term_upd v f = f(term.VAR v := inst_term.VAR v)"
 
 global_interpretation schematic_formula_syntax: 
-  formula_syntax schematic_term_atom_subst schematic_term_atom_vars
-  defines free_vars = schematic_formula_syntax.free_vars
+  additional_syntax schematic_term_atom_subst schematic_term_atom_vars map_atom schematic_term_upd
+  defines sf_free_vars = schematic_formula_syntax.free_vars
+      and cap_avoid_map = schematic_formula_syntax.cap_avoid_map
   .
 
 (* These are needed to interpret syntax and semantics of instantiated formulae *)
@@ -174,8 +182,12 @@ fun inst_term_subst::"variable \<Rightarrow> object \<Rightarrow> inst_term \<Ri
 abbreviation inst_term_atom_subst where
 "inst_term_atom_subst v obj \<equiv> map_atom (inst_term_subst v obj)"
 
+fun inst_term_vars where
+  "inst_term_vars (inst_term.VAR x) = {x}" 
+| "inst_term_vars (inst_term.OBJ obj) = {}"
+
 definition inst_term_atom_vars::"inst_term atom \<Rightarrow> variable set" where
-"inst_term_atom_vars \<equiv> \<Union> o ent o (map_atom (\<lambda>(inst_term.VAR x) \<Rightarrow> {x} | _ \<Rightarrow> {}))"
+"inst_term_atom_vars \<equiv> \<Union> o ent o (map_atom inst_term_vars)"
 
 subsection \<open>Closed-World Assumption, Equality, and Negation\<close>
 text \<open>Discriminator for atomic predicate formulas.\<close>
@@ -246,7 +258,7 @@ begin
 
   text \<open>It is basic, if it only contains atoms\<close>
   definition "wm_basic M \<equiv> \<forall>a\<in>(M::world_model). is_predAtom a"
-
+  
   text \<open>A valuation extracted from the atoms of the world model\<close>
   definition valuation :: "world_model \<Rightarrow> inst_term atom valuation"
     where "valuation M \<equiv> \<lambda>(predAtm p xs) \<Rightarrow> Atom (predAtm p xs) \<in> M | Eq a b \<Rightarrow> a=b"
@@ -434,7 +446,7 @@ locale ast_domain = ClosedWorld "type_env D"
   for D :: ast_domain +
   fixes t :: type_env
   defines "t \<equiv> type_env D"
-begin     
+begin
 
 (* having to re-declare syntax is weird *)
 notation entailment (infix "\<TTurnstile>" 55)
@@ -696,32 +708,10 @@ definition wf_world_model::
   definition wf_inst_fmla::"inst_formula \<Rightarrow> bool" where
   "wf_inst_fmla f \<equiv> wf_fmla upd_gt_te (ty_inst_term (\<lambda>_. None) objT) f"
 
-lemma wf_inst_fmla_imp_no_free_vars: "wf_inst_fmla f \<Longrightarrow> free_vars f = {}"
-proof (induction f)
-  case (Atom x)
-  then show ?case sorry
-next
-  case Bot
-  then show ?case by auto
-next
-  case (Not f)
-  then show ?case unfolding wf_inst_fmla_def by auto
-next
-  case (And f1 f2)
-  then show ?case unfolding wf_inst_fmla_def by auto
-next
-  case (Or f1 f2)
-  then show ?case unfolding wf_inst_fmla_def by auto
-next
-  case (Imp f1 f2)
-  then show ?case unfolding wf_inst_fmla_def by auto
-next
-  case (Exists t v f)
-  then show ?case sorry (*TODO*)
-next
-  case (All t v f)
-  then show ?case sorry
-qed
+(* lemma wf_inst_fmla_alt: "wf_fmla upd_gt_te (ty_inst_term Q objT) f \<Longrightarrow> free_vars f = {} \<Longrightarrow> wf_inst_fmla f"
+  unfolding wf_inst_fmla_def 
+apply (induction f)
+  apply auto *)
 
   fun wf_effect_inst :: "inst_effect \<Rightarrow> bool" where
     "wf_effect_inst (Effect (a) (d))
@@ -772,36 +762,27 @@ context ast_domain begin
     "subst_term psubst (term.VAR x) = psubst x"
   | "subst_term psubst (term.CONST c) = c"
 
-  fun ground::"(variable \<Rightarrow> inst_term) \<Rightarrow> term \<Rightarrow> inst_term" where
-    "ground psubst (term.VAR x) = psubst x" 
-  | "ground psubst (term.CONST obj) = inst_term.OBJ obj"
+  fun inst_var::"(variable \<Rightarrow> inst_term) \<Rightarrow> term \<Rightarrow> inst_term" where
+    "inst_var psubst (term.VAR x) = psubst x" 
+  | "inst_var psubst (term.CONST obj) = inst_term.OBJ obj"
 
-  (* Not every variable is mapped to an object. Some are left *)
   text \<open>A capture-avoiding map from schematic_formulas to instantiated formulas\<close>
-
-  fun cap_avoid_map::"(term \<Rightarrow> inst_term) \<Rightarrow> schematic_formula \<Rightarrow> inst_formula"
-    where
-    "cap_avoid_map f (Atom x) = Atom (map_atom f x)"
-  | "cap_avoid_map f \<bottom> = \<bottom>"
-  | "cap_avoid_map f (\<^bold>\<not>f1) = \<^bold>\<not> (cap_avoid_map f f1)"
-  | "cap_avoid_map f (f1 \<^bold>\<and> f2) = cap_avoid_map f f1 \<^bold>\<and> cap_avoid_map f f2"
-  | "cap_avoid_map f (f1 \<^bold>\<or> f2) = cap_avoid_map f f1 \<^bold>\<or> cap_avoid_map f f2"
-  | "cap_avoid_map f (f1 \<^bold>\<rightarrow> f2) = cap_avoid_map f f1 \<^bold>\<rightarrow> cap_avoid_map f f2"
-  | "cap_avoid_map f (\<^bold>\<exists>\<^sub>T v. f1) = (\<^bold>\<exists>\<^sub>T v. (cap_avoid_map (f(term.VAR v := inst_term.VAR v)) f1))"
-  | "cap_avoid_map f (\<^bold>\<forall>\<^sub>T v. f1) = (\<^bold>\<forall>\<^sub>T v. (cap_avoid_map (f(term.VAR v := inst_term.VAR v)) f1))"
-
-  (* Because the types have multiple parameters, each needs a mapping. 
-      Therefore we use the identity function for the other types *)
   fun instantiate_action_schema
     :: "ast_action_schema \<Rightarrow> object list \<Rightarrow> inst_action"
   where
     "instantiate_action_schema (Action_Schema n params pre (Effect add del)) args = (let
-        tsubst = ground (the o (map_of (zip (map fst params) (map inst_term.OBJ args))));
+        tsubst = inst_var (the o (map_of (zip (map fst params) (map inst_term.OBJ args))));
         pre_inst = cap_avoid_map tsubst pre;
         eff_inst = Effect (map (cap_avoid_map tsubst) add) (map (cap_avoid_map tsubst) del)
       in
         Inst_Action pre_inst eff_inst
       )"
+
+fun (domintros) inst::"variable list \<Rightarrow> object list \<Rightarrow> variable \<Rightarrow> inst_term" where
+"inst params args v = (the o (map_of (zip (params) (map inst_term.OBJ args)))) v"
+
+thm inst.pinduct
+thm inst.psimps
 
 end \<comment> \<open>Context of \<open>ast_domain\<close>\<close>
 
@@ -1024,7 +1005,7 @@ context ast_problem begin
       unfolding is_of_type_def
       by (auto split: option.split)
 
-    lemma INST': "is_of_type (ty_term Q objT) x T \<Longrightarrow> is_of_type (ty_inst_term (Q |` S) objT) (ground f x) T"
+    lemma INST': "is_of_type (ty_term Q objT) x T \<Longrightarrow> is_of_type (ty_inst_term (Q |` S) objT) (inst_var f x) T"
       apply (cases x) using INST 
       apply auto
        apply (simp add: ast_domain.is_of_type_def)
@@ -1048,15 +1029,15 @@ context ast_problem begin
         by auto
     qed
 
-    lemma wf_inst_eq_aux': "ty_term Q objT x = Some T \<Longrightarrow> ty_inst_term (Q |` S) objT (ground f x) \<noteq> None"
+    lemma wf_inst_eq_aux': "ty_term Q objT x = Some T \<Longrightarrow> ty_inst_term (Q |` S) objT (inst_var f x) \<noteq> None"
       apply (cases x) 
       by (auto simp: wf_inst_eq_aux split: option.split)
 
     lemma wf_inst_atom:
       assumes "wf_atom (ty_term Q constT) a"
-      shows "wf_atom (ty_inst_term (Q |` S) objT) ((map_atom o ground) f a)"
+      shows "wf_atom (ty_inst_term (Q |` S) objT) ((map_atom o inst_var) f a)"
     proof -
-      have X1: "list_all2 (is_of_type (ty_inst_term (Q |` S) objT)) (map (ground f) xs) Ts" if
+      have X1: "list_all2 (is_of_type (ty_inst_term (Q |` S) objT)) (map (inst_var f) xs) Ts" if
         "list_all2 (is_of_type (ty_term Q objT)) xs Ts" for xs Ts
         using that
         apply induction
@@ -1069,14 +1050,14 @@ context ast_problem begin
 
     lemma wf_inst_formula_atom:
       assumes "wf_fmla_atom (ty_term Q constT) a"
-      shows "wf_fmla_atom (ty_inst_term (Q |` S) objT) ((cap_avoid_map o ground) f a)"
+      shows "wf_fmla_atom (ty_inst_term (Q |` S) objT) ((cap_avoid_map o inst_var) f a)"
       using assms[THEN wf_fmla_atom_constT_imp_objT] wf_inst_atom
       apply (cases "((ty_term Q constT), a)" rule: wf_fmla_atom.cases; auto split: option.splits)
       by (simp add: INST' list.rel_map(1) list_all2_mono)
 
     lemma wf_inst_effect:
       assumes "wf_effect (ty_term Q constT) (Effect add del)"
-      shows "wf_effect (ty_inst_term (Q |` S) objT) (Effect ((map o cap_avoid_map o ground) f add) ((map o cap_avoid_map o ground) f del))"
+      shows "wf_effect (ty_inst_term (Q |` S) objT) (Effect ((map o cap_avoid_map o inst_var) f add) ((map o cap_avoid_map o inst_var) f del))"
       using assms
       proof (induction "(Effect add del)")
         case (Effect)
@@ -1183,152 +1164,434 @@ proof -
   qed
 qed 
 
+find_theorems name: "apply"
 
-
-lemma wf_inst_formula_aux:
-  assumes "wf_fmla upd_te (ty_term Q constT) \<phi>"
-      and "S = {x. \<exists>x'. f x = inst_term.VAR x'}"
-      and "\<And>x T. is_of_type Q x T \<Longrightarrow> is_of_type (ty_inst_term (Q |` S) objT) (f x) T"
-      and "\<And>v x. f x = inst_term.VAR v \<Longrightarrow> x = v"
-    shows "wf_fmla upd_gt_te (ty_inst_term (Q |` S) objT) ((cap_avoid_map o ground) f \<phi>)"
+  lemma wf_inst_formula_aux:
+    assumes "wf_fmla upd_te (ty_term Q constT) \<phi>"
+        and "S = {x. \<exists>x'. f x = inst_term.VAR x'}"
+        and "\<And>x T. is_of_type Q x T \<Longrightarrow> is_of_type (ty_inst_term (Q |` S) objT) (f x) T"
+        and "\<And>v x. f x = inst_term.VAR v \<Longrightarrow> x = v"
+    shows "wf_fmla upd_gt_te (ty_inst_term (Q |` S) objT) ((cap_avoid_map o inst_var) f \<phi>)"
   using assms
-    proof (induction \<phi> arbitrary: Q f S)
-      case (Atom x)
-      hence 1: "wf_atom (ty_term Q constT) x" by auto
-      from wf_inst_atom[of Q S f x] Atom(3) this
-      have "wf_atom (ty_inst_term (Q |` S) objT) ((map_atom o ground) f x)"
-        by blast
-      hence "wf_fmla upd_gt_te (ty_inst_term (Q |` S) objT) ((cap_avoid_map o ground) f (Atom x))" by auto
-      then show ?case unfolding wf_inst_fmla_def 
-        using 1 Atom(1) by auto
-    next
-      case (Exists t v \<phi>)
-      hence "wf_fmla upd_te (ty_term (Q(v\<mapsto>t)) constT) \<phi>" using ty_term_upd by auto
-      moreover
-      obtain S' f' where 
-            S': "S' = {x. \<exists>x'. f' x = inst_term.VAR x'}"
-        and f': "f' = f(v := inst_term.VAR v)"
-        by auto
-      moreover
-      hence S'_def: "S'= insert v S" using Exists.prems(2) by auto
-      moreover
-      have "\<And>x T. is_of_type (Q(v\<mapsto>t)) x T \<Longrightarrow> is_of_type (ty_inst_term (Q(v\<mapsto>t) |` S') objT) (f' x) T"
-        using f'_maintains_type[OF _ f' S' Exists.prems(2) Exists.prems(3) Exists.prems(4)] by auto
-      moreover 
-      have "\<And>v x. f' x = inst_term.VAR v \<Longrightarrow> x = v"
-        using Exists.prems(4) f' f'_maintains_f_var1 by blast
-      ultimately
-          have "wf_fmla upd_gt_te (ty_inst_term (Q(v\<mapsto>t) |` (S')) objT) ((cap_avoid_map \<circ> ground) f' \<phi>)"
-        using Exists.IH[OF _ S', of "Q(v\<mapsto>t)"] by blast
-      hence "wf_fmla upd_gt_te (ty_inst_term ((Q |` S) (v\<mapsto>t)) objT) ((cap_avoid_map \<circ> ground) f' \<phi>)"
-        using S'_def restrict_map_upd 
-        by metis
-      hence "wf_fmla upd_gt_te (upd_gt_te (ty_inst_term ((Q |` S) (v\<mapsto>t)) objT) v t) ((cap_avoid_map \<circ> ground) f' \<phi>)"
-        using ty_inst_term_upd by force
-      hence "wf_fmla upd_gt_te (upd_gt_te (ty_inst_term ((Q |` S) (v\<mapsto>t)) objT) v t) ((cap_avoid_map \<circ> ground) f' \<phi>)"
-        using ty_inst_term_upd by force
-      moreover
-      have "cap_avoid_map (ground f') = cap_avoid_map ((ground f)(term.VAR v := inst_term.VAR v))"
-        by (metis PDDL_STRIPS_Semantics.term.exhaust ast_domain.ground.simps(1) ast_domain.ground.simps(2) f' fun_upd_def)
-      hence "(cap_avoid_map \<circ> ground) f (\<^bold>\<exists>\<^sub>t v. \<phi>) = (\<^bold>\<exists>\<^sub>t v. ((cap_avoid_map \<circ> ground) f' \<phi>))"
-        using f' by simp
-      ultimately
-      show "wf_fmla upd_gt_te (ty_inst_term (Q |` S) objT) ((cap_avoid_map \<circ> ground) f (\<^bold>\<exists>\<^sub>t v. \<phi>))"
-        using f' ty_inst_term_upd by auto
-    next
-      case (All t v \<phi>)
-      hence "wf_fmla upd_te (ty_term (Q(v\<mapsto>t)) constT) \<phi>" using ty_term_upd by auto
-      moreover
-      obtain S' f' where 
-            S': "S' = {x. \<exists>x'. f' x = inst_term.VAR x'}"
-        and f': "f' = f(v := inst_term.VAR v)"
-        by auto
-      term f
-      moreover
-      hence S'_def: "S'= insert v S" using All.prems(2) by auto
-      moreover
-      have "\<And>x T. is_of_type (Q(v\<mapsto>t)) x T \<Longrightarrow> is_of_type (ty_inst_term (Q(v\<mapsto>t) |` S') objT) (f' x) T"
-        using f'_maintains_type[OF _ f' S' All.prems(2) All.prems(3) All.prems(4)] by auto
-      moreover 
-      have "\<And>v x. f' x = inst_term.VAR v \<Longrightarrow> x = v"
-        using All.prems(4) f' f'_maintains_f_var1 by blast
-      ultimately
-          have "wf_fmla upd_gt_te (ty_inst_term (Q(v\<mapsto>t) |` (S')) objT) ((cap_avoid_map \<circ> ground) f' \<phi>)"
-        using All.IH[OF _ S', of "Q(v\<mapsto>t)"] by blast
-      hence "wf_fmla upd_gt_te (ty_inst_term ((Q |` S) (v\<mapsto>t)) objT) ((cap_avoid_map \<circ> ground) f' \<phi>)"
-        using S'_def restrict_map_upd 
-        by metis
-      hence "wf_fmla upd_gt_te (upd_gt_te (ty_inst_term ((Q |` S) (v\<mapsto>t)) objT) v t) ((cap_avoid_map \<circ> ground) f' \<phi>)"
-        using ty_inst_term_upd by force
-      hence "wf_fmla upd_gt_te (upd_gt_te (ty_inst_term ((Q |` S) (v\<mapsto>t)) objT) v t) ((cap_avoid_map \<circ> ground) f' \<phi>)"
-        using ty_inst_term_upd by force
-      moreover
-      have "cap_avoid_map (ground f') = cap_avoid_map ((ground f)(term.VAR v := inst_term.VAR v))"
-        by (metis PDDL_STRIPS_Semantics.term.exhaust ast_domain.ground.simps(1) ast_domain.ground.simps(2) f' fun_upd_def)
-      hence "(cap_avoid_map \<circ> ground) f (\<^bold>\<forall>\<^sub>t v. \<phi>) = (\<^bold>\<forall>\<^sub>t v. ((cap_avoid_map \<circ> ground) f' \<phi>))"
-        using f' by simp
-      ultimately
-      show "wf_fmla upd_gt_te (ty_inst_term (Q |` S) objT) ((cap_avoid_map \<circ> ground) f (\<^bold>\<forall>\<^sub>t v. \<phi>))"
-        using f' ty_inst_term_upd by auto
-    qed (auto) 
+  proof (induction \<phi> arbitrary: Q f S)
+    case (Atom x)
+    hence 1: "wf_atom (ty_term Q constT) x" by auto
+    from wf_inst_atom[of Q S f x] Atom(3) this
+    have "wf_atom (ty_inst_term (Q |` S) objT) ((map_atom o inst_var) f x)"
+      by blast
+    hence "wf_fmla upd_gt_te (ty_inst_term (Q |` S) objT) ((cap_avoid_map o inst_var) f (Atom x))" by auto
+    then show ?case unfolding wf_inst_fmla_def 
+      using 1 Atom(1) by auto
+  next
+    case (Exists t v \<phi>)
+    hence "wf_fmla upd_te (ty_term (Q(v\<mapsto>t)) constT) \<phi>" using ty_term_upd by auto
+    moreover
+    obtain S' f' where 
+          S': "S' = {x. \<exists>x'. f' x = inst_term.VAR x'}"
+      and f': "f' = f(v := inst_term.VAR v)"
+      by auto
+    moreover
+    hence S'_def: "S'= insert v S" using Exists.prems(2) by auto
+    moreover
+    have "\<And>x T. is_of_type (Q(v\<mapsto>t)) x T \<Longrightarrow> is_of_type (ty_inst_term (Q(v\<mapsto>t) |` S') objT) (f' x) T"
+      using f'_maintains_type[OF _ f' S' Exists.prems(2) Exists.prems(3) Exists.prems(4)] by auto
+    moreover 
+    have "\<And>v x. f' x = inst_term.VAR v \<Longrightarrow> x = v"
+      using Exists.prems(4) f' f'_maintains_f_var1 by blast
+    ultimately
+        have "wf_fmla upd_gt_te (ty_inst_term (Q(v\<mapsto>t) |` (S')) objT) ((cap_avoid_map \<circ> inst_var) f' \<phi>)"
+      using Exists.IH[OF _ S', of "Q(v\<mapsto>t)"] by blast
+    hence "wf_fmla upd_gt_te (ty_inst_term ((Q |` S) (v\<mapsto>t)) objT) ((cap_avoid_map \<circ> inst_var) f' \<phi>)"
+      using S'_def restrict_map_upd 
+      by metis
+    hence "wf_fmla upd_gt_te (upd_gt_te (ty_inst_term ((Q |` S) (v\<mapsto>t)) objT) v t) ((cap_avoid_map \<circ> inst_var) f' \<phi>)"
+      using ty_inst_term_upd by force
+    moreover
+    have "cap_avoid_map (inst_var f') = cap_avoid_map ((inst_var f)(term.VAR v := inst_term.VAR v))"
+      by (metis PDDL_STRIPS_Semantics.term.exhaust ast_domain.inst_var.simps(1) ast_domain.inst_var.simps(2) f' fun_upd_def)
+    hence "(cap_avoid_map \<circ> inst_var) f (\<^bold>\<exists>\<^sub>t v. \<phi>) = (\<^bold>\<exists>\<^sub>t v. ((cap_avoid_map \<circ> inst_var) f' \<phi>))"
+      using f' schematic_term_upd_def by (metis comp_def schematic_formula_syntax.cap_avoid_map.simps(7)) 
+    ultimately
+    show "wf_fmla upd_gt_te (ty_inst_term (Q |` S) objT) ((cap_avoid_map \<circ> inst_var) f (\<^bold>\<exists>\<^sub>t v. \<phi>))"
+      using f' ty_inst_term_upd by auto
+  next
+    case (All t v \<phi>)
+    hence "wf_fmla upd_te (ty_term (Q(v\<mapsto>t)) constT) \<phi>" using ty_term_upd by auto
+    moreover
+    obtain S' f' where 
+          S': "S' = {x. \<exists>x'. f' x = inst_term.VAR x'}"
+      and f': "f' = f(v := inst_term.VAR v)"
+      by auto
+    term f
+    moreover
+    hence S'_def: "S'= insert v S" using All.prems(2) by auto
+    moreover
+    have "\<And>x T. is_of_type (Q(v\<mapsto>t)) x T \<Longrightarrow> is_of_type (ty_inst_term (Q(v\<mapsto>t) |` S') objT) (f' x) T"
+      using f'_maintains_type[OF _ f' S' All.prems(2) All.prems(3) All.prems(4)] by auto
+    moreover 
+    have "\<And>v x. f' x = inst_term.VAR v \<Longrightarrow> x = v"
+      using All.prems(4) f' f'_maintains_f_var1 by blast
+    ultimately
+        have "wf_fmla upd_gt_te (ty_inst_term (Q(v\<mapsto>t) |` (S')) objT) ((cap_avoid_map \<circ> inst_var) f' \<phi>)"
+      using All.IH[OF _ S', of "Q(v\<mapsto>t)"] by blast
+    hence "wf_fmla upd_gt_te (ty_inst_term ((Q |` S) (v\<mapsto>t)) objT) ((cap_avoid_map \<circ> inst_var) f' \<phi>)"
+      using S'_def restrict_map_upd 
+      by metis
+    hence "wf_fmla upd_gt_te (upd_gt_te (ty_inst_term ((Q |` S) (v\<mapsto>t)) objT) v t) ((cap_avoid_map \<circ> inst_var) f' \<phi>)"
+      using ty_inst_term_upd by force
+    moreover
+    have "cap_avoid_map (inst_var f') = cap_avoid_map ((inst_var f)(term.VAR v := inst_term.VAR v))"
+      by (metis PDDL_STRIPS_Semantics.term.exhaust ast_domain.inst_var.simps(1) ast_domain.inst_var.simps(2) f' fun_upd_def)
+    hence "(cap_avoid_map \<circ> inst_var) f (\<^bold>\<forall>\<^sub>t v. \<phi>) = (\<^bold>\<forall>\<^sub>t v. ((cap_avoid_map \<circ> inst_var) f' \<phi>))"
+      using f'  schematic_term_upd_def by (metis comp_def schematic_formula_syntax.cap_avoid_map.simps(8))
+    ultimately
+    show "wf_fmla upd_gt_te (ty_inst_term (Q |` S) objT) ((cap_avoid_map \<circ> inst_var) f (\<^bold>\<forall>\<^sub>t v. \<phi>))"
+      using f' ty_inst_term_upd by auto
+  qed (auto) 
 
-lemma wf_inst_formula:
-  assumes wff:        "wf_fmla upd_te (ty_term Q constT) \<phi>"
-      and S:          "S = {x. \<exists>x'. f x = inst_term.VAR x'}"
-      and INST:       "\<And>x T. is_of_type Q x T \<Longrightarrow> is_of_type (ty_inst_term (Q |` S) objT) (f x) T"
-      and inv:        "\<And>v x. f x = inst_term.VAR v \<Longrightarrow> x = v"
-      and full_inst:  "\<not>(\<exists>x. inst_term.VAR x \<in> range f)"
-    shows "wf_inst_fmla ((cap_avoid_map o ground) f \<phi>)"
+
+lemma "a \<notin> S - T \<Longrightarrow> a \<in> T \<or> a \<notin> S"
+  by auto
+
+find_theorems "dom ?f"
+
+lemma INST_imp_full_inst:
+  assumes INST: "\<And>x T. is_of_type Q x T \<Longrightarrow> is_of_type (ty_inst_term (\<lambda>_. None) objT) (f x) T"
+      and "is_of_type Q x T"
+    shows "\<not>(\<exists>x'. f x = inst_term.VAR x')"
+  using assms
 proof -
-  from full_inst
-  have "\<And>x. \<not>(\<exists>x'. f x = inst_term.VAR x')"
-    by (metis rangeI) 
-  with S
-  have "S = {}" by simp
-  from wf_inst_formula_aux[OF wff S INST inv] this
-  have "wf_fmla upd_gt_te (ty_inst_term (\<lambda>_.None) objT) ((cap_avoid_map o ground) f \<phi>)" by auto
-  thus "wf_inst_fmla ((cap_avoid_map o ground) f \<phi>)" unfolding wf_inst_fmla_def by auto
+  fix x T
+  assume "is_of_type Q x T"
+  with INST have ty: "is_of_type (ty_inst_term (\<lambda>_. None) objT) (f x) T" by auto
+  show "\<not>(\<exists>x'. f x = inst_term.VAR x')" 
+  proof (rule ccontr)
+    assume "\<not> (\<nexists>x'. f x = inst_term.VAR x')"
+    then obtain x' where
+        "f x = inst_term.VAR x'"
+      by blast
+    moreover
+    have "is_of_type (ty_inst_term (\<lambda>_. None) objT) (inst_term.VAR x') T = False"
+      by (simp add: ast_domain.is_of_type_def)
+    ultimately
+    show False using ty by argo
+  qed
 qed
 
-lemma ran_range_lemma: "x \<in> (ran f) \<Longrightarrow> x \<in> range (the o f)"
-  by (metis (mono_tags, lifting) f_inv_on_f ran_is_image range_eqI)
+lemma full_inst_restr:
+  assumes INST: "\<And>x T. is_of_type Q x T \<Longrightarrow> is_of_type (ty_inst_term (\<lambda>_. None) objT) (f x) T"
+      and S:    "S = {x. \<exists>x'. f x = inst_term.VAR x'}"
+      and       "is_of_type Q x T"
+    shows "is_of_type (ty_inst_term (Q |` S) objT) (f x) T"
+  using assms
+proof -
+  fix x T
+  assume a: "is_of_type Q x T"
+  hence fx: "\<not>(\<exists>x'. f x = inst_term.VAR x')"
+    using INST INST_imp_full_inst by fast
+  hence "\<exists>obj. f x = inst_term.OBJ obj" by (metis inst_term.exhaust)
+  then obtain obj where
+    fx: "f x = inst_term.OBJ obj"
+    by blast
+  moreover 
+  have "is_of_type (ty_inst_term (\<lambda>_. None) objT) (f x) T" using a INST by simp
+  ultimately 
+  have "\<exists>t. (objT obj) = Some t \<and> of_type t T" using case_optionE is_of_type_def by fastforce
+  thus "is_of_type (ty_inst_term (Q |` S) objT) (f x) T" unfolding is_of_type_def using fx by fastforce 
+qed
 
-lemma Some_the_id: "Some o the o Some = Some"
-  by force 
+lemma inst_no_vars:
+  assumes INST: "\<And>x T. is_of_type Q x T \<Longrightarrow> is_of_type (ty_inst_term (\<lambda>_. None) objT) (f x) T"
+      and S:    "S = {x. \<exists>x'. f x = inst_term.VAR x'}"
+      and       "is_of_type Q x T"
+    shows "is_of_type (ty_inst_term (Q |` S) objT) (f x) T"
+  using assms
+proof -
+  fix x T
+  assume a: "is_of_type Q x T"
+  hence fx: "\<not>(\<exists>x'. f x = inst_term.VAR x')"
+    using INST INST_imp_full_inst by fast
+  hence "\<exists>obj. f x = inst_term.OBJ obj" by (metis inst_term.exhaust)
+  then obtain obj where
+    fx: "f x = inst_term.OBJ obj"
+    by blast
+  moreover 
+  have "is_of_type (ty_inst_term (\<lambda>_. None) objT) (f x) T" using a INST by simp
+  ultimately 
+  have "\<exists>t. (objT obj) = Some t \<and> of_type t T" using case_optionE is_of_type_def by fastforce
+  thus "is_of_type (ty_inst_term (Q |` S) objT) (f x) T" unfolding is_of_type_def using fx by fastforce 
+qed
 
 
-thm inj_onCI[of "inst_term option"]
 
-find_theorems "domain"
+lemma wf_atom_vars_typed:
+  fixes v
+  assumes "wf_atom (ty_term Q constT) a"
+      and "v \<in> schematic_term_atom_vars a"
+    shows "\<exists>T. is_of_type Q v T"
+  using assms
+proof -
+  fix v
+  assume wf: "wf_atom (ty_term Q constT) a"
+  assume v: "v \<in> schematic_term_atom_vars a"
 
-lemma idk: "inj_on the (set (map (Some o inst_term.OBJ) args))"
-  by (simp add: inj_on_def)
+  consider "\<exists>p ts. a = predAtm p ts" | "\<exists>t1 t2. a = Eq t1 t2"
+    by (metis wf_atom.elims(1))
 
-lemma "x = Some y \<Longrightarrow> the x = y" by auto
-
-lemma "the x = y \<Longrightarrow> x = Some y" by auto 
-
-lemma "the (Some x) = x" by auto
-
-lemma "Some (the x) = x" by auto
-
-lemma "x \<in> range (the o map_of (zip (map fst params) (map inst_term.OBJ args)))  
-  \<Longrightarrow> x \<in> ran (map_of (zip (map fst params) (map inst_term.OBJ args)))" 
-  (is "x \<in> range (the o ?f) \<Longrightarrow> x \<in> ran ?f")
-proof -                 
-  assume a: "x \<in> range (the \<circ> map_of (zip (map fst params) (map inst_term.OBJ args)))"
-  then obtain x' where
-    "(the o ?f) x' = x"
-    by auto
-  hence "the (?f x') = the (Some x)" by auto
-  thm inj_on_eq_iff
-  have "x \<in> (set (map (inst_term.OBJ) args))" using a sledgehammer
-  hence "?f x' = Some x"
-  
+  note ac = this
+  show "\<exists>T. is_of_type Q v T"
+  proof (cases rule: ac)
+    case 1
+    then obtain p ts where
+      a: "a = predAtm p ts" by auto
+    then obtain t where
+       t: "t \<in> set ts" 
+       "v \<in> schematic_term_vars t" 
+      using v unfolding schematic_term_atom_vars_def by auto
+    hence "t = (term.VAR v)" by (metis empty_iff schematic_term_vars.elims singletonD)
+    moreover
+    from wf a 
+    have "wf_pred_atom (ty_term Q constT) (p, ts)" by simp
+    then obtain Ts where
+      "sig p = Some Ts" 
+      "list_all2 (is_of_type (ty_term Q constT)) ts Ts"
+      by (auto split: option.splits)
+    with t obtain T where
+      "is_of_type (ty_term Q constT) t T"
+      by (metis in_set_conv_nth list_all2_conv_all_nth)
+    ultimately 
+    show ?thesis unfolding is_of_type_def by auto
+  next
+    case 2
+    then obtain t1 t2 where
+      a: "a = Eq t1 t2" by auto
+    then show ?thesis 
+    proof (cases "v \<in> schematic_term_vars t1")
+      case True
+      hence "t1 = (term.VAR v)" by (metis empty_iff schematic_term_vars.elims singletonD)
+      moreover 
+      from a wf obtain T where
+        "(ty_term Q constT) t1 = Some T" 
+        by auto
+      ultimately show ?thesis unfolding is_of_type_def by auto
+    next
+      case False
+      hence "v \<in> schematic_term_vars t2" 
+        using a v unfolding schematic_term_atom_vars_def by auto
+      hence "t2 = (term.VAR v)" by (metis empty_iff schematic_term_vars.elims singletonD)
+      moreover 
+      from a wf obtain T where
+        "(ty_term Q constT) t2 = Some T" 
+        by auto
+      ultimately show ?thesis unfolding is_of_type_def by auto
+    qed
   qed
+qed
 
-find_theorems "inj_on ?f ?d \<Longrightarrow> ?f ?x = ?f ?y \<Longrightarrow> ?x = ?y"
+lemma wf_fmla_vars_typed: 
+  assumes "wf_fmla upd_te (ty_term Q constT) \<phi>"
+  shows "\<forall>v \<in> sf_free_vars \<phi>. (\<exists>T. is_of_type Q v T)"
+  using assms
+proof(induction \<phi> arbitrary: Q)
+  case (Atom x)
+  then show ?case by (auto simp: wf_atom_vars_typed)
+next
+  case (Exists t v \<phi>)
+  hence "wf_fmla upd_te (upd_te (ty_term Q constT) v t) \<phi>" by simp
+  hence "wf_fmla upd_te (ty_term (Q(v \<mapsto> t)) constT) \<phi>" using ty_term_upd by auto
+  with Exists.IH
+  have "\<forall>v'\<in>sf_free_vars \<phi>. \<exists>T. is_of_type (Q(v \<mapsto> t)) v' T" by blast
+  hence 1: "\<forall>v'\<in>sf_free_vars(\<^bold>\<exists>\<^sub>t v. \<phi>). \<exists>T. is_of_type (Q (v \<mapsto> t)) v' T" by simp
+  have "\<And>v'. v' \<in> sf_free_vars(\<^bold>\<exists>\<^sub>t v. \<phi>) \<Longrightarrow> \<exists>T. is_of_type Q v' T"
+  proof -
+    fix v' 
+    assume a: "v' \<in> sf_free_vars(\<^bold>\<exists>\<^sub>t v. \<phi>)"
+    with 1 obtain T where
+      ty: "is_of_type (Q (v \<mapsto> t)) v' T" 
+      by auto
+    have "is_of_type Q v' T"
+    proof (cases "v = v'")
+      case True
+      with a have False by auto
+      thus ?thesis by simp
+    next
+      case False
+      with ty
+      show ?thesis by (simp add: is_of_type_def)
+    qed
+    thus "\<exists>T. is_of_type Q v' T" by blast
+  qed
+  thus ?case by blast
+next
+  case (All t v \<phi>)
+  hence "wf_fmla upd_te (upd_te (ty_term Q constT) v t) \<phi>" by simp
+  hence "wf_fmla upd_te (ty_term (Q(v \<mapsto> t)) constT) \<phi>" using ty_term_upd by auto
+  with All.IH
+  have "\<forall>v'\<in>sf_free_vars \<phi>. \<exists>T. is_of_type (Q(v \<mapsto> t)) v' T" by blast
+  hence 1: "\<forall>v'\<in>sf_free_vars(\<^bold>\<forall>\<^sub>t v. \<phi>). \<exists>T. is_of_type (Q (v \<mapsto> t)) v' T" by simp
+  have "\<And>v'. v' \<in> sf_free_vars(\<^bold>\<forall>\<^sub>t v. \<phi>) \<Longrightarrow> \<exists>T. is_of_type Q v' T"
+  proof -
+    fix v' 
+    assume a: "v' \<in> sf_free_vars(\<^bold>\<forall>\<^sub>t v. \<phi>)"
+    with 1 obtain T where
+      ty: "is_of_type (Q (v \<mapsto> t)) v' T" 
+      by auto
+    have "is_of_type Q v' T"
+    proof (cases "v = v'")
+      case True
+      with a have False by auto
+      thus ?thesis by simp
+    next
+      case False
+      with ty
+      show ?thesis by (simp add: is_of_type_def)
+    qed
+    thus "\<exists>T. is_of_type Q v' T" by blast
+  qed
+  thus ?case by blast
+qed auto
 
+
+lemma term_full_inst:
+  assumes a: "v \<in> schematic_term_atom_vars term"
+      and fx_well_typed: "\<And>(x::variable) T. is_of_type Q x T \<Longrightarrow> is_of_type (ty_inst_term (\<lambda>_. None) objT) (f x) T"
+      and v_is_var: "\<exists>T. is_of_type Q v T"
+  shows "\<exists>obj. (f v) = inst_term.OBJ obj"
+proof (rule ccontr)
+  from a
+  have "v \<in> schematic_term_atom_vars term" .
+  assume "\<nexists>obj. f v = inst_term.OBJ obj"
+  then obtain v' where
+    "f v = inst_term.VAR v'" 
+    using inst_term.exhaust by blast
+  moreover
+  from v_is_var obtain T where
+    "is_of_type Q v T" by auto
+  ultimately 
+  have
+    "is_of_type (ty_inst_term (\<lambda>_. None) objT) (inst_term.VAR v') T" 
+    using fx_well_typed by force
+  moreover
+  have "(ty_inst_term (\<lambda>_. None) objT) (inst_term.VAR v') = None" by simp
+  ultimately show False unfolding is_of_type_def by auto
+qed
+
+lemma inst_insts_free:  
+  fixes v
+  assumes "v \<in> sf_free_vars \<phi>" 
+      and wf: "wf_fmla upd_te (ty_term Q constT) \<phi>"
+      and fx_well_typed: "\<And>(x::variable) T. is_of_type Q x T \<Longrightarrow> is_of_type (ty_inst_term (\<lambda>_. None) objT) (f x) T"
+    shows "\<not>(\<exists>var. (f v) = inst_term.VAR var)"
+  using assms
+proof -
+  fix v
+  assume "v \<in> sf_free_vars \<phi>" 
+  with wf_fmla_vars_typed[OF wf]
+  obtain T where
+    "is_of_type Q v T"
+    by auto
+  with fx_well_typed
+  have "is_of_type (ty_inst_term (\<lambda>_. None) objT) (f v) T"
+    by auto
+  thus "\<not>(\<exists>var. (f v) = inst_term.VAR var)"
+    unfolding is_of_type_def by fastforce
+qed
+
+
+lemma fv_to_obj: 
+  assumes "wf_fmla upd_te (ty_term Q constT) \<phi>"
+      and "v \<in> sf_free_vars \<phi>" 
+      and fx_well_typed: "\<And>(x::variable) T. is_of_type Q x T \<Longrightarrow> is_of_type (ty_inst_term (\<lambda>_. None) objT) (f x) T"
+    shows "\<exists>obj. (f v) = inst_term.OBJ obj"
+  using assms inst_insts_free
+  unfolding is_of_type_def
+  by (metis inst_term.exhaust)
+
+
+lemma inst_term_free_vars:
+  assumes "wf_atom (ty_term Q constT) a"
+      and fx_well_typed: "\<And>(x::variable) T. is_of_type Q x T \<Longrightarrow> is_of_type (ty_inst_term (\<lambda>_. None) objT) (f x) T"
+    shows "inst_atom_vars a = {}"
+  
+
+lemma inst_fmla_free_vars:  
+  assumes "wf_fmla upd_te (ty_term Q constT) \<phi>"
+      and fx_well_typed: "\<And>(x::variable) T. is_of_type Q x T \<Longrightarrow> is_of_type (ty_inst_term (\<lambda>_. None) objT) (f x) T"
+    shows "free_vars ((cap_avoid_map o inst_var) f \<phi>) = {}"
+  using assms
+proof (induction \<phi>)
+  case (Atom x)
+  then show ?case sorry
+next
+  case (Exists x1a x2 \<phi>)
+  then show ?case sorry
+next
+  case (All x1a x2 \<phi>)
+  then show ?case sorry
+qed auto
+
+  lemma wf_inst_formula:
+    assumes wff:  "wf_fmla upd_te (ty_term Q constT) \<phi>"
+        and INST: "\<And>x T. is_of_type Q x T \<Longrightarrow> is_of_type (ty_inst_term (\<lambda>_. None) objT) (f x) T"
+        and S:    "S = {x. \<exists>x'. f x = inst_term.VAR x'}"
+        and inv:  "\<And>v x. f x = inst_term.VAR v \<Longrightarrow> x = v"
+      shows "wf_inst_fmla ((cap_avoid_map o inst_var) f \<phi>)"
+  proof -
+    from INST S full_inst_restr
+    have "\<And>x T. is_of_type Q x T \<Longrightarrow> is_of_type (ty_inst_term (Q |` S) objT) (f x) T" by auto
+    from wf_inst_formula_aux[OF wff S this inv]
+    have "wf_fmla upd_gt_te (ty_inst_term (Q |` S) objT) ((cap_avoid_map o inst_var) f \<phi>)" by auto
+    moreover
+    from wf_fmla_vars_typed[OF wff]
+    have "\<And>v. v \<in> sf_free_vars \<phi> \<Longrightarrow> (\<exists>T. is_of_type Q v T)" by simp
+    with free_vars_none wff
+    have "free_vars ((cap_avoid_map o inst_var) f \<phi>) = {}"
+    thus "wf_inst_fmla ((cap_avoid_map o inst_var) f \<phi>)" unfolding wf_inst_fmla_def sorry
+  qed 
+
+lemma "the None = undefined"
+  by (simp add: option.the_def)
+
+find_theorems name: "Option*the"
+
+lemma ran_range_lemma: "x \<in> (ran f)  \<Longrightarrow> x \<in> range (the o f)"
+  by (metis (mono_tags, opaque_lifting) image_iff ran_is_image rangeI)
+
+lemma range_ran_lemma_aux: "x \<in> range (the o f) - {the None} \<Longrightarrow> x \<in> (ran f)"
+  unfolding image_def
+  apply auto
+  subgoal for xa
+    apply (cases "f xa")
+     apply auto
+    unfolding ran_def
+    by auto
+  done
+
+
+lemma range_ran_lemma: "(x \<notin> ran f) \<Longrightarrow> (x \<notin> ((range (the o f)) - {the None}))"
+  apply (erule contrapos_pp)
+  apply (simp add: range_ran_lemma_aux)
+  done
+
+lemma range_ran_lemma1: "\<not>(\<exists>x. x \<in> ran f) \<Longrightarrow> \<not>(\<exists>x. x \<in> ((range (the o f)) - {the None}))"
+  apply (rule notI)
+  apply (erule notE)
+  apply (erule exE)
+  subgoal for x
+    apply (rule exI[of _ x])
+    apply (simp add: range_ran_lemma_aux)
+    done
+  done
+
+lemma range_ran_lemma2: "\<not>(\<exists>x. f1 x \<in> ran f) \<Longrightarrow> \<not>(\<exists>x. f1 x \<in> ((range (the o f)) - {the None}))"
+  apply (rule notI)
+  apply (erule notE)
+  apply (erule exE)
+  subgoal for x
+    apply (rule exI[of _ x])
+    apply (auto simp add: range_ran_lemma_aux)
+    done
+  done
 
   text \<open>Instantiating a well-formed action schema with compatible arguments
     will yield a well-formed action instance.
@@ -1339,14 +1602,17 @@ find_theorems "inj_on ?f ?d \<Longrightarrow> ?f ?x = ?f ?y \<Longrightarrow> ?x
     shows "wf_inst_action (instantiate_action_schema a args)"
   proof (cases a)
     case [simp]: (Action_Schema name params pre eff)
+    term action_params_match
     have INST: "is_of_type (ty_inst_term (\<lambda>_. None) objT) ((the \<circ> (map_of (zip (map fst params) (map inst_term.OBJ args)))) x) T"
       if "is_of_type (map_of params) x T" for x T
       using that
+      thm is_of_type_map_ofE
       apply (rule is_of_type_map_ofE)
       using assms
       apply (clarsimp simp: Let_def)
       subgoal for i xT
         unfolding action_params_match_def
+        thm lookup_zip_idx_eq
         apply (subst lookup_zip_idx_eq[where i=i];
           (clarsimp simp: list_all2_lengthD)?)
         apply (frule list_all2_nthD2[where p=i]; simp?)
@@ -1363,15 +1629,22 @@ find_theorems "inj_on ?f ?d \<Longrightarrow> ?f ?x = ?f ?y \<Longrightarrow> ?x
         by (metis Action_Schema assms(1) assms(2) ast_action_schema.sel(2) ast_problem.action_params_match_def length_map list_all2_lengthD ran_map_of_zip wf_action_schema.simps)
       hence "\<not>(\<exists>x. inst_term.VAR x \<in> ran (map_of (zip (map fst params) (map inst_term.OBJ args))))"
         by auto
+      hence "\<not>(\<exists>x. inst_term.VAR x \<in> ran (map_of (zip (map fst params) (map inst_term.OBJ args))))"
+        by auto
+      hence "\<not>(\<exists>x. inst_term.VAR x \<in> range (the o map_of (zip (map fst params) (map inst_term.OBJ args))) - {the None})"
+        using range_ran_lemma2[of _ "(map_of (zip (map fst params) (map inst_term.OBJ args)))"]
+        by auto
+      moreover 
+      hence "\<forall>x. inst_term.VAR x \<notin> {the None}"
       thus "\<not>(\<exists>x. inst_term.VAR x \<in> range (the o map_of (zip (map fst params) (map inst_term.OBJ args))))"
-        sledge hammer
+        
     qed
     show ?thesis
       using assms(2) INST wf_inst_formula wf_inst_effect
       apply simp
       unfolding wf_inst_fmla_def
       apply (auto split: term.splits simp: Let_def comp_apply[abs_def])
-      appl
+      
   qed
 end \<comment> \<open>Context of \<open>ast_problem\<close>\<close>
 
