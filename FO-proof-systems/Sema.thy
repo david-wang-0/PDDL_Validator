@@ -10,7 +10,7 @@ Thus, there are no unsuitable assignments.\<close>
 term "Nil"
 
 term "None"
-                                
+             
 locale formula_semantics = formula_syntax subst vars
   for subst::"'v \<Rightarrow> 'c \<Rightarrow> 'p \<Rightarrow> 'p"
   and vars ::"'p \<Rightarrow> 'v set"

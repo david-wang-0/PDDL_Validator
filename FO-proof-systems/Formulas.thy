@@ -14,8 +14,8 @@ datatype (atoms: 'p, vars: 'v, types: 'ty) formula =
   | And "('p, 'v, 'ty) formula" "('p, 'v, 'ty) formula"     (infix "\<^bold>\<and>" 68)
   | Or "('p, 'v, 'ty) formula" "('p, 'v, 'ty) formula"      (infix "\<^bold>\<or>" 68)
   | Imp "('p, 'v, 'ty) formula" "('p, 'v, 'ty) formula"     (infixr "\<^bold>\<rightarrow>" 68)
-  | Exists 'ty 'v "('p, 'v, 'ty) formula"                   ("\<^bold>\<exists>\<^sub>_ _._ " 0)
-  | All 'ty 'v "('p, 'v, 'ty) formula"                      ("\<^bold>\<forall>\<^sub>_ _._" 0)
+  | Exists 'ty 'v "('p, 'v, 'ty) formula"                   ("\<^bold>\<exists>\<^sub>_ _. _ " 0)
+  | All 'ty 'v "('p, 'v, 'ty) formula"                      ("\<^bold>\<forall>\<^sub>_ _. _" 0)
 (* In a standard Isabelle/jEdit config, bold can be done with C-e rightarrow.
    I learned that way too late. *)
 (* I'm not sure I'm happy about the definition of what is an atom.
@@ -100,8 +100,14 @@ fun free_vars::"('p, 'v, 'ty) formula \<Rightarrow> 'v set" where
 | "free_vars (Exists t x F) = free_vars F - {x}"
 | "free_vars (All t x F) = free_vars F - {x}"
 
+end
 
-
+locale additional_syntax = formula_syntax subst vars 
+    for subst ::"'v \<Rightarrow> 'c \<Rightarrow> 'p \<Rightarrow> 'p"
+    and vars  ::"'p \<Rightarrow> 'v set" +
+  fixes map_pred::"('t \<Rightarrow> 'u) \<Rightarrow> 'p \<Rightarrow> 'q"
+    and id_upd::"'v \<Rightarrow> ('t \<Rightarrow> 'u) \<Rightarrow> ('t \<Rightarrow> 'u)"
+begin
 fun cap_avoid_map::"('t \<Rightarrow> 'u) \<Rightarrow> ('p, 'v, 'ty) formula \<Rightarrow> ('q, 'v, 'ty) formula"
   where
   "cap_avoid_map f (Atom x) = Atom (map_pred f x)"
@@ -113,14 +119,8 @@ fun cap_avoid_map::"('t \<Rightarrow> 'u) \<Rightarrow> ('p, 'v, 'ty) formula \<
 | "cap_avoid_map f (\<^bold>\<exists>\<^sub>T x. f1) = (\<^bold>\<exists>\<^sub>T x. (cap_avoid_map (id_upd x f) f1))"
 | "cap_avoid_map f (\<^bold>\<forall>\<^sub>T x. f1) = (\<^bold>\<forall>\<^sub>T x. (cap_avoid_map (id_upd x f) f1))"
 
+
 end
-
-locale additional_syntax = formula_syntax subst vars 
-    for subst ::"'v \<Rightarrow> 'c \<Rightarrow> 'p \<Rightarrow> 'p"
-    and vars  ::"'p \<Rightarrow> 'v set" +
-  fixes map_pred::"('t \<Rightarrow> 'u) \<Rightarrow> 'p \<Rightarrow> 'q"
-    and id_upd::"'v \<Rightarrow> ('t \<Rightarrow> 'u) \<Rightarrow> ('t \<Rightarrow> 'u)"
-
 
 (* 
 text\<open>Formulas are countable if their atoms are, and @{method countable_datatype} is really helpful with that.\<close> 
