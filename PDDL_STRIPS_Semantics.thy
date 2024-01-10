@@ -1276,6 +1276,51 @@ next
     using f' ty_inst_term_upd by auto
 qed (auto) 
 
+lemma INST_imp_full_inst:
+  assumes INST: "\<And>x T. is_of_type Q x T \<Longrightarrow> is_of_type (ty_inst_term (\<lambda>_. None) objT) (f x) T"
+      and "is_of_type Q x T"
+    shows "\<not>(\<exists>x'. f x = inst_term.VAR x')"
+  using assms
+proof -
+  fix x T
+  assume "is_of_type Q x T"
+  with INST have ty: "is_of_type (ty_inst_term (\<lambda>_. None) objT) (f x) T" by auto
+  show "\<not>(\<exists>x'. f x = inst_term.VAR x')" 
+  proof (rule ccontr)
+    assume "\<not> (\<nexists>x'. f x = inst_term.VAR x')"
+    then obtain x' where
+        "f x = inst_term.VAR x'"
+      by blast
+    moreover
+    have "is_of_type (ty_inst_term (\<lambda>_. None) objT) (inst_term.VAR x') T = False"
+      by (simp add: ast_domain.is_of_type_def)
+    ultimately
+    show False using ty by argo
+  qed
+qed
+
+lemma full_inst_restr:
+  assumes INST: "\<And>x T. is_of_type Q x T \<Longrightarrow> is_of_type (ty_inst_term (\<lambda>_. None) objT) (f x) T"
+      and S:    "S = {x. \<exists>x'. x \<in> dom Q \<and> f x = inst_term.VAR x'}"
+      and       "is_of_type Q x T"
+    shows "is_of_type (ty_inst_term (Q |` S) objT) (f x) T"
+  using assms
+proof -
+  fix x T
+  assume a: "is_of_type Q x T"
+  hence fx: "\<not>(\<exists>x'. f x = inst_term.VAR x')"
+    using INST INST_imp_full_inst by fast
+  hence "\<exists>obj. f x = inst_term.OBJ obj" by (metis inst_term.exhaust)
+  then obtain obj where
+    fx: "f x = inst_term.OBJ obj"
+    by blast
+  moreover 
+  have "is_of_type (ty_inst_term (\<lambda>_. None) objT) (f x) T" using a INST by simp
+  ultimately 
+  have "\<exists>t. (objT obj) = Some t \<and> of_type t T" using case_optionE is_of_type_def by fastforce
+  thus "is_of_type (ty_inst_term (Q |` S) objT) (f x) T" unfolding is_of_type_def using fx by fastforce 
+qed
+
 lemma wf_atom_vars_typed:
   fixes v
   assumes "wf_atom (ty_term Q constT) a"
@@ -1340,6 +1385,70 @@ proof -
   qed
 qed
 
+lemma wf_fmla_vars_typed: 
+  assumes "wf_fmla upd_te (ty_term Q constT) \<phi>"
+  shows "\<forall>v \<in> sf_free_vars \<phi>. (\<exists>T. is_of_type Q v T)"
+  using assms
+proof(induction \<phi> arbitrary: Q)
+  case (Atom x)
+  then show ?case by (auto simp: wf_atom_vars_typed)
+next
+  case (Exists t v \<phi>)
+  hence "wf_fmla upd_te (upd_te (ty_term Q constT) v t) \<phi>" by simp
+  hence "wf_fmla upd_te (ty_term (Q(v \<mapsto> t)) constT) \<phi>" using ty_term_upd by auto
+  with Exists.IH
+  have "\<forall>v'\<in>sf_free_vars \<phi>. \<exists>T. is_of_type (Q(v \<mapsto> t)) v' T" by blast
+  hence 1: "\<forall>v'\<in>sf_free_vars(\<^bold>\<exists>\<^sub>t v. \<phi>). \<exists>T. is_of_type (Q (v \<mapsto> t)) v' T" by simp
+  have "\<And>v'. v' \<in> sf_free_vars(\<^bold>\<exists>\<^sub>t v. \<phi>) \<Longrightarrow> \<exists>T. is_of_type Q v' T"
+  proof -
+    fix v' 
+    assume a: "v' \<in> sf_free_vars(\<^bold>\<exists>\<^sub>t v. \<phi>)"
+    with 1 obtain T where
+      ty: "is_of_type (Q (v \<mapsto> t)) v' T" 
+      by auto
+    have "is_of_type Q v' T"
+    proof (cases "v = v'")
+      case True
+      with a have False by auto
+      thus ?thesis by simp
+    next
+      case False
+      with ty
+      show ?thesis by (simp add: is_of_type_def)
+    qed
+    thus "\<exists>T. is_of_type Q v' T" by blast
+  qed
+  thus ?case by blast
+next
+  case (All t v \<phi>)
+  hence "wf_fmla upd_te (upd_te (ty_term Q constT) v t) \<phi>" by simp
+  hence "wf_fmla upd_te (ty_term (Q(v \<mapsto> t)) constT) \<phi>" using ty_term_upd by auto
+  with All.IH
+  have "\<forall>v'\<in>sf_free_vars \<phi>. \<exists>T. is_of_type (Q(v \<mapsto> t)) v' T" by blast
+  hence 1: "\<forall>v'\<in>sf_free_vars(\<^bold>\<forall>\<^sub>t v. \<phi>). \<exists>T. is_of_type (Q (v \<mapsto> t)) v' T" by simp
+  have "\<And>v'. v' \<in> sf_free_vars(\<^bold>\<forall>\<^sub>t v. \<phi>) \<Longrightarrow> \<exists>T. is_of_type Q v' T"
+  proof -
+    fix v' 
+    assume a: "v' \<in> sf_free_vars(\<^bold>\<forall>\<^sub>t v. \<phi>)"
+    with 1 obtain T where
+      ty: "is_of_type (Q (v \<mapsto> t)) v' T" 
+      by auto
+    have "is_of_type Q v' T"
+    proof (cases "v = v'")
+      case True
+      with a have False by auto
+      thus ?thesis by simp
+    next
+      case False
+      with ty
+      show ?thesis by (simp add: is_of_type_def)
+    qed
+    thus "\<exists>T. is_of_type Q v' T" by blast
+  qed
+  thus ?case by blast
+qed auto
+
+
 lemma term_full_inst:
   assumes a: "v \<in> schematic_term_atom_vars term"
       and fx_well_typed: "\<And>(x::variable) T. is_of_type Q x T \<Longrightarrow> is_of_type (ty_inst_term (\<lambda>_. None) objT) (f x) T"
@@ -1363,6 +1472,37 @@ proof (rule ccontr)
   have "(ty_inst_term (\<lambda>_. None) objT) (inst_term.VAR v') = None" by simp
   ultimately show False unfolding is_of_type_def by auto
 qed
+
+lemma term_full_inst':
+  assumes a: "v \<in> schematic_term_atom_vars term"
+      and fx_well_typed: "\<And>(x::variable) T. is_of_type Q x T \<Longrightarrow> is_of_type (ty_inst_term (\<lambda>_. None) objT) (f x) T"
+      and v_is_var: "\<exists>T. is_of_type Q v T"
+    shows "\<not>(\<exists>v'. (f v) = inst_term.VAR v')"
+  using term_full_inst[OF assms]
+  by fastforce
+
+lemma inst_insts_free:  
+  fixes v
+  assumes "v \<in> sf_free_vars \<phi>" 
+      and wf: "wf_fmla upd_te (ty_term Q constT) \<phi>"
+      and fx_well_typed: "\<And>(x::variable) T. is_of_type Q x T \<Longrightarrow> is_of_type (ty_inst_term (\<lambda>_. None) objT) (f x) T"
+    shows "\<not>(\<exists>var. (f v) = inst_term.VAR var)"
+  using assms
+proof -
+  fix v
+  assume "v \<in> sf_free_vars \<phi>" 
+  with wf_fmla_vars_typed[OF wf]
+  obtain T where
+    "is_of_type Q v T"
+    by auto
+  with fx_well_typed
+  have "is_of_type (ty_inst_term (\<lambda>_. None) objT) (f v) T"
+    by auto
+  thus "\<not>(\<exists>var. (f v) = inst_term.VAR var)"
+    unfolding is_of_type_def by fastforce
+qed
+
+
       
 context
   fixes Q f
@@ -1405,7 +1545,6 @@ proof -
 qed
 
 end
-
   lemma wf_inst_formula:
     assumes wff:  "wf_fmla upd_te (ty_term Q constT) \<phi>"
         and INST: "\<And>x T. is_of_type Q x T \<Longrightarrow> is_of_type (ty_inst_term (\<lambda>_. None) objT) (f x) T"
@@ -1441,6 +1580,7 @@ end
   qed 
 
 lemma wf_inst_effect:
+  fixes add::"schematic_formula list" and del::"schematic_formula list" and f
     assumes "wf_effect (ty_term Q constT) (Effect add del)"
       and INST: "\<And>x T. is_of_type Q x T \<Longrightarrow> is_of_type (ty_inst_term (\<lambda>_. None) objT) (f x) T"
       and inv:  "\<And>v x. x \<in> dom Q \<Longrightarrow> f x = inst_term.VAR v \<Longrightarrow> x = v"
@@ -1453,8 +1593,11 @@ lemma wf_inst_effect:
       using that
     proof -
       have "wf_fmla_atom (ty_term Q constT) x" using assms x by auto
-      with INST inv wf_inst_formula
-      show "wf_fmla_atom (ty_inst_term (\<lambda>_. None) objT) ((cap_avoid_map o inst_var) f x)" sorry
+      hence "wf_fmla upd_te (ty_term Q constT) x" using wf_fmla_atom_alt by blast
+      from wf_inst_formula[OF this] INST inv
+      have "wf_fmla upd_gt_te (ty_inst_term (\<lambda>_. None) objT) ((cap_avoid_map o inst_var) f x)" unfolding wf_inst_fmla_def by auto
+      thus "wf_fmla_atom (ty_inst_term (\<lambda>_. None) objT) ((cap_avoid_map o inst_var) f x)"
+        by (metis (mono_tags, lifting) INST \<open>wf_fmla_atom (ty_term Q constT) x\<close> ast_problem.full_inst_restr ast_problem.wf_inst_formula_atom wf_fmla_atom_alt)
     qed
     then
     show "wf_effect (ty_inst_term (\<lambda>_.None) objT) 
