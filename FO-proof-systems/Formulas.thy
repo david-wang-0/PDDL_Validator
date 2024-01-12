@@ -25,8 +25,6 @@ datatype (atoms: 'p, vars: 'v, types: 'ty) formula =
 (* like here: *)
 lemma atoms_finite[simp,intro!]: "finite (atoms F)" by(induction F; simp)
 
-value "atoms (Node Leaf (1::nat) Leaf)"
-
 primrec subformulae where
 "subformulae \<bottom> = [\<bottom>]" |
 "subformulae (Atom k) = [Atom k]" |
@@ -79,224 +77,44 @@ primrec BigOr :: "('p, 'v, 'ty) formula list \<Rightarrow> ('p, 'v, 'ty) formula
 locale formula_syntax =
   fixes subst ::"'v \<Rightarrow> 'c \<Rightarrow> 'p \<Rightarrow> 'p"
     and vars  ::"'p \<Rightarrow> 'v set"
+  assumes subst_subst_all: "v \<notin> vars (subst v c p)"
 begin
 fun fsubst::"'v \<Rightarrow> 'c \<Rightarrow> ('p, 'v, 'ty) formula \<Rightarrow> ('p, 'v, 'ty) formula" where
-  "fsubst v v1 (Atom p) = Atom (subst v v1 p)" |
+  "fsubst v c (Atom p) = Atom (subst v c p)" |
   "fsubst _ _ \<bottom> = \<bottom>" |
-  "fsubst v v1 (Not F) = Not (fsubst v v1 F)" |
-  "fsubst v v1 (And F G) = And (fsubst v v1 F) (fsubst v v1 G)" |
-  "fsubst v v1 (Or F G) = Or (fsubst v v1 F) (fsubst v v1 G)" |
-  "fsubst v v1 (Imp F G) = Imp (fsubst v v1 F) (fsubst v v1 G)" |
-  "fsubst v v1 (Exists t x F) = (if x = v then Exists t x F else Exists t x (fsubst v v1 F))" |
-  "fsubst v v1 (All t x F) = (if x = v then All t x F else All t x (fsubst v v1 F))"
+  "fsubst v c (Not \<phi>\<^sub>1) = Not (fsubst v c \<phi>\<^sub>1)" |
+  "fsubst v c (And \<phi>\<^sub>1 \<phi>\<^sub>2) = And (fsubst v c \<phi>\<^sub>1) (fsubst v c \<phi>\<^sub>2)" |
+  "fsubst v c (Or \<phi>\<^sub>1 \<phi>\<^sub>2) = Or (fsubst v c \<phi>\<^sub>1) (fsubst v c \<phi>\<^sub>2)" |
+  "fsubst v c (Imp \<phi>\<^sub>1 \<phi>\<^sub>2) = Imp (fsubst v c \<phi>\<^sub>1) (fsubst v c \<phi>\<^sub>2)" |
+  "fsubst v c (Exists t x \<phi>\<^sub>1) = (if x = v then Exists t x \<phi>\<^sub>1 else Exists t x (fsubst v c \<phi>\<^sub>1))" |
+  "fsubst v c (All t x \<phi>\<^sub>1) = (if x = v then All t x \<phi>\<^sub>1 else All t x (fsubst v c \<phi>\<^sub>1))"
 
 fun free_vars::"('p, 'v, 'ty) formula \<Rightarrow> 'v set" where
   "free_vars (Atom p) = vars p" 
 | "free_vars Bot = {}"
-| "free_vars (Not F) = free_vars F"
-| "free_vars (And F G) = free_vars F \<union> free_vars G"
-| "free_vars (Or F G) = free_vars F \<union> free_vars G"
-| "free_vars (Imp F G) = free_vars F \<union> free_vars G"
-| "free_vars (Exists t x F) = free_vars F - {x}"
-| "free_vars (All t x F) = free_vars F - {x}"
+| "free_vars (Not \<phi>\<^sub>1) = free_vars \<phi>\<^sub>1"
+| "free_vars (And \<phi>\<^sub>1 \<phi>\<^sub>2) = free_vars \<phi>\<^sub>1 \<union> free_vars \<phi>\<^sub>2"
+| "free_vars (Or \<phi>\<^sub>1 \<phi>\<^sub>2) = free_vars \<phi>\<^sub>1 \<union> free_vars \<phi>\<^sub>2"
+| "free_vars (Imp \<phi>\<^sub>1 \<phi>\<^sub>2) = free_vars \<phi>\<^sub>1 \<union> free_vars \<phi>\<^sub>2"
+| "free_vars (Exists t x \<phi>\<^sub>1) = free_vars \<phi>\<^sub>1 - {x}"
+| "free_vars (All t x \<phi>\<^sub>1) = free_vars \<phi>\<^sub>1 - {x}"
 
+(* these are not bound variables in the typical sense, but those that exist as bound variables
+    somewhere down the syntax tree *)
+fun bound_vars::"('p, 'v, 'ty) formula \<Rightarrow> 'v set" where
+  "bound_vars (Atom p) = {}"
+| "bound_vars Bot = {}"
+| "bound_vars (Not \<phi>\<^sub>1) = bound_vars \<phi>\<^sub>1"
+| "bound_vars (And \<phi>\<^sub>1 \<phi>\<^sub>2) = bound_vars \<phi>\<^sub>1 \<union> bound_vars \<phi>\<^sub>2"
+| "bound_vars (Or \<phi>\<^sub>1 \<phi>\<^sub>2) = bound_vars \<phi>\<^sub>1 \<union> bound_vars \<phi>\<^sub>2"
+| "bound_vars (Imp \<phi>\<^sub>1 \<phi>\<^sub>2) = bound_vars \<phi>\<^sub>1 \<union> bound_vars \<phi>\<^sub>2"
+| "bound_vars (Exists t x \<phi>\<^sub>1) = (free_vars \<phi>\<^sub>1 \<inter> {x}) \<union> bound_vars \<phi>\<^sub>1"
+| "bound_vars (All t x \<phi>\<^sub>1) = (free_vars \<phi>\<^sub>1 \<inter> {x}) \<union> bound_vars \<phi>\<^sub>1"
+
+lemma fsubst_subst_free: "v \<notin> free_vars (fsubst v c f)"
+  by (induction f) (auto simp: subst_subst_all)
+
+lemma fsubst_leaves_bound: "v \<in> bound_vars f \<Longrightarrow> v \<in> bound_vars (fsubst v c f)"
+  by (induction f) auto
 end
-
-locale additional_syntax = formula_syntax subst vars 
-    for subst ::"'v \<Rightarrow> 'c \<Rightarrow> 'p \<Rightarrow> 'p"
-    and vars  ::"'p \<Rightarrow> 'v set" +
-  fixes map_pred::"('t \<Rightarrow> 'u) \<Rightarrow> 'p \<Rightarrow> 'q"
-    and id_upd::"'v \<Rightarrow> ('t \<Rightarrow> 'u) \<Rightarrow> ('t \<Rightarrow> 'u)"
-begin
-fun cap_avoid_map::"('t \<Rightarrow> 'u) \<Rightarrow> ('p, 'v, 'ty) formula \<Rightarrow> ('q, 'v, 'ty) formula"
-  where
-  "cap_avoid_map f (Atom x) = Atom (map_pred f x)"
-| "cap_avoid_map f \<bottom> = \<bottom>"
-| "cap_avoid_map f (\<^bold>\<not>f1) = \<^bold>\<not> (cap_avoid_map f f1)"
-| "cap_avoid_map f (f1 \<^bold>\<and> f2) = cap_avoid_map f f1 \<^bold>\<and> cap_avoid_map f f2"
-| "cap_avoid_map f (f1 \<^bold>\<or> f2) = cap_avoid_map f f1 \<^bold>\<or> cap_avoid_map f f2"
-| "cap_avoid_map f (f1 \<^bold>\<rightarrow> f2) = cap_avoid_map f f1 \<^bold>\<rightarrow> cap_avoid_map f f2"
-| "cap_avoid_map f (\<^bold>\<exists>\<^sub>T x. f1) = (\<^bold>\<exists>\<^sub>T x. (cap_avoid_map (id_upd x f) f1))"
-| "cap_avoid_map f (\<^bold>\<forall>\<^sub>T x. f1) = (\<^bold>\<forall>\<^sub>T x. (cap_avoid_map (id_upd x f) f1))"
-
-
-end
-
-(* 
-text\<open>Formulas are countable if their atoms are, and @{method countable_datatype} is really helpful with that.\<close> 
-instance formula :: (countable, countable, countable) countable by countable_datatype
-
-definition "prod_unions A B \<equiv> case A of (a,b) \<Rightarrow> case B of (c,d) \<Rightarrow> (a \<union> c, b \<union> d)"
-primrec pn_atoms where
-"pn_atoms (Atom A) = ({A},{})" |
-"pn_atoms Bot = ({},{})" |
-"pn_atoms (Not F) = prod.swap (pn_atoms F)" |
-"pn_atoms (And F G) = prod_unions (pn_atoms F) (pn_atoms G)" |
-"pn_atoms (Or F G) = prod_unions (pn_atoms F) (pn_atoms G)" |
-"pn_atoms (Imp F G) = prod_unions (prod.swap (pn_atoms F)) (pn_atoms G)"
-
-lemma pn_atoms_atoms: "atoms F = fst (pn_atoms F) \<union> snd (pn_atoms F)"
-  by(induction F) (auto simp add: prod_unions_def split: prod.splits)
-
-text\<open>A very trivial simplifier.
-Does wonders as a postprocessor for the Harrison-style Craig interpolations.\<close>
-context begin
-definition "isstop F \<equiv> F = \<^bold>\<not>\<bottom> \<or> F = \<top>"
-fun simplify_consts where
-"simplify_consts (Atom k) = Atom k" |
-"simplify_consts \<bottom> = \<bottom>" |
-"simplify_consts (Not F) = (let S = simplify_consts F in case S of (Not G) \<Rightarrow> G | _ \<Rightarrow>
-  if isstop S then \<bottom> else \<^bold>\<not> S)" |
-"simplify_consts (And F G) = (let S = simplify_consts F; T = simplify_consts G in (
-  if S = \<bottom> then \<bottom> else
-  if isstop S then T \<comment> \<open>not \<open>\<top>\<close>, \<open>T\<close>\<close> else
-  if T = \<bottom> then \<bottom> else
-  if isstop T then S else
-  if S = T then S else
-  S \<^bold>\<and> T))" |
-"simplify_consts (Or F G) = (let S = simplify_consts F; T = simplify_consts G in (
-  if S = \<bottom> then T else
-  if isstop S then \<top> else
-  if T = \<bottom> then S else
-  if isstop T then \<top> else
-  if S = T then S else
-  S \<^bold>\<or> T))" |
-"simplify_consts (Imp F G) = (let S = simplify_consts F; T = simplify_consts G in (
-  if S = \<bottom> then \<top> else
-  if isstop S then T else
-  if isstop T then \<top> else
-  if T = \<bottom> then \<^bold>\<not> S else
-  if S = T then \<top> else
-  case S of Not H \<Rightarrow> (case T of Not I \<Rightarrow> 
-    I \<^bold>\<rightarrow> H | _ \<Rightarrow> 
-    H \<^bold>\<or> T) | _ \<Rightarrow>
-    S \<^bold>\<rightarrow> T))"
-
-lemma simplify_consts_size_le: "size (simplify_consts F) \<le> size F"
-proof -
-  have [simp]: "Suc (Suc 0) \<le> size F + size G" for F G :: "'a formula" by(cases F; cases G; simp)
-  show ?thesis by(induction F; fastforce simp add: Let_def isstop_def Top_def split: formula.splits)
-qed
-
-lemma simplify_const: "atoms F = {} \<Longrightarrow> isstop (simplify_consts F) \<or> (simplify_consts F) = \<bottom>"
-  by(induction F; fastforce simp add: Let_def isstop_def Top_def split: formula.splits)
-value "(size \<top>, size (\<^bold>\<not>\<bottom>))" (* this is why I need isstop in this lemma and can't write simplify_consts
-  in a way that this lemma can say \<in> {\<top>, \<bottom>} *)
-
-end
-  
-(*
-Here's a useful little function for testing a conjecture on "a few" examples: 
-*)
-fun all_formulas_of_size where
-"all_formulas_of_size K 0 = {\<bottom>} \<union> Atom ` K" |
-"all_formulas_of_size K (Suc n) = (
-  let af = \<Union>(set [all_formulas_of_size K m. m \<leftarrow> [0..<Suc n]]) in
-  (\<Union>F\<in>af.
-    (\<Union>G\<in>af. if size F + size G \<le> Suc n then {And F G, Or F G, Imp F G} else {}) 
-   \<union> (if size F \<le> Suc n then {Not F} else {})) 
-  \<union> af)"
-(* this set obviously grows exponentially (with a base of 5 approximately).
-   size 7 produces 26032 formulas, which is probably the last value
-   where I can test anything meaningfully with this implementation. *)
-
-lemma all_formulas_of_size: "F \<in> all_formulas_of_size K n \<longleftrightarrow> (size F \<le> Suc n \<and> atoms F \<subseteq> K)" (is "?l \<longleftrightarrow> ?r")
-proof -
-  have rl: "?r \<Longrightarrow> ?l"
-  proof(induction F arbitrary: n)
-    case (Atom x)
-    have *: "Atom x \<in> all_formulas_of_size K 0" using Atom by simp
-    hence **: "Atom x \<in> \<Union> (all_formulas_of_size K ` set [0..<Suc m])" for m
-      by (simp; metis atLeastLessThan_iff le_zero_eq not_le)
-    thus ?case using Atom by(cases n; simp)
-  next
-    case Bot
-    have *: "Bot \<in> all_formulas_of_size K 0" by simp
-    hence **: "Bot \<in> \<Union> (all_formulas_of_size K ` set [0..<Suc m])" for m
-      by (simp; metis atLeastLessThan_iff le_zero_eq not_le)
-    then show ?case using Bot by(cases n; simp)
-  next
-    case (Not F)
-    have *: "size F \<le> n" using Not by simp
-    then obtain m where n[simp]: "n = Suc m" by (metis Suc_diff_1 formula.size_neq leD neq0_conv)
-    with Not have IH: "F \<in> all_formulas_of_size K m" by simp
-    then show ?case using * by(simp add: bexI[where x=F])
-  next
-    case (And F G)
-    with And have *: "size F + size G \<le> n" by simp
-    then obtain m where n[simp]: "n = Suc m"
-      by (metis Suc_diff_1 add_is_0 formula.size_neq le_zero_eq neq0_conv)
-    then obtain nF nG where nFG[simp]: "size F \<le> nF" "size G \<le> nG" "n = nF + nG"
-      by (metis * add.assoc nat_le_iff_add order_refl)
-    then obtain mF mG where mFG[simp]: "nF = Suc mF" "nG = Suc mG"
-      by (metis Suc_diff_1 formula.size_neq leD neq0_conv)
-    with And have IH: "F \<in> all_formulas_of_size K mF" "G \<in> all_formulas_of_size K mG" 
-      using nFG by simp+
-    let ?af = "\<Union>(set [all_formulas_of_size K m. m \<leftarrow> [0..<Suc m]])"
-    have r: "F \<in> all_formulas_of_size K mF \<Longrightarrow> mF \<le> n \<Longrightarrow> F \<in> \<Union>(set (map (all_formulas_of_size K) [0..<Suc n]))"
-      for F mF n by fastforce
-    have af: "F \<in> ?af" "G \<in> ?af" using nFG(3) by(intro IH[THEN r]; simp)+
-    have m: "F \<^bold>\<and> G \<in> (if size F + size G \<le> Suc m then {F \<^bold>\<and> G, F \<^bold>\<or> G, F \<^bold>\<rightarrow> G} else {})" using * by simp
-    from IH * show ?case using af by(simp only: n all_formulas_of_size.simps Let_def, insert m) fast
-  next
-    case (Or F G) case (Imp F G) \<comment> \<open>analogous\<close> (*<*)
-  next
-    case (Or F G)
-    with Or have *: "size F + size G \<le> n" by simp
-    then obtain m where n[simp]: "n = Suc m"
-      by (metis Suc_diff_1 add_is_0 formula.size_neq le_zero_eq neq0_conv)
-    then obtain nF nG where nFG[simp]: "size F \<le> nF" "size G \<le> nG" "n = nF + nG"
-      by (metis * add.assoc nat_le_iff_add order_refl)
-    then obtain mF mG where mFG[simp]: "nF = Suc mF" "nG = Suc mG"
-      by (metis Suc_diff_1 formula.size_neq leD neq0_conv)
-    with Or have IH: "F \<in> all_formulas_of_size K mF" "G \<in> all_formulas_of_size K mG" 
-      using nFG by simp+
-    let ?af = "\<Union>(set [all_formulas_of_size K m. m \<leftarrow> [0..<Suc m]])"
-    have r: "F \<in> all_formulas_of_size K mF \<Longrightarrow> mF \<le> n \<Longrightarrow> F \<in> \<Union>(set (map (all_formulas_of_size K) [0..<Suc n]))"
-      for F mF n by fastforce
-    have af: "F \<in> ?af" "G \<in> ?af" using nFG(3) by(intro IH[THEN r]; simp)+
-    have m: "Or F G \<in> (if size F + size G \<le> Suc m then {F \<^bold>\<and> G, F \<^bold>\<or> G, F \<^bold>\<rightarrow> G} else {})" using * by simp
-    from IH * show ?case using af by(simp only: n all_formulas_of_size.simps Let_def, insert m) fast
-  next
-    case (Imp F G)
-    with Imp have *: "size F + size G \<le> n" by simp
-    then obtain m where n[simp]: "n = Suc m"
-      by (metis Suc_diff_1 add_is_0 formula.size_neq le_zero_eq neq0_conv)
-    then obtain nF nG where nFG[simp]: "size F \<le> nF" "size G \<le> nG" "n = nF + nG"
-      by (metis * add.assoc nat_le_iff_add order_refl)
-    then obtain mF mG where mFG[simp]: "nF = Suc mF" "nG = Suc mG"
-      by (metis Suc_diff_1 formula.size_neq leD neq0_conv)
-    with Imp have IH: "F \<in> all_formulas_of_size K mF" "G \<in> all_formulas_of_size K mG" 
-      using nFG by simp+
-    let ?af = "\<Union>(set [all_formulas_of_size K m. m \<leftarrow> [0..<Suc m]])"
-    have r: "F \<in> all_formulas_of_size K mF \<Longrightarrow> mF \<le> n \<Longrightarrow> F \<in> \<Union>(set (map (all_formulas_of_size K) [0..<Suc n]))"
-      for F mF n by fastforce
-    have af: "F \<in> ?af" "G \<in> ?af" using nFG(3) by(intro IH[THEN r]; simp)+
-    have m: "Imp F G \<in> (if size F + size G \<le> Suc m then {F \<^bold>\<and> G, F \<^bold>\<or> G, F \<^bold>\<rightarrow> G} else {})" using * by simp
-    from IH * show ?case using af by(simp only: n all_formulas_of_size.simps Let_def, insert m) fast
-  (*>*)
-  qed
-  have lr: ?r if l: ?l 
-  proof
-    have *: "F \<in> all_formulas_of_size K x \<Longrightarrow> F \<in> all_formulas_of_size K (x + n)" for x n
-      by(induction n; simp)
-    show "size F \<le> Suc n" using l
-      by(induction n; auto split: if_splits) (metis "*" le_SucI le_eq_less_or_eq le_iff_add)
-    show "atoms F \<subseteq> K" using l
-      proof(induction n arbitrary: F rule: less_induct)
-        case (less x)
-        then show ?case proof(cases x)
-          case 0 with less show ?thesis by force
-        next
-          case (Suc y) with less show ?thesis 
-            by(simp only: all_formulas_of_size.simps Let_def) (fastforce simp add: less_Suc_eq split: if_splits)
-        qed
-      qed
-  qed
-  from lr rl show ?thesis proof qed
-qed
-(* At first I thought: why would I prove anything about all_formulas_of_size, I only want to test a conjecture with it.
-   Guess why: it was broken.
-   Granted, I spent too much time on this. *)
- *)
 end
