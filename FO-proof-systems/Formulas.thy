@@ -108,8 +108,8 @@ fun bound_vars::"('p, 'v, 'ty) formula \<Rightarrow> 'v set" where
 | "bound_vars (And \<phi>\<^sub>1 \<phi>\<^sub>2) = bound_vars \<phi>\<^sub>1 \<union> bound_vars \<phi>\<^sub>2"
 | "bound_vars (Or \<phi>\<^sub>1 \<phi>\<^sub>2) = bound_vars \<phi>\<^sub>1 \<union> bound_vars \<phi>\<^sub>2"
 | "bound_vars (Imp \<phi>\<^sub>1 \<phi>\<^sub>2) = bound_vars \<phi>\<^sub>1 \<union> bound_vars \<phi>\<^sub>2"
-| "bound_vars (Exists t x \<phi>\<^sub>1) = (free_vars \<phi>\<^sub>1 \<inter> {x}) \<union> bound_vars \<phi>\<^sub>1"
-| "bound_vars (All t x \<phi>\<^sub>1) = (free_vars \<phi>\<^sub>1 \<inter> {x}) \<union> bound_vars \<phi>\<^sub>1"
+| "bound_vars (Exists t x \<phi>) = (free_vars \<phi> \<inter> {x}) \<union> bound_vars \<phi>"
+| "bound_vars (All t x \<phi>) = (free_vars \<phi> \<inter> {x}) \<union> bound_vars \<phi>"
 
 lemma fsubst_subst_free: "v \<notin> free_vars (fsubst v c f)"
   by (induction f) (auto simp: subst_subst_all)
