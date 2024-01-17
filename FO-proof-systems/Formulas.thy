@@ -77,57 +77,70 @@ primrec BigOr :: "('p, 'v, 'ty) formula list \<Rightarrow> ('p, 'v, 'ty) formula
 locale formula_syntax =
   fixes subst ::"'v \<Rightarrow> 'c \<Rightarrow> 'p \<Rightarrow> 'p"
     and vars  ::"'p \<Rightarrow> 'v set"
+    and objs  ::"'p \<Rightarrow> 'c set"
   assumes subst_subst_all: "v \<notin> vars (subst v c p)"
 begin
-fun fsubst::"'v \<Rightarrow> 'c \<Rightarrow> ('p, 'v, 'ty) formula \<Rightarrow> ('p, 'v, 'ty) formula" where
-  "fsubst v c (Atom p) = Atom (subst v c p)" |
-  "fsubst _ _ \<bottom> = \<bottom>" |
-  "fsubst v c (Not \<phi>\<^sub>1) = Not (fsubst v c \<phi>\<^sub>1)" |
-  "fsubst v c (And \<phi>\<^sub>1 \<phi>\<^sub>2) = And (fsubst v c \<phi>\<^sub>1) (fsubst v c \<phi>\<^sub>2)" |
-  "fsubst v c (Or \<phi>\<^sub>1 \<phi>\<^sub>2) = Or (fsubst v c \<phi>\<^sub>1) (fsubst v c \<phi>\<^sub>2)" |
-  "fsubst v c (Imp \<phi>\<^sub>1 \<phi>\<^sub>2) = Imp (fsubst v c \<phi>\<^sub>1) (fsubst v c \<phi>\<^sub>2)" |
-  "fsubst v c (Exists t x \<phi>\<^sub>1) = (if x = v then Exists t x \<phi>\<^sub>1 else Exists t x (fsubst v c \<phi>\<^sub>1))" |
-  "fsubst v c (All t x \<phi>\<^sub>1) = (if x = v then All t x \<phi>\<^sub>1 else All t x (fsubst v c \<phi>\<^sub>1))"
+  fun fsubst::"'v \<Rightarrow> 'c \<Rightarrow> ('p, 'v, 'ty) formula \<Rightarrow> ('p, 'v, 'ty) formula" where
+    "fsubst v c (Atom p) = Atom (subst v c p)" |
+    "fsubst _ _ \<bottom> = \<bottom>" |
+    "fsubst v c (Not \<phi>\<^sub>1) = Not (fsubst v c \<phi>\<^sub>1)" |
+    "fsubst v c (And \<phi>\<^sub>1 \<phi>\<^sub>2) = And (fsubst v c \<phi>\<^sub>1) (fsubst v c \<phi>\<^sub>2)" |
+    "fsubst v c (Or \<phi>\<^sub>1 \<phi>\<^sub>2) = Or (fsubst v c \<phi>\<^sub>1) (fsubst v c \<phi>\<^sub>2)" |
+    "fsubst v c (Imp \<phi>\<^sub>1 \<phi>\<^sub>2) = Imp (fsubst v c \<phi>\<^sub>1) (fsubst v c \<phi>\<^sub>2)" |
+    "fsubst v c (Exists t x \<phi>\<^sub>1) = (if x = v then Exists t x \<phi>\<^sub>1 else Exists t x (fsubst v c \<phi>\<^sub>1))" |
+    "fsubst v c (All t x \<phi>\<^sub>1) = (if x = v then All t x \<phi>\<^sub>1 else All t x (fsubst v c \<phi>\<^sub>1))"
 
-fun fvars::"('p, 'v, 'ty) formula \<Rightarrow> 'v set" where
-  "fvars (Atom p) = vars p" 
-| "fvars Bot = {}"
-| "fvars (Not \<phi>\<^sub>1) = fvars \<phi>\<^sub>1"
-| "fvars (And \<phi>\<^sub>1 \<phi>\<^sub>2) = fvars \<phi>\<^sub>1 \<union> fvars \<phi>\<^sub>2"
-| "fvars (Or \<phi>\<^sub>1 \<phi>\<^sub>2) = fvars \<phi>\<^sub>1 \<union> fvars \<phi>\<^sub>2"
-| "fvars (Imp \<phi>\<^sub>1 \<phi>\<^sub>2) = fvars \<phi>\<^sub>1 \<union> fvars \<phi>\<^sub>2"
-| "fvars (Exists t x \<phi>) = fvars \<phi>"
-| "fvars (All t x \<phi>) = fvars \<phi>"   
-
-fun free_vars::"('p, 'v, 'ty) formula \<Rightarrow> 'v set" where
-  "free_vars (Atom p) = vars p" 
-| "free_vars Bot = {}"
-| "free_vars (Not \<phi>\<^sub>1) = free_vars \<phi>\<^sub>1"
-| "free_vars (And \<phi>\<^sub>1 \<phi>\<^sub>2) = free_vars \<phi>\<^sub>1 \<union> free_vars \<phi>\<^sub>2"
-| "free_vars (Or \<phi>\<^sub>1 \<phi>\<^sub>2) = free_vars \<phi>\<^sub>1 \<union> free_vars \<phi>\<^sub>2"
-| "free_vars (Imp \<phi>\<^sub>1 \<phi>\<^sub>2) = free_vars \<phi>\<^sub>1 \<union> free_vars \<phi>\<^sub>2"
-| "free_vars (Exists t x \<phi>\<^sub>1) = free_vars \<phi>\<^sub>1 - {x}"
-| "free_vars (All t x \<phi>\<^sub>1) = free_vars \<phi>\<^sub>1 - {x}"
-
-(* these are not bound variables in the typical sense, but those that exist as bound variables
-    somewhere down the syntax tree *)
-fun bound_vars::"('p, 'v, 'ty) formula \<Rightarrow> 'v set" where
-  "bound_vars (Atom p) = {}"
-| "bound_vars Bot = {}"
-| "bound_vars (Not \<phi>\<^sub>1) = bound_vars \<phi>\<^sub>1"
-| "bound_vars (And \<phi>\<^sub>1 \<phi>\<^sub>2) = bound_vars \<phi>\<^sub>1 \<union> bound_vars \<phi>\<^sub>2"
-| "bound_vars (Or \<phi>\<^sub>1 \<phi>\<^sub>2) = bound_vars \<phi>\<^sub>1 \<union> bound_vars \<phi>\<^sub>2"
-| "bound_vars (Imp \<phi>\<^sub>1 \<phi>\<^sub>2) = bound_vars \<phi>\<^sub>1 \<union> bound_vars \<phi>\<^sub>2"
-| "bound_vars (Exists t x \<phi>) = (free_vars \<phi> \<inter> {x}) \<union> bound_vars \<phi>"
-| "bound_vars (All t x \<phi>) = (free_vars \<phi> \<inter> {x}) \<union> bound_vars \<phi>"
-
-lemma vars: "fvars \<phi> = free_vars \<phi> \<union> bound_vars \<phi>"
-  by (induction \<phi>) auto
-
-lemma fsubst_subst_free: "v \<notin> free_vars (fsubst v c f)"
-  by (induction f) (auto simp: subst_subst_all)
-
-lemma fsubst_leaves_bound: "v \<in> bound_vars f \<Longrightarrow> v \<in> bound_vars (fsubst v c f)"
-  by (induction f) auto
+  
+  fun fvars::"('p, 'v, 'ty) formula \<Rightarrow> 'v set" where
+    "fvars (Atom p) = vars p" 
+  | "fvars Bot = {}"
+  | "fvars (Not \<phi>\<^sub>1) = fvars \<phi>\<^sub>1"
+  | "fvars (And \<phi>\<^sub>1 \<phi>\<^sub>2) = fvars \<phi>\<^sub>1 \<union> fvars \<phi>\<^sub>2"
+  | "fvars (Or \<phi>\<^sub>1 \<phi>\<^sub>2) = fvars \<phi>\<^sub>1 \<union> fvars \<phi>\<^sub>2"
+  | "fvars (Imp \<phi>\<^sub>1 \<phi>\<^sub>2) = fvars \<phi>\<^sub>1 \<union> fvars \<phi>\<^sub>2"
+  | "fvars (Exists t x \<phi>) = fvars \<phi>"
+  | "fvars (All t x \<phi>) = fvars \<phi>"   
+  
+  
+  fun fobjs::"('p, 'v, 'ty) formula \<Rightarrow> 'c set" where
+    "fobjs (Atom p) = objs p" 
+  | "fobjs Bot = {}"
+  | "fobjs (Not \<phi>\<^sub>1) = fobjs \<phi>\<^sub>1"
+  | "fobjs (And \<phi>\<^sub>1 \<phi>\<^sub>2) = fobjs \<phi>\<^sub>1 \<union> fobjs \<phi>\<^sub>2"
+  | "fobjs (Or \<phi>\<^sub>1 \<phi>\<^sub>2) = fobjs \<phi>\<^sub>1 \<union> fobjs \<phi>\<^sub>2"
+  | "fobjs (Imp \<phi>\<^sub>1 \<phi>\<^sub>2) = fobjs \<phi>\<^sub>1 \<union> fobjs \<phi>\<^sub>2"
+  | "fobjs (Exists t x \<phi>) = fobjs \<phi>"
+  | "fobjs (All t x \<phi>) = fobjs \<phi>"   
+  
+  fun free_vars::"('p, 'v, 'ty) formula \<Rightarrow> 'v set" where
+    "free_vars (Atom p) = vars p" 
+  | "free_vars Bot = {}"
+  | "free_vars (Not \<phi>\<^sub>1) = free_vars \<phi>\<^sub>1"
+  | "free_vars (And \<phi>\<^sub>1 \<phi>\<^sub>2) = free_vars \<phi>\<^sub>1 \<union> free_vars \<phi>\<^sub>2"
+  | "free_vars (Or \<phi>\<^sub>1 \<phi>\<^sub>2) = free_vars \<phi>\<^sub>1 \<union> free_vars \<phi>\<^sub>2"
+  | "free_vars (Imp \<phi>\<^sub>1 \<phi>\<^sub>2) = free_vars \<phi>\<^sub>1 \<union> free_vars \<phi>\<^sub>2"
+  | "free_vars (Exists t x \<phi>\<^sub>1) = free_vars \<phi>\<^sub>1 - {x}"
+  | "free_vars (All t x \<phi>\<^sub>1) = free_vars \<phi>\<^sub>1 - {x}"
+  
+  (* these are not bound variables in the typical sense, but those that exist as bound variables
+      somewhere down the syntax tree *)
+  fun bound_vars::"('p, 'v, 'ty) formula \<Rightarrow> 'v set" where
+    "bound_vars (Atom p) = {}"
+  | "bound_vars Bot = {}"
+  | "bound_vars (Not \<phi>\<^sub>1) = bound_vars \<phi>\<^sub>1"
+  | "bound_vars (And \<phi>\<^sub>1 \<phi>\<^sub>2) = bound_vars \<phi>\<^sub>1 \<union> bound_vars \<phi>\<^sub>2"
+  | "bound_vars (Or \<phi>\<^sub>1 \<phi>\<^sub>2) = bound_vars \<phi>\<^sub>1 \<union> bound_vars \<phi>\<^sub>2"
+  | "bound_vars (Imp \<phi>\<^sub>1 \<phi>\<^sub>2) = bound_vars \<phi>\<^sub>1 \<union> bound_vars \<phi>\<^sub>2"
+  | "bound_vars (Exists t x \<phi>) = (free_vars \<phi> \<inter> {x}) \<union> bound_vars \<phi>"
+  | "bound_vars (All t x \<phi>) = (free_vars \<phi> \<inter> {x}) \<union> bound_vars \<phi>"
+  
+  lemma vars: "fvars \<phi> = free_vars \<phi> \<union> bound_vars \<phi>"
+    by (induction \<phi>) auto
+  
+  lemma fsubst_subst_free: "v \<notin> free_vars (fsubst v c f)"
+    by (induction f) (auto simp: subst_subst_all)
+  
+  lemma fsubst_leaves_bound: "v \<in> bound_vars f \<Longrightarrow> v \<in> bound_vars (fsubst v c f)"
+    by (induction f) auto
 end
 end

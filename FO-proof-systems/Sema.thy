@@ -7,9 +7,10 @@ type_synonym 'a valuation = "'a \<Rightarrow> bool"
 text\<open>The implicit statement here is that an assignment or valuation is always defined on all atoms (because HOL is a total logic).
 Thus, there are no unsuitable assignments.\<close>
       
-locale formula_semantics = formula_syntax subst vars
+locale formula_semantics = formula_syntax subst vars objs
   for subst::"'v \<Rightarrow> 'c \<Rightarrow> 'p \<Rightarrow> 'p"
   and vars ::"'p \<Rightarrow> 'v set"
+  and objs ::"'p \<Rightarrow> 'c set"
   +
   fixes dom::"'ty \<Rightarrow> 'c list"
 begin
