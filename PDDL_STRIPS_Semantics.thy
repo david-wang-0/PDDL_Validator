@@ -173,6 +173,11 @@ fun schematic_term_vars where
   "schematic_term_vars (term.VAR x) = {x}" 
 | "schematic_term_vars (term.CONST c) = {}"
 
+
+fun schematic_term_objs where
+  "schematic_term_objs (term.VAR x) = {}"
+| "schematic_term_objs (term.CONST obj) = {obj}"
+
 definition schematic_term_atom_vars where
 "schematic_term_atom_vars \<equiv> \<Union> o ent o (map_atom schematic_term_vars)"
 
@@ -210,6 +215,10 @@ abbreviation inst_term_atom_subst where
 fun inst_term_vars where
   "inst_term_vars (inst_term.VAR x) = {x}" 
 | "inst_term_vars (inst_term.OBJ obj) = {}"
+
+fun inst_term_objs where
+  "inst_term_objs (inst_term.VAR x) = {}"
+| "inst_term_objs (inst_term.OBJ obj) = {obj}"
 
 definition inst_term_atom_vars::"inst_term atom \<Rightarrow> variable set" where
 "inst_term_atom_vars \<equiv> \<Union> o ent o (map_atom inst_term_vars)"
@@ -1161,126 +1170,135 @@ context ast_domain begin
       )"
 
 
-lemma map_atom_maintains_vars':
-  assumes "v \<in> schematic_term_atom_vars x"
-      and inv: "f (term.VAR v) = inst_term.VAR v"
-    shows "v \<in> inst_term_atom_vars (map_atom f x)"
-  using assms
-proof -
-  assume "v \<in> schematic_term_atom_vars x"
-  hence "\<exists>e \<in> ent x. v \<in> schematic_term_vars e" using stav_alt by simp
-  then obtain e where
-    e: "e \<in> ent x" 
-    "v \<in> schematic_term_vars e" 
-    by auto
-  hence "e = term.VAR v"by (cases e rule: term.exhaust) auto
-  hence "f e = inst_term.VAR v" using inv by auto
-  hence "(inst_term_vars o f) e = {v}" by auto
-  with e
-  show "v \<in> inst_term_atom_vars (map_atom f x)" using itavm_alt by blast
-qed
-
-
-
-lemma map_atom_maintains_vars:
-  fixes v
-  assumes a: "f (term.VAR v) = inst_term.VAR v"
-      and var_inst: "(\<forall>v \<in> schematic_term_atom_vars x. 
-           f (term.VAR v) = inst_term.VAR v 
-          \<or> (\<exists>obj. f(term.VAR v) = inst_term.OBJ obj))"
-      and obj_inst: "\<forall>c. f (term.CONST c) = inst_term.OBJ c" 
-    shows "v \<in> schematic_term_atom_vars x \<longleftrightarrow> v \<in> inst_term_atom_vars (map_atom f x)"
-  using assms
-proof -
-  { assume "v \<in> inst_term_atom_vars (map_atom f x)"
-    hence "\<exists>e \<in> ent x. v \<in> inst_term_vars (f e)" using itavm_alt by fastforce
+lemma map_atom_maintains_vars'':
+    assumes v: "v \<in> schematic_term_atom_vars x"
+        and a: "f (term.VAR v) = inst_term.VAR v"
+      shows "v \<in> inst_term_atom_vars (map_atom f x)"
+  proof -
+    from v 
+    have "\<exists>e \<in> ent x. v \<in> schematic_term_vars e" using stav_alt by simp
     then obtain e where
-      e: "e \<in> ent x"
-      "v \<in> inst_term_vars (f e)"
+      e: "e \<in> ent x" 
+      "v \<in> schematic_term_vars e" 
       by auto
-    hence "f e = inst_term.VAR v" by (cases "f e") auto
-    then obtain v' where
-      v': "e = term.VAR v'" 
-      using obj_inst by (cases e) auto
-    moreover
-    hence "v' \<in> schematic_term_atom_vars x" using e stav_alt itavm_alt by fastforce
-    moreover
-    hence "e = term.VAR v" using obj_inst var_inst e v' by fastforce
-    ultimately
-    have "v \<in> schematic_term_atom_vars x"  by auto
-  }
-  with map_atom_maintains_vars' a
-  show "v \<in> schematic_term_atom_vars x \<longleftrightarrow> v \<in> inst_term_atom_vars (map_atom f x)" by blast
-qed 
-
-
-lemma cam_avoids_capture:
-  assumes "v \<in> sf_free_vars \<phi>"
-      and "f (term.VAR v) = inst_term.VAR v"
-  shows "v \<in> free_vars (cap_avoid_map f \<phi>)"
-  using assms map_atom_maintains_vars'
-  by (induction \<phi> arbitrary: f) (simp, auto)
-
-lemma cam_leaves_bound: 
-  assumes "v \<in> sf_bound_vars \<phi>"
-  shows "v \<in> bound_vars (cap_avoid_map f \<phi>)"
-  using assms
-  apply (induction \<phi> arbitrary: f)
-         apply auto[6]
-   apply (cases "v \<in> sf_bound_vars \<phi>")
-  using cam_avoids_capture 
-  by auto
-
-lemma free_is_cam_free:
-  assumes "f (term.VAR v) = inst_term.VAR v"
-      and "\<forall>v \<in> sf_free_vars \<phi>. f (term.VAR v) = inst_term.VAR v 
-          \<or> (\<exists>obj. f(term.VAR v) = inst_term.OBJ obj)"
-      and "\<forall>c. f (term.CONST c) = inst_term.OBJ c" 
-    shows "v \<in> sf_free_vars \<phi> \<longleftrightarrow> v \<in> free_vars (cap_avoid_map f \<phi>)"
-  using assms
-  apply (induction \<phi> arbitrary: f)
-  subgoal 1 using map_atom_maintains_vars by simp
-  apply auto[5]
-  subgoal for t x
-    by (cases "x = v") auto
-  subgoal for t x
-    by (cases "x = v") auto
-  done
-
-
-lemma bound_is_cam_bound:
-  assumes var_inst: "\<forall>v \<in> sf_free_vars \<phi>. f (term.VAR v) = inst_term.VAR v 
-          \<or> (\<exists>obj. f(term.VAR v) = inst_term.OBJ obj)"
-      and obj_inst: "\<And>c. f (term.CONST c) = inst_term.OBJ c" 
-  shows "v \<in> sf_bound_vars \<phi> \<longleftrightarrow> v \<in> bound_vars (cap_avoid_map f \<phi>)"
-  using assms
-proof (induction \<phi> arbitrary: f)
-  case (Exists t x \<phi>)
-  have "v \<in> sf_bound_vars (\<^bold>\<exists>\<^sub>t x. \<phi>)" if a: "v \<in> bound_vars (cap_avoid_map f (\<^bold>\<exists>\<^sub>t x. \<phi>))"
-  proof (cases "v \<in> bound_vars (cap_avoid_map (f(term.VAR x := inst_term.VAR x)) \<phi>)")
-    case True
-    then show ?thesis using Exists by auto
-  next
-    case False
-    with a
-    have "v \<in> free_vars (cap_avoid_map (f(term.VAR x := inst_term.VAR x)) \<phi>) \<and> x = v" by auto
-    then show ?thesis using free_is_cam_free[of "(f(term.VAR x := inst_term.VAR x))"] Exists by fastforce
+    hence "e = term.VAR v"by (cases e rule: term.exhaust) auto
+    hence "f e = inst_term.VAR v" using a v by auto
+    hence "(inst_term_vars o f) e = {v}" by auto
+    with e
+    show "v \<in> inst_term_atom_vars (map_atom f x)" using itavm_alt by blast
   qed
-  thus ?case using cam_leaves_bound by blast
-next
-  case (All t x \<phi>)
-  have "v \<in> sf_bound_vars (\<^bold>\<forall>\<^sub>t x. \<phi>)" if a: "v \<in> bound_vars (cap_avoid_map f (\<^bold>\<forall>\<^sub>t x. \<phi>))"
-  proof (cases "v \<in> bound_vars (cap_avoid_map (f(term.VAR x := inst_term.VAR x)) \<phi>)")
-    case True
-    then show ?thesis using All by auto
-  next
-    case False
-    with a
-    have "v \<in> free_vars (cap_avoid_map (f(term.VAR x := inst_term.VAR x)) \<phi>) \<and> x = v" by auto
-    then show ?thesis using free_is_cam_free[of "(f(term.VAR x := inst_term.VAR x))"] All by fastforce
+
+  lemma map_atom_maintains_vars':
+    assumes v: "v \<in> schematic_term_atom_vars x"
+        and a: "\<exists>v'. f (term.VAR v) = inst_term.VAR v'"
+        and var_inst: "(\<forall>v \<in> schematic_term_atom_vars x. 
+             f (term.VAR v) = inst_term.VAR v 
+            \<or> (\<exists>obj. f(term.VAR v) = inst_term.OBJ obj))"
+      shows "v \<in> inst_term_atom_vars (map_atom f x)"
+  proof -
+    from a var_inst v
+    have "f (term.VAR v) = inst_term.VAR v" by fastforce
+    with v
+    show ?thesis using map_atom_maintains_vars'' by simp
   qed
-  thus ?case using cam_leaves_bound by blast
-qed auto
+  
+  lemma map_atom_maintains_vars:
+    fixes v
+    assumes a: "\<exists>v'. f (term.VAR v) = inst_term.VAR v'"
+        and var_inst: "(\<forall>v \<in> schematic_term_atom_vars x. 
+             f (term.VAR v) = inst_term.VAR v 
+            \<or> (\<exists>obj. f(term.VAR v) = inst_term.OBJ obj))"
+        and obj_inst: "\<forall>c. f (term.CONST c) = inst_term.OBJ c" 
+      shows "v \<in> schematic_term_atom_vars x \<longleftrightarrow> v \<in> inst_term_atom_vars (map_atom f x)"
+    using assms
+  proof -
+    { assume "v \<in> inst_term_atom_vars (map_atom f x)"
+      hence "\<exists>e \<in> ent x. v \<in> inst_term_vars (f e)" using itavm_alt by fastforce
+      then obtain e where
+        e: "e \<in> ent x"
+        "v \<in> inst_term_vars (f e)"
+        by auto
+      hence "f e = inst_term.VAR v" by (cases "f e") auto
+      then obtain v' where
+        v': "e = term.VAR v'" 
+        using obj_inst by (cases e) auto
+      moreover
+      hence "v' \<in> schematic_term_atom_vars x" using e stav_alt itavm_alt by fastforce
+      moreover
+      hence "e = term.VAR v" using obj_inst var_inst e v' by fastforce
+      ultimately
+      have "v \<in> schematic_term_atom_vars x"  by auto
+    }
+    with map_atom_maintains_vars' a var_inst
+    show "v \<in> schematic_term_atom_vars x \<longleftrightarrow> v \<in> inst_term_atom_vars (map_atom f x)" by blast
+  qed 
+
+  lemma cam_avoids_capture:
+    assumes "v \<in> sf_free_vars \<phi>"
+        and "f (term.VAR v) = inst_term.VAR v"
+    shows "v \<in> free_vars (cap_avoid_map f \<phi>)"
+    using assms map_atom_maintains_vars''
+    by (induction \<phi> arbitrary: f) (simp, auto)
+  
+  lemma cam_leaves_bound: 
+    assumes "v \<in> sf_bound_vars \<phi>"
+    shows "v \<in> bound_vars (cap_avoid_map f \<phi>)"
+    using assms
+    apply (induction \<phi> arbitrary: f)
+           apply auto[6]
+     apply (cases "v \<in> sf_bound_vars \<phi>")
+    using cam_avoids_capture 
+    by auto
+  
+  lemma free_is_cam_free:
+    assumes "\<exists>v'. f (term.VAR v) = inst_term.VAR v'"
+        and "\<forall>v \<in> sf_free_vars \<phi>. f (term.VAR v) = inst_term.VAR v 
+            \<or> (\<exists>obj. f(term.VAR v) = inst_term.OBJ obj)"
+        and "\<forall>c. f (term.CONST c) = inst_term.OBJ c" 
+      shows "v \<in> sf_free_vars \<phi> \<longleftrightarrow> v \<in> free_vars (cap_avoid_map f \<phi>)"
+    using assms 
+    apply (induction \<phi> arbitrary: f)
+    subgoal 1 using map_atom_maintains_vars by force
+    apply auto[5]
+    subgoal for t x
+      by (cases "x = v") auto
+    subgoal for t x
+      by (cases "x = v") auto
+    done
+  
+  lemma bound_is_cam_bound:
+    assumes var_inst: "\<forall>v \<in> sf_free_vars \<phi>. f (term.VAR v) = inst_term.VAR v 
+            \<or> (\<exists>obj. f(term.VAR v) = inst_term.OBJ obj)"
+        and obj_inst: "\<And>c. f (term.CONST c) = inst_term.OBJ c" 
+    shows "v \<in> sf_bound_vars \<phi> \<longleftrightarrow> v \<in> bound_vars (cap_avoid_map f \<phi>)"
+    using assms
+  proof (induction \<phi> arbitrary: f)
+    case (Exists t x \<phi>)
+    have "v \<in> sf_bound_vars (\<^bold>\<exists>\<^sub>t x. \<phi>)" if a: "v \<in> bound_vars (cap_avoid_map f (\<^bold>\<exists>\<^sub>t x. \<phi>))"
+    proof (cases "v \<in> bound_vars (cap_avoid_map (f(term.VAR x := inst_term.VAR x)) \<phi>)")
+      case True
+      then show ?thesis using Exists by auto
+    next
+      case False
+      with a
+      have "v \<in> free_vars (cap_avoid_map (f(term.VAR x := inst_term.VAR x)) \<phi>) \<and> x = v" by auto
+      then show ?thesis using free_is_cam_free[of "(f(term.VAR x := inst_term.VAR x))"] Exists by fastforce
+    qed
+    thus ?case using cam_leaves_bound by blast
+  next
+    case (All t x \<phi>)
+    have "v \<in> sf_bound_vars (\<^bold>\<forall>\<^sub>t x. \<phi>)" if a: "v \<in> bound_vars (cap_avoid_map f (\<^bold>\<forall>\<^sub>t x. \<phi>))"
+    proof (cases "v \<in> bound_vars (cap_avoid_map (f(term.VAR x := inst_term.VAR x)) \<phi>)")
+      case True
+      then show ?thesis using All by auto
+    next
+      case False
+      with a
+      have "v \<in> free_vars (cap_avoid_map (f(term.VAR x := inst_term.VAR x)) \<phi>) \<and> x = v" by auto
+      then show ?thesis using free_is_cam_free[of "(f(term.VAR x := inst_term.VAR x))"] All by fastforce
+    qed
+    thus ?case using cam_leaves_bound by blast
+  qed auto
 
 end \<comment> \<open>Context of \<open>ast_domain\<close>\<close>
 
@@ -1825,36 +1843,36 @@ end
       by (simp add: Let_def)
   qed
 
-corollary inst_leaves_no_free_vars:
-  assumes match:"action_params_match a args"
-        and wf: "wf_action_schema a"
-        and inst: "Inst_Action pre' (Effect add' del') = instantiate_action_schema a args"
-      shows "free_vars pre' = {} 
-            \<and> (\<forall>a \<in> set add'. free_vars a = {})
-            \<and> (\<forall>d \<in> set del'. free_vars d = {})"
-proof -
-  from wf_instantiate_action_schema[OF match wf] inst
-  have 1: "wf_inst_action (Inst_Action pre' (Effect add' del'))" by auto
-  hence "wf_inst_fmla pre'" by fastforce
-  hence "free_vars pre' = {}" using wf_inst_fmla_alt by blast
-  moreover
-  from 1
-  have "\<forall>a \<in> set add'. wf_inst_fmla a"
-    using wf_fmla_atom_alt unfolding wf_inst_fmla_def
-    by auto
-  hence "\<forall>a \<in> set add'. free_vars a = {}" using wf_inst_fmla_alt by blast
-  moreover
-  from 1
-  have "\<forall>d \<in> set del'. wf_inst_fmla d"
-    using wf_fmla_atom_alt wf_inst_fmla_def  unfolding wf_inst_fmla_def
-    by fastforce
-  hence "\<forall>d \<in> set del'. free_vars d = {}" using wf_inst_fmla_alt by blast
-  ultimately
-  show ?thesis by simp
-qed
-
-corollary inst_maintains_bound:
-  assumes a[simp]: "a = Action_Schema n params pre (Effect add del)"
+  corollary inst_leaves_no_free_vars:
+    assumes match:"action_params_match a args"
+          and wf: "wf_action_schema a"
+          and inst: "Inst_Action pre' (Effect add' del') = instantiate_action_schema a args"
+        shows "free_vars pre' = {} 
+              \<and> (\<forall>a \<in> set add'. free_vars a = {})
+              \<and> (\<forall>d \<in> set del'. free_vars d = {})"
+  proof -
+    from wf_instantiate_action_schema[OF match wf] inst
+    have 1: "wf_inst_action (Inst_Action pre' (Effect add' del'))" by auto
+    hence "wf_inst_fmla pre'" by fastforce
+    hence "free_vars pre' = {}" using wf_inst_fmla_alt by blast
+    moreover
+    from 1
+    have "\<forall>a \<in> set add'. wf_inst_fmla a"
+      using wf_fmla_atom_alt unfolding wf_inst_fmla_def
+      by auto
+    hence "\<forall>a \<in> set add'. free_vars a = {}" using wf_inst_fmla_alt by blast
+    moreover
+    from 1
+    have "\<forall>d \<in> set del'. wf_inst_fmla d"
+      using wf_fmla_atom_alt wf_inst_fmla_def unfolding wf_inst_fmla_def
+      by fastforce
+    hence "\<forall>d \<in> set del'. free_vars d = {}" using wf_inst_fmla_alt by blast
+    ultimately
+    show ?thesis by simp
+  qed
+  
+  corollary inst_maintains_bound:
+    assumes a[simp]: "a = Action_Schema n params pre (Effect add del)"
         and match:"action_params_match a args"
         and wf: "wf_action_schema a"
         and inst: "Inst_Action pre' (Effect add' del') = instantiate_action_schema a args"
@@ -1864,9 +1882,13 @@ corollary inst_maintains_bound:
   proof -
     let ?f = "inst_var (the o (map_of (zip (map fst params) (map inst_term.OBJ args))))"
 
-    { fix \<phi> 
-      assume "wf_fmla upd_te (ty_term (map_of params) constT) \<phi>"
-      hence  "sf_free_vars \<phi> \<subseteq> dom (map_of params)" 
+    have well_inst:
+     "\<forall>v. v \<in> sf_bound_vars \<phi> \<longleftrightarrow> v \<in> bound_vars (cap_avoid_map ?f \<phi>)"
+      if "wf_fmla upd_te (ty_term (map_of params) constT) \<phi>"
+        for \<phi> 
+    proof -
+      from that 
+      have  "sf_free_vars \<phi> \<subseteq> dom (map_of params)" 
         using wf_schematic_fmla_free_vars[of "map_of params"]
         by force
       hence "sf_free_vars \<phi> \<subseteq> set (map fst params)"
@@ -1893,10 +1915,10 @@ corollary inst_maintains_bound:
         by fastforce
       hence "\<forall>v \<in> sf_free_vars \<phi>.(\<exists>obj. ?f (term.VAR v) = inst_term.OBJ obj)"
         by simp
-      hence "\<forall>v. v \<in> sf_bound_vars \<phi> \<longleftrightarrow> v \<in> bound_vars (cap_avoid_map ?f \<phi>)"
+      thus "\<forall>v. v \<in> sf_bound_vars \<phi> \<longleftrightarrow> v \<in> bound_vars (cap_avoid_map ?f \<phi>)"
         using bound_is_cam_bound
         by simp
-    } note well_inst = this
+    qed
     
     have "sf_bound_vars pre = bound_vars pre'" using inst wf well_inst by (auto simp: Let_def)
     moreover

@@ -89,6 +89,16 @@ fun fsubst::"'v \<Rightarrow> 'c \<Rightarrow> ('p, 'v, 'ty) formula \<Rightarro
   "fsubst v c (Exists t x \<phi>\<^sub>1) = (if x = v then Exists t x \<phi>\<^sub>1 else Exists t x (fsubst v c \<phi>\<^sub>1))" |
   "fsubst v c (All t x \<phi>\<^sub>1) = (if x = v then All t x \<phi>\<^sub>1 else All t x (fsubst v c \<phi>\<^sub>1))"
 
+fun fvars::"('p, 'v, 'ty) formula \<Rightarrow> 'v set" where
+  "fvars (Atom p) = vars p" 
+| "fvars Bot = {}"
+| "fvars (Not \<phi>\<^sub>1) = fvars \<phi>\<^sub>1"
+| "fvars (And \<phi>\<^sub>1 \<phi>\<^sub>2) = fvars \<phi>\<^sub>1 \<union> fvars \<phi>\<^sub>2"
+| "fvars (Or \<phi>\<^sub>1 \<phi>\<^sub>2) = fvars \<phi>\<^sub>1 \<union> fvars \<phi>\<^sub>2"
+| "fvars (Imp \<phi>\<^sub>1 \<phi>\<^sub>2) = fvars \<phi>\<^sub>1 \<union> fvars \<phi>\<^sub>2"
+| "fvars (Exists t x \<phi>) = fvars \<phi>"
+| "fvars (All t x \<phi>) = fvars \<phi>"   
+
 fun free_vars::"('p, 'v, 'ty) formula \<Rightarrow> 'v set" where
   "free_vars (Atom p) = vars p" 
 | "free_vars Bot = {}"
@@ -110,6 +120,9 @@ fun bound_vars::"('p, 'v, 'ty) formula \<Rightarrow> 'v set" where
 | "bound_vars (Imp \<phi>\<^sub>1 \<phi>\<^sub>2) = bound_vars \<phi>\<^sub>1 \<union> bound_vars \<phi>\<^sub>2"
 | "bound_vars (Exists t x \<phi>) = (free_vars \<phi> \<inter> {x}) \<union> bound_vars \<phi>"
 | "bound_vars (All t x \<phi>) = (free_vars \<phi> \<inter> {x}) \<union> bound_vars \<phi>"
+
+lemma vars: "fvars \<phi> = free_vars \<phi> \<union> bound_vars \<phi>"
+  by (induction \<phi>) auto
 
 lemma fsubst_subst_free: "v \<notin> free_vars (fsubst v c f)"
   by (induction f) (auto simp: subst_subst_all)
