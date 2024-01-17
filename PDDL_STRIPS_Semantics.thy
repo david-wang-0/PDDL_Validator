@@ -836,34 +836,37 @@ definition wf_world_model::
         the same type to the same terms, well-formedness under one type environment implies
         well-formedness under another.\<close>
 
+  lemma list_all2_ty:
+    fixes xs Ts
+    assumes "\<forall>x \<in> set xs. Q x = R x"
+        and "list_all2 (is_of_type Q) xs Ts"
+      shows "list_all2 (is_of_type R) xs Ts"
+  using assms(2) assms(1)
+  proof (induction xs Ts rule: list_all2_induct)
+    case Nil
+    then show ?case by simp
+  next
+    case (Cons x t xs ts)
+    hence "is_of_type R x t" 
+      unfolding is_of_type_def 
+      by (auto split: option.splits)
+    moreover have "list_all2 (is_of_type R) xs ts" using Cons by auto
+    ultimately show ?case by auto
+  qed
+  
   lemma same_type_imp_wf_eq: 
     assumes same: "\<forall>e \<in> ent a. Q e = R e"
         and wf:   "wf_atom Q a"
-    shows "wf_atom R a"
+      shows "wf_atom R a"
   proof (cases a)
     case [simp]: (predAtm p vs)
     from wf obtain Ts where 
         sig: "sig p = Some Ts" and
-      typed: "list_all2 (is_of_type Q) vs Ts"
+        ls: "list_all2 (is_of_type Q) vs Ts"
       by (cases "sig p") auto
-    with list_all2_iff
-    have 1: "\<forall>(x, y)\<in>set (zip vs Ts). (is_of_type Q) x y" and
-       len: "length vs = length Ts" by metis+
-  
-    have "is_of_type R v y" 
-      if "(v, y) \<in> set (zip vs Ts)" for v y
-    proof -
-      from that 1 
-      have "(is_of_type Q) v y" by fast
-      moreover
-      have "v \<in> ent (predAtm p vs)" using set_zip_leftD[OF that] by simp
-      ultimately
-      show "(is_of_type R) v y" using same unfolding is_of_type_def by fastforce
-    qed
-    with len 
-    have "list_all2 (is_of_type R) vs Ts" using list_all2_iff by blast
-    with sig
-    show ?thesis by simp
+    have "\<forall>x \<in> set vs. Q x = R x" using same by auto
+    from list_all2_ty[OF this ls]
+    show ?thesis using sig by simp
   next
     case [simp]: (Eq x y)
     then show ?thesis using assms by auto
@@ -875,13 +878,35 @@ definition wf_world_model::
         and wf: "wf_atom Q a"
     shows "\<forall>e \<in> ent a. Q e = R e"
     using wf_imp_ent_typed[OF wf] map_leD le by fastforce
+
+
+  lemma wf_atom_mono:
+    assumes SS: "tys \<subseteq>\<^sub>m tys'"
+    assumes WF: "wf_atom tys a"
+    shows "wf_atom tys' a"
+    using map_le_imp_same_type[OF SS WF] WF same_type_imp_wf_eq
+    by blast
+
+  lemma wf_fmla_atom_mono:
+    assumes SS: "tys \<subseteq>\<^sub>m tys'"
+    assumes WF: "wf_fmla_atom tys a"
+    shows "wf_fmla_atom tys' a"
+  proof -
+    obtain p vs where
+      [simp]: "a = Atom (predAtm p vs)"
+      "wf_atom tys (predAtm p vs)"
+      using WF
+      by (cases "(tys, a)" rule: wf_fmla_atom.cases) auto
+    from wf_atom_mono[OF SS this(2)]
+    show ?thesis by simp
+  qed
   
-  lemma wf_atom_fw: 
+  lemma wf_inst_atom_mono: 
     assumes le: "Q \<subseteq>\<^sub>m R" 
         and wf: "wf_atom (ty_inst_term Q objT) a"
       shows "wf_atom (ty_inst_term R objT) a"
-    using same_type_imp_wf_eq ty_inst_term_mono[OF le map_le_refl[of objT], THEN map_le_imp_same_type] wf
-    by fast
+    using ty_inst_term_mono[OF le map_le_refl[of objT], THEN wf_atom_mono] wf
+    by blast
 
   lemma inst_term_vars_restr_same_type: "\<forall>e \<in> ent a. (ty_inst_term Q objT) e = (ty_inst_term (Q |` (inst_term_atom_vars a)) objT) e"
   proof
@@ -938,7 +963,7 @@ definition wf_world_model::
     \<Longrightarrow> wf_fmla upd_inst_te (ty_inst_term R objT) \<phi>"
   proof (induction \<phi> arbitrary: Q R)
     case (Atom x)
-    then show ?case using wf_atom_fw by simp
+    then show ?case using wf_inst_atom_mono by simp
   next
     case (Exists t x \<phi>)
     then show ?case 
@@ -1396,61 +1421,7 @@ context ast_problem begin
     apply (erule conjE)
     apply assumption
     done
-
-  thm is_of_type_map_ofE
-
-  find_theorems name: "option*case"
-
-  find_theorems name: "case*option"
-
-  find_theorems name: "option"
-  find_theorems "?a = ?c \<Longrightarrow> ?b = ?d \<Longrightarrow> ?c \<noteq> ?d \<Longrightarrow> ?a \<noteq> ?b"
-  lemma "Some x \<noteq> None" using option.simps(3) .
-
-
-  lemma list_all_mono:
-    fixes xs Ts 
-    assumes SS: "tys \<subseteq>\<^sub>m tys'"
-        and "list_all2 (is_of_type tys) xs Ts" 
-      shows "list_all2 (is_of_type tys') xs Ts"
-  proof - 
-    have "list_all2 (is_of_type tys') xs Ts" 
-      if "list_all2 (is_of_type tys) xs Ts" for xs Ts
-      using that
-    proof (induction xs Ts rule: list_all2_induct)
-      case Nil
-      then show ?case by simp
-    next
-      case (Cons x t xs ts)
-      hence "is_of_type tys' x t" 
-        using map_leD is_of_type_def SS
-        by (smt (verit, del_insts) case_optionE)
-      thus ?case 
-        using \<open>list_all2 (is_of_type tys') xs ts\<close> list_all2_def 
-        by auto
-    qed
-    with assms show ?thesis by auto
-  qed
-
-  lemma wf_atom_mono:
-    assumes SS: "tys \<subseteq>\<^sub>m tys'"
-    assumes WF: "wf_atom tys a"
-    shows "wf_atom tys' a"
-  proof -
-    from list_all_mono[OF SS] WF show ?thesis
-      by (cases a) (auto split: option.splits dest: map_leD[OF SS])
-  qed
-
-  lemma wf_fmla_atom_mono:
-    assumes SS: "tys \<subseteq>\<^sub>m tys'"
-    assumes WF: "wf_fmla_atom tys a"
-    shows "wf_fmla_atom tys' a"
-  proof -
-    from list_all_mono[OF SS] WF show ?thesis
-      by (cases "(tys, a)" rule: wf_fmla_atom.cases) 
-        (auto split: option.splits dest: map_leD[OF SS])
-  qed
-                                    
+                    
   lemma constT_ss_objT: "constT \<subseteq>\<^sub>m objT"
     unfolding constT_def objT_def
     apply (rule map_leI)
