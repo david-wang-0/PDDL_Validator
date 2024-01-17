@@ -767,23 +767,27 @@ definition wf_world_model::
     "wf_effect_inst (Effect (a) (d))
       \<longleftrightarrow> (\<forall>a\<in>set a \<union> set d. wf_inst_fmla_atom a)"
 
+  text \<open>The following section reasons shows that well-formed instantiated formulae do not have free
+        variables and relates wf_inst_fmla to wf_inst_fmla_atom. It also contains a few lemmas proving
+        similar results for schematic formulas and terms\<close>
+
   lemma wf_imp_ent_typed:
-    assumes wf: "wf_atom (ty_inst_term Q objT) a"
-    shows "\<forall>e \<in> ent a. ty_inst_term Q objT e \<noteq> None"
+    assumes wf: "wf_atom Q a"
+    shows "\<forall>e \<in> ent a. Q e \<noteq> None"
   proof (cases a)
     case [simp]: (predAtm p vs)
-    have "ty_inst_term Q objT e \<noteq> None" if "e \<in> ent a" for e
+    have "Q e \<noteq> None" if "e \<in> ent a" for e
     proof -
       from wf obtain Ts where 
-        "sig p = Some Ts \<and> list_all2 (is_of_type (ty_inst_term Q objT)) vs Ts"
+        "sig p = Some Ts \<and> list_all2 (is_of_type Q) vs Ts"
         by (cases "sig p") auto
-      hence "\<forall>v \<in> set vs. \<exists>T \<in> set Ts. (is_of_type (ty_inst_term Q objT)) v T"
+      hence "\<forall>v \<in> set vs. \<exists>T \<in> set Ts. (is_of_type Q) v T"
         by (metis in_set_conv_nth list_all2_conv_all_nth)
-      hence "\<forall>e \<in> ent a. \<exists>T. (is_of_type (ty_inst_term Q objT)) e T" by auto
+      hence "\<forall>e \<in> ent a. \<exists>T. (is_of_type Q) e T" by auto
       with that obtain T where
-        "(is_of_type (ty_inst_term Q objT)) e T" by auto
-      thus "ty_inst_term Q objT e \<noteq> None"
-        apply (cases "ty_inst_term Q objT e")
+        "(is_of_type Q) e T" by auto
+      thus "Q e \<noteq> None"
+        apply (cases "Q e")
         unfolding is_of_type_def
         by auto
     qed
@@ -792,8 +796,27 @@ definition wf_world_model::
     case (Eq x y)
     thus ?thesis using wf by auto
   qed
+
+  text \<open>The following two lemmas concern the variables present in a schematic atom
+        and an instantiated atom\<close>
+
+  lemma wf_schematic_atom_vars: "wf_atom (ty_term Q constT) a \<Longrightarrow> schematic_term_atom_vars a \<subseteq> dom Q"
+  proof (rule subsetI)
+    fix v
+    assume wf: "wf_atom (ty_term Q constT) a"
+    assume "v \<in> schematic_term_atom_vars a"
+    then obtain e where
+      e: "e \<in> ent a" 
+      "v \<in> schematic_term_vars e" 
+      by (auto simp: stav_alt)
+    hence "e = term.VAR v" by (cases e rule: term.exhaust) auto
+    moreover
+    have "ty_term Q constT e \<noteq> None" using e wf_imp_ent_typed wf by fastforce
+    ultimately
+    show "v \<in> dom Q" by auto
+  qed
   
-  lemma wf_atom_vars: "wf_atom (ty_inst_term Q objT) a \<Longrightarrow> inst_term_atom_vars a \<subseteq> dom Q"
+  lemma wf_inst_atom_vars: "wf_atom (ty_inst_term Q objT) a \<Longrightarrow> inst_term_atom_vars a \<subseteq> dom Q"
   proof (rule subsetI)
     fix v
     assume wf: "wf_atom (ty_inst_term Q objT) a"
@@ -809,33 +832,36 @@ definition wf_world_model::
     show "v \<in> dom Q" by auto
   qed
 
+  text \<open>This section proves that under certain circumstances, namely the type environments assigning
+        the same type to the same terms, well-formedness under one type environment implies
+        well-formedness under another.\<close>
 
   lemma same_type_imp_wf_eq: 
-    assumes same: "\<forall>e \<in> ent a. (ty_inst_term Q objT) e = (ty_inst_term R objT) e"
-    and wf: "wf_atom (ty_inst_term Q objT) a"
-    shows "wf_atom (ty_inst_term R objT) a"
+    assumes same: "\<forall>e \<in> ent a. Q e = R e"
+        and wf:   "wf_atom Q a"
+    shows "wf_atom R a"
   proof (cases a)
     case [simp]: (predAtm p vs)
     from wf obtain Ts where 
         sig: "sig p = Some Ts" and
-      typed: "list_all2 (is_of_type (ty_inst_term Q objT)) vs Ts"
+      typed: "list_all2 (is_of_type Q) vs Ts"
       by (cases "sig p") auto
     with list_all2_iff
-    have 1: "\<forall>(x, y)\<in>set (zip vs Ts). (is_of_type (ty_inst_term Q objT)) x y" and
+    have 1: "\<forall>(x, y)\<in>set (zip vs Ts). (is_of_type Q) x y" and
        len: "length vs = length Ts" by metis+
   
-    have "is_of_type (ty_inst_term R objT) v y" 
+    have "is_of_type R v y" 
       if "(v, y) \<in> set (zip vs Ts)" for v y
     proof -
       from that 1 
-      have "(is_of_type (ty_inst_term Q objT)) v y" by fast
+      have "(is_of_type Q) v y" by fast
       moreover
       have "v \<in> ent (predAtm p vs)" using set_zip_leftD[OF that] by simp
       ultimately
-      show "(is_of_type (ty_inst_term R objT)) v y" using same unfolding is_of_type_def by fastforce
+      show "(is_of_type R) v y" using same unfolding is_of_type_def by fastforce
     qed
     with len 
-    have "list_all2 (is_of_type (ty_inst_term R objT)) vs Ts" using list_all2_iff by blast
+    have "list_all2 (is_of_type R) vs Ts" using list_all2_iff by blast
     with sig
     show ?thesis by simp
   next
@@ -846,28 +872,25 @@ definition wf_world_model::
   
   lemma map_le_imp_same_type: 
     assumes le: "Q \<subseteq>\<^sub>m R" 
-        and wf: "wf_atom (ty_inst_term Q objT) a"
-    shows "\<forall>e \<in> ent a. (ty_inst_term Q objT) e = (ty_inst_term R objT) e"
-    using wf_imp_ent_typed[OF wf] ty_inst_term_mono[OF le, of objT objT] map_leD
-    by fastforce
+        and wf: "wf_atom Q a"
+    shows "\<forall>e \<in> ent a. Q e = R e"
+    using wf_imp_ent_typed[OF wf] map_leD le by fastforce
   
   lemma wf_atom_fw: 
     assumes le: "Q \<subseteq>\<^sub>m R" 
         and wf: "wf_atom (ty_inst_term Q objT) a"
       shows "wf_atom (ty_inst_term R objT) a"
-    using same_type_imp_wf_eq[OF map_le_imp_same_type[OF le wf] wf]
-    .
+    using same_type_imp_wf_eq ty_inst_term_mono[OF le map_le_refl[of objT], THEN map_le_imp_same_type] wf
+    by fast
 
   lemma inst_term_vars_restr_same_type: "\<forall>e \<in> ent a. (ty_inst_term Q objT) e = (ty_inst_term (Q |` (inst_term_atom_vars a)) objT) e"
   proof
     fix e
     assume "e \<in> ent a"
     hence "inst_term_vars e \<subseteq> inst_term_atom_vars a" using itav_alt by blast
-    hence "(ty_inst_term (Q |` (inst_term_vars e)) objT) e = (ty_inst_term (Q |` (inst_term_atom_vars a)) objT) e"
-      by (cases e) auto
+    hence "(ty_inst_term (Q |` (inst_term_vars e)) objT) e = (ty_inst_term (Q |` (inst_term_atom_vars a)) objT) e" by (cases e) auto
     moreover
-    have "(ty_inst_term Q objT) e = (ty_inst_term (Q |` (inst_term_vars e)) objT) e"
-      by (cases e) auto
+    have "(ty_inst_term Q objT) e = (ty_inst_term (Q |` (inst_term_vars e)) objT) e" by (cases e) auto
     ultimately 
     show "(ty_inst_term Q objT) e = (ty_inst_term (Q |` (inst_term_atom_vars a)) objT) e" by argo
   qed
@@ -877,11 +900,28 @@ definition wf_world_model::
       shows "wf_atom (ty_inst_term (Q |` (inst_term_atom_vars a)) objT) a"
     using same_type_imp_wf_eq[OF inst_term_vars_restr_same_type wf]
     .
-  
-  lemma wf_fmla_free_vars: "wf_fmla upd_inst_te (ty_inst_term Q objT) \<phi> \<Longrightarrow> free_vars \<phi> \<subseteq> dom Q"
+
+  text \<open>The type environment must contain a type for all free variables in a formula.\<close>
+  lemma wf_schematic_fmla_free_vars: "wf_fmla upd_te (ty_term Q constT) \<phi> \<Longrightarrow> sf_free_vars \<phi> \<subseteq> dom Q"
   proof (induction \<phi> arbitrary: Q)
     case (Atom x)
-    then show ?case using wf_atom_vars by simp
+    then show ?case using wf_schematic_atom_vars by simp
+  next
+    case (Exists t x \<phi>)
+    hence "wf_fmla upd_te (ty_term (Q(x \<mapsto> t)) constT) \<phi>" using ty_term_upd by simp
+    hence "sf_free_vars \<phi> \<subseteq> dom (Q(x \<mapsto> t))" using Exists.IH by blast
+    then show ?case by auto
+  next
+    case (All t x \<phi>)
+    hence "wf_fmla upd_te (ty_term (Q(x \<mapsto> t)) constT) \<phi>" using ty_term_upd by simp
+    hence "sf_free_vars \<phi> \<subseteq> dom (Q(x \<mapsto> t))" using All.IH by blast                
+    then show ?case by auto
+  qed simp_all
+  
+  lemma wf_inst_fmla_free_vars: "wf_fmla upd_inst_te (ty_inst_term Q objT) \<phi> \<Longrightarrow> free_vars \<phi> \<subseteq> dom Q"
+  proof (induction \<phi> arbitrary: Q)
+    case (Atom x)
+    then show ?case using wf_inst_atom_vars by simp
   next
     case (Exists t x \<phi>)
     hence "wf_fmla upd_inst_te (ty_inst_term (Q(x \<mapsto> t)) objT) \<phi>" using ty_inst_term_upd by simp
@@ -1000,14 +1040,13 @@ definition wf_world_model::
   
   lemma wf_inst_fmla_alt_lemma: "Q \<subseteq>\<^sub>m R \<Longrightarrow> wf_fmla upd_inst_te (ty_inst_term Q objT) \<phi> 
     \<longleftrightarrow> wf_fmla upd_inst_te (ty_inst_term R objT) \<phi> \<and> free_vars \<phi> \<subseteq> dom Q"
-    using wf_fmla_fw wf_fmla_free_vars wf_fmla_bw 
+    using wf_fmla_fw wf_inst_fmla_free_vars wf_fmla_bw 
     by blast
   
   lemma wf_inst_fmla_alt: "wf_inst_fmla \<phi> \<longleftrightarrow> wf_fmla upd_inst_te (ty_inst_term Q objT) \<phi> \<and> free_vars \<phi> = {}"
     unfolding wf_inst_fmla_def
     using wf_inst_fmla_alt_lemma[of "(\<lambda>_. None)"]
     by simp
-  
   
   lemma wf_inst_fmla_atom_corr: "wf_inst_fmla_atom f \<equiv> wf_fmla_atom (ty_inst_term (\<lambda>_. None) objT) f \<and> wf_inst_fmla f"
     apply (induction f)
@@ -1020,7 +1059,7 @@ definition wf_world_model::
       by auto
     by auto
 
-  lemma l1: "wf_fmla_atom (ty_inst_term (\<lambda>_. None) objT) x \<Longrightarrow> wf_fmla upd_inst_te (ty_inst_term (\<lambda>_. None) objT) x"
+  lemma wf_fmla_atom_is_wf_fmla: "wf_fmla_atom (ty_inst_term (\<lambda>_. None) objT) x \<Longrightarrow> wf_fmla upd_inst_te (ty_inst_term (\<lambda>_. None) objT) x"
     using wf_fmla_atom_alt by auto
 
   lemma wf_effect_inst_alt: 
@@ -1029,11 +1068,7 @@ definition wf_world_model::
     subgoal for add del
       apply (auto simp: wf_inst_fmla_atom_corr)[1]
       unfolding wf_inst_fmla_def
-      subgoal for x
-        by (auto intro: l1)
-      subgoal for x
-        by (auto intro: l1)
-      done
+      by (auto intro: wf_fmla_atom_is_wf_fmla)
     done
 
 
@@ -1189,9 +1224,9 @@ lemma free_is_cam_free:
 
 
 lemma bound_is_cam_bound:
-  assumes "\<forall>v \<in> sf_free_vars \<phi>. f (term.VAR v) = inst_term.VAR v 
+  assumes var_inst: "\<forall>v \<in> sf_free_vars \<phi>. f (term.VAR v) = inst_term.VAR v 
           \<or> (\<exists>obj. f(term.VAR v) = inst_term.OBJ obj)"
-      and "\<And>c. f (term.CONST c) = inst_term.OBJ c" 
+      and obj_inst: "\<And>c. f (term.CONST c) = inst_term.OBJ c" 
   shows "v \<in> sf_bound_vars \<phi> \<longleftrightarrow> v \<in> bound_vars (cap_avoid_map f \<phi>)"
   using assms
 proof (induction \<phi> arbitrary: f)
@@ -1751,11 +1786,7 @@ end
   qed
 
 
-  lemma 
-    assumes "action_params_match (Action_Schema name params pre (Effect add del)) args"
-    assumes "wf_action_schema (Action_Schema name params pre (Effect add del))"
-    shows ""
-
+  
   text \<open>Instantiating a well-formed action schema with compatible arguments
     will yield a well-formed action instance.
   \<close>
@@ -1822,6 +1853,108 @@ end
     show "wf_inst_action (instantiate_action_schema a args)"
       by (simp add: Let_def)
   qed
+
+corollary inst_leaves_no_free_vars:
+  assumes match:"action_params_match a args"
+        and wf: "wf_action_schema a"
+        and inst: "Inst_Action pre' (Effect add' del') = instantiate_action_schema a args"
+      shows "free_vars pre' = {} 
+            \<and> (\<forall>a \<in> set add'. free_vars a = {})
+            \<and> (\<forall>d \<in> set del'. free_vars d = {})"
+proof -
+  from wf_instantiate_action_schema[OF match wf] inst
+  have 1: "wf_inst_action (Inst_Action pre' (Effect add' del'))" by auto
+  hence "wf_inst_fmla pre'" by fastforce
+  hence "free_vars pre' = {}" using wf_inst_fmla_alt by blast
+  moreover
+  from 1
+  have "\<forall>a \<in> set add'. wf_inst_fmla a"
+    using wf_fmla_atom_alt unfolding wf_inst_fmla_def
+    by auto
+  hence "\<forall>a \<in> set add'. free_vars a = {}" using wf_inst_fmla_alt by blast
+  moreover
+  from 1
+  have "\<forall>d \<in> set del'. wf_inst_fmla d"
+    using wf_fmla_atom_alt wf_inst_fmla_def  unfolding wf_inst_fmla_def
+    by fastforce
+  hence "\<forall>d \<in> set del'. free_vars d = {}" using wf_inst_fmla_alt by blast
+  ultimately
+  show ?thesis by simp
+qed
+
+corollary inst_maintains_bound:
+  assumes a[simp]: "a = Action_Schema n params pre (Effect add del)"
+        and match:"action_params_match a args"
+        and wf: "wf_action_schema a"
+        and inst: "Inst_Action pre' (Effect add' del') = instantiate_action_schema a args"
+      shows "sf_bound_vars pre = bound_vars pre' 
+            \<and> (\<forall>i < length add. sf_bound_vars (add ! i) = bound_vars (add' ! i))
+            \<and> (\<forall>i < length del. sf_bound_vars (del ! i) = bound_vars (del' ! i))"
+  proof -
+    let ?f = "inst_var (the o (map_of (zip (map fst params) (map inst_term.OBJ args))))"
+
+    { fix \<phi> 
+      assume "wf_fmla upd_te (ty_term (map_of params) constT) \<phi>"
+      hence  "sf_free_vars \<phi> \<subseteq> dom (map_of params)" 
+        using wf_schematic_fmla_free_vars[of "map_of params"]
+        by force
+      hence "sf_free_vars \<phi> \<subseteq> set (map fst params)"
+        by (simp add: dom_map_of_conv_image_fst)
+      moreover
+      from match
+      have "length params = length args"
+        unfolding action_params_match_def using list_all2_lengthD by fastforce
+      hence "length (map fst params) = length (map inst_term.OBJ args)"
+        by fastforce
+      hence "\<forall>v \<in> set (map fst params).(\<exists>obj. (map_of (zip (map fst params) (map inst_term.OBJ args))) v = Some (inst_term.OBJ obj))"
+        find_theorems name: "map_of_zip"
+        apply -
+        apply (rule ballI)
+        subgoal for v
+          apply (drule map_of_zip_is_Some)
+          apply auto[1]
+          apply (drule map_of_SomeD)
+          apply (erule in_set_zipE)
+          by auto
+        done
+      ultimately
+      have "\<forall>v \<in> sf_free_vars \<phi>.(\<exists>obj. (the o (map_of (zip (map fst params) (map inst_term.OBJ args)))) v = inst_term.OBJ obj)"
+        by fastforce
+      hence "\<forall>v \<in> sf_free_vars \<phi>.(\<exists>obj. ?f (term.VAR v) = inst_term.OBJ obj)"
+        by simp
+      hence "\<forall>v. v \<in> sf_bound_vars \<phi> \<longleftrightarrow> v \<in> bound_vars (cap_avoid_map ?f \<phi>)"
+        using bound_is_cam_bound
+        by simp
+    } note well_inst = this
+    
+    have "sf_bound_vars pre = bound_vars pre'" using inst wf well_inst by (auto simp: Let_def)
+    moreover
+    have "sf_bound_vars (add ! i) = bound_vars (add' ! i)" 
+      if "i < length add" for i
+    proof -
+      have "wf_fmla_atom (ty_term (map_of params) constT) (add ! i)" 
+        using wf that by (auto simp: Let_def)
+      hence "wf_fmla upd_te (ty_term (map_of params) constT) (add ! i)" 
+        using wf_fmla_atom_alt by blast
+      moreover have "add' ! i = cap_avoid_map ?f (add ! i)" using inst that by (auto simp: Let_def)
+      ultimately show "sf_bound_vars (add ! i) = bound_vars (add' ! i)"
+        using well_inst by auto
+    qed
+    moreover
+    have "sf_bound_vars (del ! i) = bound_vars (del' ! i)" 
+      if "i < length del" for i
+    proof -
+      have "wf_fmla_atom (ty_term (map_of params) constT) (del ! i)" 
+        using wf that by (auto simp: Let_def)
+      hence "wf_fmla upd_te (ty_term (map_of params) constT) (del ! i)" 
+        using wf_fmla_atom_alt by blast
+      moreover have "del' ! i = cap_avoid_map ?f (del ! i)" using inst that by (auto simp: Let_def)
+      ultimately show "sf_bound_vars (del ! i) = bound_vars (del' ! i)"
+        using well_inst by auto
+    qed
+    ultimately show ?thesis by simp
+  qed
+  
 end \<comment> \<open>Context of \<open>ast_problem\<close>\<close>
 
 
