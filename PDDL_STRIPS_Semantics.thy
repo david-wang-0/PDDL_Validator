@@ -2037,6 +2037,8 @@ end
     ultimately
     show ?thesis by simp
   qed
+
+  term "\<forall>x. (\<exists>x. VAR y \<or> VAR x) \<and> VAR x"
   
   corollary inst_maps_fv_to_obj:
     assumes a[simp]: "a = Action_Schema n params pre (Effect add del)"
