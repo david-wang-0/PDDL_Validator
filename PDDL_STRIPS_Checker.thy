@@ -141,12 +141,12 @@ context ast_domain begin
   lemma of_type_refine1: "of_type oT T \<longleftrightarrow> (\<forall>pt\<in>set (primitives oT). of_type1 pt T)"
     unfolding of_type_def of_type1_def by auto
 
-  definition "STG \<equiv> (tab_succ (map subtype_edge (types (type_env D))))"
+  definition "STG \<equiv> (tab_succ (map subtype_edge (types D)))"
 
-  lemma subtype_rel_impl: "subtype_rel = E_of_succ (tab_succ (map subtype_edge (types (type_env D))))"
+  lemma subtype_rel_impl: "subtype_rel = E_of_succ (tab_succ (map subtype_edge (types D)))"
     by (simp add: tab_succ_correct subtype_rel_def)
 
-  lemma of_type1_impl: "of_type1 pt T \<longleftrightarrow> dfs_reachable (tab_succ (map subtype_edge (types (type_env D)))) ((=)pt) (primitives T)"
+  lemma of_type1_impl: "of_type1 pt T \<longleftrightarrow> dfs_reachable (tab_succ (map subtype_edge (types D))) ((=)pt) (primitives T)"
     by (simp add: subtype_rel_impl of_type1_def dfs_reachable_tab_succ_correct tab_succ_correct)
 
   lemma of_type_impl_correct: "of_type_impl STG oT T \<longleftrightarrow> of_type oT T"
@@ -233,8 +233,8 @@ context ast_domain begin
       wf_types
     \<and> distinct (map (predicate_decl.pred) (predicates D))
     \<and> (\<forall>p\<in>set (predicates D). wf_predicate_decl p)
-    \<and> distinct (map fst (consts (type_env D)))
-    \<and> (\<forall>(n,T)\<in>set (consts (type_env D)). wf_type T)
+    \<and> distinct (map fst (consts D))
+    \<and> (\<forall>(n,T)\<in>set (consts D). wf_type T)
     \<and> distinct (map ast_action_schema.name (actions D))
     \<and> (\<forall>a\<in>set (actions D). wf_action_schema' stg conT a)
     "
@@ -301,7 +301,7 @@ context ast_problem begin
   type_synonym objT = "(object, type) mapping"
 
   definition mp_objT :: "(object, type) mapping" where
-    "mp_objT = Mapping.of_alist (consts (type_env D) @ objects P)"
+    "mp_objT = Mapping.of_alist (consts D @ objects P)"
 
   lemma mp_objT_correct[simp]: "Mapping.lookup mp_objT = objT"
     unfolding mp_objT_def objT_alt
@@ -339,7 +339,7 @@ context ast_problem begin
 
   definition "wf_problem' stg conT mp \<equiv>
       wf_domain' stg conT
-    \<and> distinct (map fst (objects P) @ map fst (consts (type_env D)))
+    \<and> distinct (map fst (objects P) @ map fst (consts D))
     \<and> (\<forall>(n,T)\<in>set (objects P). wf_type T)
     \<and> distinct (init P)
     \<and> (\<forall>f\<in>set (init P). wf_fmla_atom2' mp stg f)
@@ -637,20 +637,20 @@ lemma check_all_list_return_iff[return_iff]: "check_all_list P l msg msgf = Inr 
   unfolding check_all_list_def
   by (induction l) (auto)
 
-definition "check_wf_types (type_env D) \<equiv> do {
-  check_all_list (\<lambda>(_,t). t=''object'' \<or> t\<in>fst`set (types (type_env D))) (types (type_env D)) ''Undeclared supertype'' (shows o snd)
+definition "check_wf_types D \<equiv> do {
+  check_all_list (\<lambda>(_,t). t=''object'' \<or> t\<in>fst`set (types D)) (types D) ''Undeclared supertype'' (shows o snd)
 }"
 
-lemma check_wf_types_return_iff[return_iff]: "check_wf_types (type_env D) = Inr () \<longleftrightarrow> ast_domain.wf_types (type_env D)"
+lemma check_wf_types_return_iff[return_iff]: "check_wf_types D = Inr () \<longleftrightarrow> ast_domain.wf_types D"
   unfolding ast_domain.wf_types_def check_wf_types_def
   by (force simp: return_iff)
 
 definition "check_wf_domain D stg conT \<equiv> do {
-  check_wf_types (type_env D);
+  check_wf_types D;
   check (distinct (map (predicate_decl.pred) (predicates D))) (ERRS ''Duplicate predicate declaration'');
   check_all_list (ast_domain.wf_predicate_decl D) (predicates D) ''Malformed predicate declaration'' (shows o predicate.name o predicate_decl.pred);
-  check (distinct (map fst (consts (type_env D)))) (ERRS  ''Duplicate constant declaration'');
-  check (\<forall>(n,T)\<in>set (consts (type_env D)). ast_domain.wf_type D T) (ERRS ''Malformed type'');
+  check (distinct (map fst (consts D))) (ERRS  ''Duplicate constant declaration'');
+  check (\<forall>(n,T)\<in>set (consts D). ast_domain.wf_type D T) (ERRS ''Malformed type'');
   check (distinct (map ast_action_schema.name (actions D))  ) (ERRS ''Duplicate action name'');
   check_all_list (ast_domain.wf_action_schema' D stg conT) (actions D) ''Malformed action'' (shows o ast_action_schema.name)
 
@@ -672,7 +672,7 @@ definition "prepend_err_msg msg e \<equiv> \<lambda>_::unit. shows msg o shows '
 definition "check_wf_problem P stg conT mp \<equiv> do {
   let D = ast_problem.domain P;
   check_wf_domain D stg conT <+? prepend_err_msg ''Domain not well-formed'';
-  check (distinct (map fst (objects P) @ map fst (consts (type_env D)))) (ERRS ''Duplicate object declaration'');
+  check (distinct (map fst (objects P) @ map fst (consts D))) (ERRS ''Duplicate object declaration'');
   check ((\<forall>(n,T)\<in>set (objects P). ast_domain.wf_type D T)) (ERRS ''Malformed type'');
   check (distinct (init P)) (ERRS ''Duplicate fact in initial state'');
   check (\<forall>f\<in>set (init P). ast_problem.wf_fmla_atom2' P mp stg f) (ERRS ''Malformed formula in initial state'');

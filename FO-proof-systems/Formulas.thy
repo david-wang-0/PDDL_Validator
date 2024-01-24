@@ -74,23 +74,11 @@ lemma atoms_BigOr[simp]: "atoms (\<^bold>\<Or>Fs) = \<Union>(atoms ` set Fs)"
 
 
 locale formula_syntax =
-  fixes subst ::"'v \<Rightarrow> 'c \<Rightarrow> 'p \<Rightarrow> 'p"
-    and vars  ::"'p \<Rightarrow> 'v set"
+  fixes vars  ::"'p \<Rightarrow> 'v set"
     and objs  ::"'p \<Rightarrow> 'c set"
-    and dom   ::"'t \<Rightarrow> 'c list"
-  assumes subst_subst_all: "v \<notin> vars (subst v c p)" and
-          subst_replaces: "v \<in> vars p \<Longrightarrow> c \<in> objs (subst v c p)"
 begin
-  fun fsubst::"'v \<Rightarrow> 'c \<Rightarrow> 'p formula \<Rightarrow> 'p formula" where
-    "fsubst v c (Atom p) = Atom (subst v c p)" |
-    "fsubst _ _ \<bottom> = \<bottom>" |
-    "fsubst v c (Not \<phi>\<^sub>1) = Not (fsubst v c \<phi>\<^sub>1)" |
-    "fsubst v c (And \<phi>\<^sub>1 \<phi>\<^sub>2) = And (fsubst v c \<phi>\<^sub>1) (fsubst v c \<phi>\<^sub>2)" |
-    "fsubst v c (Or \<phi>\<^sub>1 \<phi>\<^sub>2) = Or (fsubst v c \<phi>\<^sub>1) (fsubst v c \<phi>\<^sub>2)" |
-    "fsubst v c (Imp \<phi>\<^sub>1 \<phi>\<^sub>2) = Imp (fsubst v c \<phi>\<^sub>1) (fsubst v c \<phi>\<^sub>2)"
 
-  
-  fun fvars::"'p formula \<Rightarrow> 'v set" where
+ fun fvars::"'p formula \<Rightarrow> 'v set" where
     "fvars (Atom p) = vars p" 
   | "fvars Bot = {}"
   | "fvars (Not \<phi>\<^sub>1) = fvars \<phi>\<^sub>1"
@@ -107,12 +95,14 @@ begin
   | "fobjs (Or \<phi>\<^sub>1 \<phi>\<^sub>2) = fobjs \<phi>\<^sub>1 \<union> fobjs \<phi>\<^sub>2"
   | "fobjs (Imp \<phi>\<^sub>1 \<phi>\<^sub>2) = fobjs \<phi>\<^sub>1 \<union> fobjs \<phi>\<^sub>2"
 
-  fun all::"'v \<Rightarrow> 't \<Rightarrow> 'p formula \<Rightarrow> 'p formula" ("\<^bold>\<forall>_ - _. _") where
-    "all v t \<phi> = \<^bold>\<And>(map (\<lambda>c. fsubst v c \<phi>) (dom t))"
-
-  fun exists::"'v \<Rightarrow> 't \<Rightarrow> 'p formula \<Rightarrow> 'p formula" ("\<^bold>\<forall>_ - _. _") where
-    "exists v t \<phi> = \<^bold>\<And>(map (\<lambda>c. fsubst v c \<phi>) (dom t))"
+  lemma fvars_alt: "fvars \<phi> = \<Union>(vars ` (atoms \<phi>))"
+    by (induction \<phi>) auto
+    
+  lemma fobjs_alt: "fobjs \<phi> = \<Union>(objs ` (atoms \<phi>))"
+    by (induction \<phi>) auto
 end
+ 
+
 
 text\<open>Formulas are countable if their atoms are, and @{method countable_datatype} is really helpful with that.\<close> 
 instance formula :: (countable) countable by countable_datatype

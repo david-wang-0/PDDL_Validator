@@ -23,6 +23,61 @@ lemma irrelevant_atom[simp]: "A \<notin> atoms F \<Longrightarrow> (\<A>(A := V)
 lemma relevant_atoms_same_semantics: "\<forall>k \<in> atoms F. \<A>\<^sub>1 k = \<A>\<^sub>2 k \<Longrightarrow> \<A>\<^sub>1 \<Turnstile> F \<longleftrightarrow> \<A>\<^sub>2 \<Turnstile> F"
   by(induction F; simp)
 
+
+locale quantifier_semantics = formula_syntax vars objs
+  for vars  ::"'p \<Rightarrow> 'v set"
+  and objs  ::"'p \<Rightarrow> 'c set" +
+fixes subst ::"'v \<Rightarrow> 'c \<Rightarrow> 'p \<Rightarrow> 'p"
+  and dom   ::"'t \<Rightarrow> 'c list"
+  assumes subst_subst_all: "v \<notin> vars (subst v c p)" and
+          subst_replaces: "v \<in> vars p \<Longrightarrow> c \<in> objs (subst v c p)"
+begin
+ (* what would happen if this were to use a typed list instead? *)
+  (* We first have to create a combination of all variable substitutions *)
+  (* reasoning about these substitutions can be done by reusing the proof 
+      from the instantiation *)
+  (* It would be difficult to prove that the semantics are correct*)
+
+  term "(1, 2)"
+
+(* create permutations of elements from a list of lists *)
+
+(* perm'
+  [x, y, z] + [[1, a], [2, a], [1, b], ..., [2 c]] 
+    \<rightarrow> [[x, 1, a], [y, 1, a], ..., [z, 2, c]
+*)
+
+(* perm
+    [x, y, z] \<rightarrow> [[x, 1, a], [y, 1, a], ..., [z, 2, c]
+    [1, 2]    \<rightarrow> [[1, a], [2, a], [1, b], [2, b], [1, c], [2, c]]
+    [a, b, c] \<rightarrow> [[a], [b], [c]]
+    []        \<rightarrow> []*)
+
+  fun perm'::"'c list \<Rightarrow> ('c list) list \<Rightarrow> ('c list) list" where
+    "perm' xs [] = []"
+  | "perm' xs (y#ys) = map (\<lambda>x. x#y) xs @ (perm' xs ys)"
+  
+  fun perm::"('c list) list \<Rightarrow> ('c list) list" where
+    "perm [] = []"
+  | "perm (l # ls) = (perm' l (perm ls))"
+  
+  fun insts::"'v list \<Rightarrow> 't list \<Rightarrow> (('v \<times> 'c) list) list" where
+  "insts vs ts = (let consts = (perm (map dom ts)) 
+                  in  map (\<lambda>cs. zip vs cs) consts)"
+
+  (* (v1, t1), (v2, t2), (v3, t3)
+      t1 \<Rightarrow> c11, c12
+      t2 \<Rightarrow> c21, c22
+      t3 \<Rightarrow> c3
+      (v1, c11) (v2, c21) (v3, c3)*)
+
+  fun all::"'v \<Rightarrow> 't \<Rightarrow> 'p formula \<Rightarrow> 'p formula" ("\<^bold>\<forall>_ - _._") where
+    "all v t \<phi> = (if (v \<in> fvars \<phi>) then \<^bold>\<And>(map (\<lambda>c. (map_formula (subst v c)) \<phi>) (dom t)) else \<phi>)"
+
+  fun exists::"'v \<Rightarrow> 't \<Rightarrow> 'p formula \<Rightarrow> 'p formula" ("\<^bold>\<exists>_ - _._") where
+    "exists v t \<phi> = (if (v \<in> fvars \<phi>) then \<^bold>\<Or>(map (\<lambda>c. (map_formula (subst v c)) \<phi>) (dom t)) else \<phi>)"
+end
+
 context begin
 text\<open>Just a definition more similar to~\<^cite>\<open>\<open>p. 5\<close> in "schoening1987logik"\<close>.
 Unfortunately, using this as the main definition would get in the way of automated reasoning all the time.\<close>
