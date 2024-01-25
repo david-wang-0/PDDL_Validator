@@ -29,8 +29,9 @@ locale quantifier_semantics = formula_syntax vars objs
   and objs  ::"'p \<Rightarrow> 'c set" +
 fixes subst ::"'v \<Rightarrow> 'c \<Rightarrow> 'p \<Rightarrow> 'p"
   and dom   ::"'t \<Rightarrow> 'c list"
-  assumes subst_subst_all: "v \<notin> vars (subst v c p)" and
-          subst_replaces: "v \<in> vars p \<Longrightarrow> c \<in> objs (subst v c p)"
+  assumes subst_subst_all: "v \<notin> vars (subst v c p)"
+      and subst_replaces: "v \<in> vars p \<Longrightarrow> c \<in> objs (subst v c p)"
+      and subst_idem: "v \<notin> vars p \<Longrightarrow> subst v c p = p"
 begin
  (* what would happen if this were to use a typed list instead? *)
   (* We first have to create a combination of all variable substitutions *)
@@ -72,10 +73,10 @@ begin
       (v1, c11) (v2, c21) (v3, c3)*)
 
   fun all::"'v \<Rightarrow> 't \<Rightarrow> 'p formula \<Rightarrow> 'p formula" ("\<^bold>\<forall>_ - _._") where
-    "all v t \<phi> = (if (v \<in> fvars \<phi>) then \<^bold>\<And>(map (\<lambda>c. (map_formula (subst v c)) \<phi>) (dom t)) else \<phi>)"
+    "all v t \<phi> = (if (v \<notin> fvars \<phi> \<and> (dom t \<noteq> [])) then \<phi> else  \<^bold>\<And>(map (\<lambda>c. (map_formula (subst v c)) \<phi>) (dom t)))"
 
   fun exists::"'v \<Rightarrow> 't \<Rightarrow> 'p formula \<Rightarrow> 'p formula" ("\<^bold>\<exists>_ - _._") where
-    "exists v t \<phi> = (if (v \<in> fvars \<phi>) then \<^bold>\<Or>(map (\<lambda>c. (map_formula (subst v c)) \<phi>) (dom t)) else \<phi>)"
+    "exists v t \<phi> = (if (v \<notin> fvars \<phi> \<and> (dom t \<noteq> [])) then \<phi> else \<^bold>\<Or>(map (\<lambda>c. (map_formula (subst v c)) \<phi>) (dom t)))"
 end
 
 context begin
