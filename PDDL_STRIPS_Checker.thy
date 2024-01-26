@@ -62,19 +62,20 @@ lemma card_decreases: "
   apply (auto simp: dfs_reachable_invar_def)
   done
 
+find_theorems name: folding
+
 lemma all_neq_Cons_is_Nil[simp]: (* Odd term remaining in goal \<dots> *)
   "(\<forall>y ys. x2 \<noteq> y # ys) \<longleftrightarrow> x2 = []" by (cases x2) auto
 
 lemma dfs_reachable_correct: "dfs_reachable D w\<^sub>0 \<longleftrightarrow> Collect D \<inter> E\<^sup>* `` set w\<^sub>0 \<noteq> {}"
   unfolding dfs_reachable_def
+  thm while_rule
   apply (rule while_rule[where
     P="\<lambda>(V,w,brk). dfs_reachable_invar D V (set w) brk \<and> finite V"
     and r="measure (\<lambda>V. card (E\<^sup>* `` (set w\<^sub>0) - V)) <*lex*> measure length <*lex*> measure (\<lambda>True\<Rightarrow>0 | False\<Rightarrow>1)"
     ])
   subgoal by (auto simp: dfs_reachable_invar_def)
-  subgoal
-    apply (auto simp: neq_Nil_conv succ_as_E[of succ] split: if_splits)
-    by (auto simp: dfs_reachable_invar_def Image_iff intro: rtrancl.rtrancl_into_rtrancl)
+  subgoal by (auto simp: neq_Nil_conv succ_as_E[of succ] split: if_splits) (auto simp: dfs_reachable_invar_def Image_iff intro: rtrancl.rtrancl_into_rtrancl)
   subgoal by (fastforce simp: dfs_reachable_invar_def dest: Image_closed_trancl)
   subgoal by blast
   subgoal by (auto simp: neq_Nil_conv card_decreases)
@@ -82,7 +83,10 @@ lemma dfs_reachable_correct: "dfs_reachable D w\<^sub>0 \<longleftrightarrow> Co
 
 end
 
-definition "tab_succ l \<equiv> Mapping.lookup_default [] (fold (\<lambda>(u,v). Mapping.map_default u [] (Cons v)) l Mapping.empty)"
+(* maps every element to a list of elements that is reachable from it *)
+definition "tab_succ l \<equiv> Mapping.lookup_default [] (
+  fold (\<lambda>(u,v). Mapping.map_default u [] (Cons v)) l Mapping.empty
+)"
 
 
 lemma Some_eq_map_option [iff]: "(Some y = map_option f xo) = (\<exists>z. xo = Some z \<and> f z = y)"
@@ -153,11 +157,12 @@ context ast_domain begin
     unfolding of_type1_impl STG_def of_type_impl_def of_type_refine1 ..
 
   definition mp_constT :: "(object, type) mapping" where
-    "mp_constT = Mapping.of_alist (consts t)"
+    "mp_constT = Mapping.of_alist (consts D)"
 
   lemma mp_objT_correct[simp]: "Mapping.lookup mp_constT = constT"
     unfolding mp_constT_def constT_def
-    by transfer (simp add: Map_To_Mapping.map_apply_def)
+    apply transfer 
+    by (simp add: Map_To_Mapping.map_apply_def)
 
 
   text \<open>Lifting the subtype-graph through wf-checker\<close>
@@ -171,7 +176,9 @@ context ast_domain begin
       | None \<Rightarrow> False)"
 
     lemma is_of_type'_correct: "is_of_type' STG v T = is_of_type ty_ent v T"
-      unfolding is_of_type'_def is_of_type_def of_type_impl_correct ..
+      unfolding is_of_type'_def 
+      unfolding is_of_type_def 
+      unfolding of_type_impl_correct ..
 
     fun wf_pred_atom' where "wf_pred_atom' stg (p,vs) \<longleftrightarrow> (case sig p of
           None \<Rightarrow> False
@@ -213,20 +220,10 @@ context ast_domain begin
 
     lemma wf_effect'_correct: "wf_effect' STG e = wf_effect ty_ent e"
       by (cases e) (auto simp: wf_fmla_atom1'_correct)
+    
 
   end \<comment> \<open>Context fixing \<open>ty_ent\<close>\<close>
 
-  fun wf_action_schema' :: "_ \<Rightarrow> _ \<Rightarrow> ast_action_schema \<Rightarrow> bool" where
-    "wf_action_schema' stg conT (Action_Schema n params pre eff) \<longleftrightarrow> (
-      let
-        tyv = ty_term' (map_of params) conT
-      in
-        distinct (map fst params)
-      \<and> wf_fmla' tyv stg pre
-      \<and> wf_effect' tyv stg eff)"
-
-  lemma wf_action_schema'_correct: "wf_action_schema' STG mp_constT s = wf_action_schema s"
-    by (cases s) (auto simp: wf_fmla'_correct wf_effect'_correct)
 
   definition wf_domain' :: "_ \<Rightarrow> _ \<Rightarrow> bool" where
     "wf_domain' stg conT \<equiv>
@@ -236,12 +233,11 @@ context ast_domain begin
     \<and> distinct (map fst (consts D))
     \<and> (\<forall>(n,T)\<in>set (consts D). wf_type T)
     \<and> distinct (map ast_action_schema.name (actions D))
-    \<and> (\<forall>a\<in>set (actions D). wf_action_schema' stg conT a)
     "
 
   lemma wf_domain'_correct: "wf_domain' STG mp_constT = wf_domain"
     unfolding wf_domain_def wf_domain'_def
-    by (auto simp: wf_action_schema'_correct)
+    by (auto)
 
 
 end \<comment> \<open>Context of \<open>ast_domain\<close>\<close>
@@ -329,6 +325,10 @@ context ast_problem begin
     by (auto simp: wf_fact'_def wf_fact_def wf_pred_atom'_correct[abs_def])
 
 
+  fun wf_goal' where
+    "wf_goal' obT stg \<phi> \<longleftrightarrow> wf_fmla' (ty_term' (Map.empty) obT)  stg \<phi>"
+
+
   definition "wf_fmla_atom2' mp stg f
     = (case f of formula.Atom (predAtm p vs) \<Rightarrow> (wf_fact' mp stg (p,vs)) | _ \<Rightarrow> False)"
 
@@ -336,6 +336,18 @@ context ast_problem begin
     "wf_fmla_atom2' mp_objT STG \<phi> = wf_fmla_atom objT \<phi>"
     apply (cases \<phi> rule: wf_fmla_atom.cases)
     by (auto simp: wf_fmla_atom2'_def wf_fact_def split: option.splits)
+  
+  fun wf_action_schema' :: "_ \<Rightarrow> _ \<Rightarrow> ast_action_schema \<Rightarrow> bool" where
+    "wf_action_schema' stg obT (Action_Schema n params pre eff) \<longleftrightarrow> (
+      let
+        tyv = ty_term' (map_of params) obT
+      in
+        distinct (map fst params)
+      \<and> wf_fmla' tyv stg pre
+      \<and> wf_effect' tyv stg eff)"
+
+  lemma wf_action_schema'_correct: "wf_action_schema' STG mp_objT s = wf_action_schema s"
+    by (cases s) (auto simp: wf_fmla'_correct wf_effect'_correct)
 
   definition "wf_problem' stg conT mp \<equiv>
       wf_domain' stg conT
@@ -343,12 +355,13 @@ context ast_problem begin
     \<and> (\<forall>(n,T)\<in>set (objects P). wf_type T)
     \<and> distinct (init P)
     \<and> (\<forall>f\<in>set (init P). wf_fmla_atom2' mp stg f)
-    \<and> wf_fmla' (Mapping.lookup mp) stg (goal P)"
+    \<and> wf_goal' mp stg (goal P)
+    \<and> (\<forall>a\<in>set (actions D). wf_action_schema' stg mp a)"
 
   lemma wf_problem'_correct:
     "wf_problem' STG mp_constT mp_objT = wf_problem"
-    unfolding wf_problem_def wf_problem'_def wf_world_model_def
-    by (auto simp: wf_domain'_correct wf_fmla'_correct)
+    unfolding wf_problem_def wf_problem'_def wf_world_model_def wf_goal_def
+    by (auto simp: wf_domain'_correct wf_fmla'_correct wf_action_schema'_correct)
 
 
   text \<open>Instantiating actions will yield well-founded effects.
@@ -366,7 +379,16 @@ context ast_problem begin
 end \<comment> \<open>Context of \<open>ast_problem\<close>\<close>
 
 
-context wf_ast_domain begin
+context ast_problem begin
+text \<open>Filter those constants in the domain that belong to the type.\<close>
+thm t_dom_def
+
+definition t_dom_impl::"type \<Rightarrow> object list" where
+  "t_dom_impl = undefined"
+end
+
+
+context wf_ast_problem begin
   text \<open>Resolving an action yields a well-founded action schema.\<close>
   (* TODO: This must be implicitly proved when showing that plan execution
     preserves wf. Try to remove this redundancy!*)
@@ -374,10 +396,10 @@ context wf_ast_domain begin
     assumes "resolve_action_schema n = Some a"
     shows "wf_action_schema a"
   proof -
-    from wf_domain have
+    from wf_problem have
       X1: "distinct (map ast_action_schema.name (actions D))"
       and X2: "\<forall>a\<in>set (actions D). wf_action_schema a"
-      unfolding wf_domain_def by auto
+      unfolding wf_problem_def wf_domain_def by auto
 
     show ?thesis
       using assms unfolding resolve_action_schema_def
@@ -537,7 +559,7 @@ context ast_problem begin
   text \<open>First, we combine the well-formedness check of the plan actions and
     their execution into a single iteration.\<close>
   fun valid_plan_from1 :: "world_model \<Rightarrow> plan \<Rightarrow> bool" where
-    "valid_plan_from1 s [] \<longleftrightarrow> close_world s \<TTurnstile> (goal P)"
+    "valid_plan_from1 s [] \<longleftrightarrow> close_world s \<TTurnstile> (inst_goal (goal P))"
   | "valid_plan_from1 s (\<pi>#\<pi>s)
       \<longleftrightarrow> plan_action_enabled \<pi> s
         \<and> (valid_plan_from1 (execute_plan_action \<pi> s) \<pi>s)"
@@ -560,7 +582,7 @@ context ast_problem begin
     :: "_ \<Rightarrow> (object, type) mapping \<Rightarrow> nat \<Rightarrow> world_model \<Rightarrow> plan \<Rightarrow> _+unit"
   where
     "valid_plan_fromE stg mp si s []
-      = check (holds s (goal P)) (ERRS ''Postcondition does not hold'')"
+      = check (holds s (inst_goal (goal P))) (ERRS ''Postcondition does not hold'')"
   | "valid_plan_fromE stg mp si s (\<pi>#\<pi>s) = do {
         s \<leftarrow> en_exE2 stg mp \<pi> s
           <+? (\<lambda>e _. shows ''at step '' o shows si o shows '': '' o e ());
@@ -623,7 +645,7 @@ context ast_problem begin
   *)
 
 
-end \<comment> \<open>Context of \<open>ast_problem\<close>\<close>
+end \<comment> \<open>Context of \<open>wf_ast_problem\<close>\<close>
 
 subsection \<open>Executable Plan Checker\<close>
 text \<open>We obtain the main plan checker by combining the well-formedness check
@@ -651,9 +673,7 @@ definition "check_wf_domain D stg conT \<equiv> do {
   check_all_list (ast_domain.wf_predicate_decl D) (predicates D) ''Malformed predicate declaration'' (shows o predicate.name o predicate_decl.pred);
   check (distinct (map fst (consts D))) (ERRS  ''Duplicate constant declaration'');
   check (\<forall>(n,T)\<in>set (consts D). ast_domain.wf_type D T) (ERRS ''Malformed type'');
-  check (distinct (map ast_action_schema.name (actions D))  ) (ERRS ''Duplicate action name'');
-  check_all_list (ast_domain.wf_action_schema' D stg conT) (actions D) ''Malformed action'' (shows o ast_action_schema.name)
-
+  check (distinct (map ast_action_schema.name (actions D))  ) (ERRS ''Duplicate action name'')
 }"
 
 
@@ -676,7 +696,8 @@ definition "check_wf_problem P stg conT mp \<equiv> do {
   check ((\<forall>(n,T)\<in>set (objects P). ast_domain.wf_type D T)) (ERRS ''Malformed type'');
   check (distinct (init P)) (ERRS ''Duplicate fact in initial state'');
   check (\<forall>f\<in>set (init P). ast_problem.wf_fmla_atom2' P mp stg f) (ERRS ''Malformed formula in initial state'');
-  check (ast_domain.wf_fmla' D (Mapping.lookup mp) stg (goal P)) (ERRS ''Malformed goal formula'')
+  check (ast_problem.wf_goal' P mp stg (goal P)) (ERRS ''Malformed goal formula'');
+  check_all_list (ast_problem.wf_action_schema' P stg mp) (actions D) ''Malformed action'' (shows o ast_action_schema.name)
 }"
 
 lemma check_wf_problem_return_iff[return_iff]:
@@ -724,6 +745,7 @@ text \<open>We first register the code equations for the functions of the checke
   optimized ones.
 \<close>
 
+
 lemmas wf_domain_code =
   ast_domain.sig_def
   ast_domain.wf_types_def
@@ -736,9 +758,10 @@ lemmas wf_domain_code =
   ast_domain.wf_fmla'.simps
   ast_domain.wf_fmla_atom1'.simps
   ast_domain.wf_effect'.simps
-  ast_domain.wf_action_schema'.simps
   ast_domain.wf_domain'_def
   ast_domain.subst_term.simps
+  ast_domain.tsubst.simps
+  ast_domain.inst_pre.simps
   ast_domain.mp_constT_def
 (*
   ast_domain.wf_domain_def
@@ -752,6 +775,8 @@ lemmas wf_domain_code =
 
 declare wf_domain_code[code]
 
+find_theorems name: "ast_problem*all"
+
 lemmas wf_problem_code =
   ast_problem.wf_problem'_def
   ast_problem.wf_fact'_def
@@ -759,7 +784,10 @@ lemmas wf_problem_code =
   ast_problem.is_obj_of_type_alt
   (*ast_problem.wf_object_def*)
   ast_problem.wf_fact_def
+  ast_problem.inst_goal.simps 
+  ast_problem.wf_goal'.simps
   ast_problem.wf_plan_action.simps
+  ast_problem.wf_action_schema'.simps
   (*ast_problem.wf_effect_inst_weak.simps*)
 
   ast_domain.subtype_edge.simps
@@ -824,7 +852,7 @@ subsubsection \<open>Code Generation\<close>
 export_code
   check_plan
   nat_of_integer integer_of_nat Inl Inr
-  predAtm Eq predicate Pred Either Var Obj PredDecl BigAnd BigOr
+  predAtm Eq predicate Pred Either Var Obj PredDecl BigAnd BigOr 
   formula.Not formula.Bot Effect ast_action_schema.Action_Schema
   map_atom Domain Problem PAction
   term.CONST term.VAR (* I want to export the entire type, but I can only export the constructor because term is already an isabelle keyword. *)

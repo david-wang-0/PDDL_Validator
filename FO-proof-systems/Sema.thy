@@ -72,11 +72,11 @@ begin
       t3 \<Rightarrow> c3
       (v1, c11) (v2, c21) (v3, c3)*)
 
-  fun all::"'v \<Rightarrow> 't \<Rightarrow> 'p formula \<Rightarrow> 'p formula" ("\<^bold>\<forall>_ - _._") where
-    "all v t \<phi> = (if (v \<notin> fvars \<phi> \<and> (dom t \<noteq> [])) then \<phi> else  \<^bold>\<And>(map (\<lambda>c. (map_formula (subst v c)) \<phi>) (dom t)))"
+  definition all::"'v \<Rightarrow> 't \<Rightarrow> 'p formula \<Rightarrow> 'p formula" ("\<^bold>\<forall>_ - _._") where
+    "all v t \<phi> \<equiv> (if (v \<notin> fvars \<phi> \<and> (dom t \<noteq> [])) then \<phi> else  \<^bold>\<And>(map (\<lambda>c. (map_formula (subst v c)) \<phi>) (dom t)))"
 
-  fun exists::"'v \<Rightarrow> 't \<Rightarrow> 'p formula \<Rightarrow> 'p formula" ("\<^bold>\<exists>_ - _._") where
-    "exists v t \<phi> = (if (v \<notin> fvars \<phi> \<and> (dom t \<noteq> [])) then \<phi> else \<^bold>\<Or>(map (\<lambda>c. (map_formula (subst v c)) \<phi>) (dom t)))"
+  definition exists::"'v \<Rightarrow> 't \<Rightarrow> 'p formula \<Rightarrow> 'p formula" ("\<^bold>\<exists>_ - _._") where
+    "exists v t \<phi> \<equiv> (if (v \<notin> fvars \<phi> \<and> (dom t \<noteq> [])) then \<phi> else \<^bold>\<Or>(map (\<lambda>c. (map_formula (subst v c)) \<phi>) (dom t)))"
 end
 
 context begin

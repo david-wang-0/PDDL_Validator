@@ -1,6 +1,6 @@
 chapter AFP
 
-session AI_Planning_Languages_Semantics = HOL +
+session AI_Planning_Languages_Semantics_With_Quantifiers = HOL +
   description \<open>AI Planning Languages Semantics and Validation\<close>
   options [timeout = 600]
   sessions
