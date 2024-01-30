@@ -78,6 +78,7 @@ open PDDL
                  | Prop_not(prop: PDDL_TERM PDDL_PROP) =>  Not (pddlFormulaToASTPropIsabelle atom_fn prop)
                  | Prop_and(propList: PDDL_TERM PDDL_PROP list) => bigAnd (map (pddlFormulaToASTPropIsabelle atom_fn) propList)
                  | Prop_or(propList: PDDL_TERM PDDL_PROP list) => bigOr (map (pddlFormulaToASTPropIsabelle atom_fn) propList)
+                 (* | Prop_all(args: PDDL_VAR PDDL_TYPED_LIST, prop: PDDL_TERM PDDL_PROP) => pddlTypedListVarsTypesToIsabelle args *)
                  | _ => Bot (*Fluents shall invalidate the problem*)
 
   fun pddlFormulaToASTPropIsabelleTerm phi = pddlFormulaToASTPropIsabelle pddlTermToIsabelle phi
@@ -162,7 +163,7 @@ open PDDL
   fun pddlInitToIsabelle (init:PDDL_INIT) objs = (map initElToIsabelle (List.filter isntFluent init)) (*I don't want fluents in the init state. This is usually an init value for the plan-cost.*)
 
 
-  fun pddlGoalToIsabelle (goal:PDDL_GOAL) = pddlFormulaToASTPropIsabelleObj goal
+  fun pddlGoalToIsabelle (goal:PDDL_GOAL) = pddlFormulaToASTPropIsabelleTerm goal
 
   fun pddlProbToIsabelle (reqs:PDDL_REQUIRE_DEF,
                           (objs:PDDL_OBJ_DEF,

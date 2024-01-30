@@ -1,0 +1,5 @@
+mlton -mlb-path-var 'ISABELLE_FILES /usr/share/afp-2024-01-23/thy/AI_Planning_Languages_Semantics' -cc-opt -O3 -cc-opt -g0 pddl_validate_plan.mlb
+
+mlton -mlb-path-var 'ISABELLE_FILES /home/david/University/AI-planning-semantics-with-quantifiers' -cc-opt -O3 -cc-opt -g0 pddl_validate_plan.mlb
+
+./validate_pddl_plan.sh ../examples/truck-dom.pddl ../examples/truck-prob.pddl ../examples/truck-plan

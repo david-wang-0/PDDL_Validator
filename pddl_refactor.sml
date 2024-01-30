@@ -43,7 +43,7 @@ struct
                           ":constants",
                           ":action", ":parameters", ":precondition", ":effect", "-",
                           ":invariant", ":name", ":vars", ":set-constraint",
-                          "=", "and", "or", "not", "number",
+                          "=", "and", "or", "not", "forall", "exists", "number",
                           "increase", "total-cost",
                           "problem", ":domain", ":init", ":objects", ":goal", ":metric", "maximize", "minimize"]
     val reservedOpNames= []
@@ -92,6 +92,8 @@ struct
   | Prop_not of 'a PDDL_PROP
   | Prop_and of 'a PDDL_PROP list
   | Prop_or of 'a PDDL_PROP list
+  | Prop_all of (PDDL_VAR list * PDDL_PRIM_TYPE list) list * 'a PDDL_PROP
+  | Prop_exists of (PDDL_VAR list * PDDL_PRIM_TYPE list) list * 'a PDDL_PROP
   | Fluent (*This is mainly to parse and ignore action costs*) ;
 
   structure RTP = TokenParser (PDDLDef)
@@ -176,8 +178,10 @@ struct
   (*TODO: The n is disgusting, there must be a way to remove it.*)
 
   fun GD x n = (literal x ||
-                in_paren(pddl_reserved "and" && (if n >= 0 then repeat1  (GD x (n - 1)) else repeat1 (literal x))) wth (fn (_, gd) => Prop_and gd) ||
-                in_paren(pddl_reserved "or" && (if n >= 0 then repeat1  (GD x (n - 1)) else repeat1 (literal x))) wth (fn (_, gd) => Prop_or gd)) ?? "GD"
+                in_paren(pddl_reserved "and" >> (if n >= 0 then repeat1  (GD x (n - 1)) else repeat1 (literal x))) wth (fn gd => Prop_and gd) ||
+                in_paren(pddl_reserved "or" >> (if n >= 0 then repeat1  (GD x (n - 1)) else repeat1 (literal x))) wth (fn gd => Prop_or gd) ||
+                in_paren(pddl_reserved "forall" >> (in_paren(typed_list pddl_var) && (if n >= 0 then GD x (n - 1) else literal x))) wth (fn (ps, gd) => Prop_all (ps, gd)) ||
+                in_paren(pddl_reserved "exists" >> (in_paren(typed_list pddl_var) && (if n >= 0 then GD x (n - 1) else literal x))) wth (fn (ps, gd) => Prop_exists (ps, gd))) ?? "GD"
 
   fun pre_GD x = GD x 3 ?? "pre GD"
 
