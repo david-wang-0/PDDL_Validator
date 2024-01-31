@@ -1,5 +1,14 @@
 chapter AFP
 
+session FO_proof_systems in "FO_proof_systems" = HOL +
+  description \<open>Something between propositional and first-order logic\<close>
+  sessions
+    "HOL-Library"
+  theories
+    Formulas
+    Sema
+    Consistency
+
 session AI_Planning_Languages_Semantics_With_Quantifiers = HOL +
   description \<open>AI Planning Languages Semantics and Validation\<close>
   options [timeout = 600]
@@ -8,7 +17,6 @@ session AI_Planning_Languages_Semantics_With_Quantifiers = HOL +
     "Certification_Monads"
     "Show"
     "Containers"
-    "Propositional_Proof_Systems"
   theories [document = false]
     "HOL-Library.Code_Target_Nat"
     "HOL-Library.Monad_Syntax"

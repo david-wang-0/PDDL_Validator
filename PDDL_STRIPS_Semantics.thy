@@ -1,8 +1,8 @@
 section \<open>PDDL and STRIPS Semantics\<close>
 theory PDDL_STRIPS_Semantics
 imports
-  "FO-proof-systems/Formulas"
-  "FO-proof-systems/Sema"
+  "FO_proof_systems/Formulas"
+  "FO_proof_systems/Sema"
   "Automatic_Refinement.Misc"
   "Automatic_Refinement.Refine_Util"
   "Show.Show_Instances" 
@@ -78,6 +78,8 @@ datatype 'ent ast_effect =
 
 text \<open>Variables are identified by their names.\<close>
 datatype variable = varname: Var name
+
+
 text \<open>Objects and constants are identified by their names\<close>
 datatype object = name: Obj name
 
@@ -110,11 +112,12 @@ datatype predicate_decl = PredDecl
 
 text \<open>A domain contains the declarations of primitive types, predicates,
   and action schemas.\<close>
-datatype ast_domain = Domain
-  (predicates: "predicate_decl list")
-  (actions: "ast_action_schema list")
+
+datatype ast_domain_decs = DomainDecls
   (types: "(name \<times> name) list") \<comment> \<open> \<open>(type, supertype)\<close> declarations. \<close>
+  (predicates: "predicate_decl list")
   ("consts": "(object \<times> type) list")
+
 
 subsubsection \<open>Problems\<close>
 
@@ -128,10 +131,18 @@ type_synonym fact = "predicate \<times> object list"
 
 text \<open>A problem consists of a domain, a list of objects,
   a description of the initial state, and a description of the goal state. \<close>
-datatype ast_problem = Problem
-  (domain: ast_domain)
+datatype ast_problem_decs = ProbDecls
+  (domain_decs: ast_domain_decs)
   (objects: "(object \<times> type) list")
   (init: "ground_formula list")
+
+datatype ast_domain = Domain
+  (problem_decs: ast_problem_decs)
+  (actions: "ast_action_schema list")
+
+
+datatype ast_problem = Problem
+  (domain: ast_domain)
   (goal: "schematic_formula")
 
 subsubsection \<open>Plans\<close>
@@ -227,11 +238,15 @@ proof -
   thus "term_atom_subst v c a = a" by (simp add: atom.map_ident_strong)
 qed
 
+global_interpretation term_formulas: formula_syntax term_atom_vars term_atom_objs
+  defines fvars = term_formulas.fvars
+      and fobjs = term_formulas.fobjs
+  done
+
 subsection \<open>Closed-World Assumption, Equality, and Negation\<close>
   text \<open>Discriminator for atomic predicate formulas.\<close>
   fun is_predAtom where
     "is_predAtom (Atom (predAtm _ _)) = True" | "is_predAtom _ = False"
-
 
   text \<open>The world model is a set of (atomic) formulas\<close>
   type_synonym world_model = "object atom formula set"
@@ -260,7 +275,6 @@ subsection \<open>Closed-World Assumption, Equality, and Negation\<close>
   abbreviation cw_entailment (infix "\<^sup>c\<TTurnstile>\<^sub>=" 53) where
     "M \<^sup>c\<TTurnstile>\<^sub>= \<phi> \<equiv> close_world M \<TTurnstile> \<phi>"
 
-
   lemma
     close_world_extensive: "M \<subseteq> close_world M" and
     close_world_idem[simp]: "close_world (close_world M) = close_world M"
@@ -286,8 +300,6 @@ subsection \<open>Closed-World Assumption, Equality, and Negation\<close>
     apply (metis formula_semantics.simps(1) formula_semantics.simps(3))
     apply (metis formula_semantics.simps(1) formula_semantics.simps(3))
     by (metis atom.collapse(2) formula_semantics.simps(1) is_predAtm_def)
-
-
 
   lemma valuation_aux_2:
     assumes "wm_basic M"
@@ -370,8 +382,7 @@ subsection \<open>STRIPS Semantics\<close>
 
 text \<open>For this section, we fix a domain \<open>D\<close>, using Isabelle's
   locale mechanism.\<close>
-locale ast_domain =
-  fixes D :: ast_domain
+context
 begin
   text \<open>It seems to be agreed upon that, in case of a contradictory effect,
     addition overrides deletion. We model this behaviour by first executing
@@ -441,13 +452,13 @@ lemma ty_term_mono: "varT \<subseteq>\<^sub>m varT' \<Longrightarrow> objT \<sub
     done
   done
 
-context ast_domain
+locale ast_domain_decs =
+  fixes DD :: ast_domain_decs
 begin
-  
   text \<open>The signature is a partial function that maps the predicates
     of the domain to lists of argument types.\<close>
   definition sig :: "predicate \<rightharpoonup> type list" where
-    "sig \<equiv> map_of (map (\<lambda>PredDecl p n \<Rightarrow> (p,n)) (predicates D))"
+    "sig \<equiv> map_of (map (\<lambda>PredDecl p n \<Rightarrow> (p,n)) (predicates DD))"
 
   text \<open>We use a flat subtype hierarchy, where every type is a subtype
     of object, and there are no other subtype relations.
@@ -460,7 +471,7 @@ begin
   fun subtype_edge where
     "subtype_edge (ty,superty) = (superty,ty)"
 
-  definition "subtype_rel \<equiv> set (map subtype_edge (types D))"
+  definition "subtype_rel \<equiv> set (map subtype_edge (types DD))"
 
   (*
   definition "subtype_rel \<equiv> {''object''}\<times>UNIV"
@@ -470,9 +481,6 @@ begin
     "of_type oT T \<equiv> set (primitives oT) \<subseteq> subtype_rel\<^sup>* `` set (primitives T)"
   text \<open>This checks that every primitive on the LHS is contained in or a
     subtype of a primitive on the RHS\<close>
-
-
-
 
   type_synonym ('ent) ty_ent = "'ent \<rightharpoonup> type"
 
@@ -500,7 +508,7 @@ begin
       signature, equalities are well-formed if the arguments are valid
       objects (have a type).
 
-      TODO: We could check that types may actually overlap
+      TOdecsO: We could check that types may actually overlap
     \<close>
     fun wf_atom :: "'ent atom \<Rightarrow> bool" where
       "wf_atom (predAtm p vs) \<longleftrightarrow> wf_pred_atom (p,vs)"
@@ -538,63 +546,81 @@ begin
           (\<forall>ae\<in>set a. wf_fmla_atom ae)
         \<and> (\<forall>de\<in>set d. wf_fmla_atom de)"
 
-end \<comment> \<open>Context fixing \<open>ty_ent\<close>\<close>
+  end \<comment> \<open>Context fixing \<open>ty_ent\<close>\<close>
 
   definition constT :: "object \<rightharpoonup> type" where
-    "constT \<equiv> map_of (consts D)"
+    "constT \<equiv> map_of (consts DD)"
              
   text \<open>A type is well-formed if it consists only of declared primitive types,
      and the type object.\<close>
   fun wf_type where
-    "wf_type (Either Ts) \<longleftrightarrow> set Ts \<subseteq> insert ''object'' (fst`set (types D))"
+    "wf_type (Either Ts) \<longleftrightarrow> set Ts \<subseteq> insert ''object'' (fst`set (types DD))"
 
   text \<open>A predicate is well-formed if its argument types are well-formed.\<close>
   fun wf_predicate_decl where
     "wf_predicate_decl (PredDecl p Ts) \<longleftrightarrow> (\<forall>T\<in>set Ts. wf_type T)"
 
   text \<open>The types declaration is well-formed, if all supertypes are declared types (or object)\<close>
-  definition "wf_types \<equiv> snd`set (types D) \<subseteq> insert ''object'' (fst`set (types D))"
+  definition "wf_types \<equiv> snd`set (types DD) \<subseteq> insert ''object'' (fst`set (types DD))"
 
-  text \<open>A domain is well-formed if
+
+  text \<open>The declarations in a domain are well-formed if 
     \<^item> there are no duplicate declared predicate names,
     \<^item> all declared predicates are well-formed,
-    \<^item> there are no duplicate action names,
-    \<^item> and all declared actions are well-formed
-    \<close>
-  definition wf_domain :: "bool" where
-    "wf_domain \<equiv>
+    \<^item> there are no duplicate action names\<close>
+
+  definition wf_domain_decs :: "bool" where
+    "wf_domain_decs \<equiv>
       wf_types
-    \<and> distinct (map (predicate_decl.pred) (predicates D))
-    \<and> (\<forall>p\<in>set (predicates D). wf_predicate_decl p)
-    \<and> distinct (map fst (consts D))
-    \<and> (\<forall>(n,T)\<in>set (consts  D). wf_type T)
-    \<and> distinct (map ast_action_schema.name (actions D))
-    "
+    \<and> distinct (map (predicate_decl.pred) (predicates DD))
+    \<and> (\<forall>p\<in>set (predicates DD). wf_predicate_decl p)
+    \<and> distinct (map fst (consts DD))
+    \<and> (\<forall>(n,T)\<in>set (consts DD). wf_type T)"
+
+  
 
 end \<comment> \<open>locale \<open>ast_domain\<close>\<close>
 
-
-
-text \<open>We fix a problem, and also include the definitions for the domain
-  of this problem.\<close>
-locale ast_problem = ast_domain "domain P"
-  for P :: ast_problem 
+text \<open>We fix the declarations of types and such from the domain and include the declarations
+      from the problem as well\<close>
+locale ast_problem_decs = ast_domain_decs "domain_decs PD"
+  for PD::ast_problem_decs
 begin
-
+  
   text \<open>We refer to the problem domain as \<open>D\<close>\<close>
-  abbreviation "D \<equiv> ast_problem.domain P"
+  abbreviation "DD \<equiv> domain_decs PD"
 
   (* constants are from the domain, objects are from the problem *)
   definition objT :: "object \<rightharpoonup> type" where
-    "objT \<equiv> map_of (objects P) ++ constT"
+    "objT \<equiv> map_of (objects PD) ++ constT"
 
-  lemma objT_alt: "objT = map_of (consts D @ objects P)"
+  lemma objT_alt: "objT = map_of (consts DD @ objects PD)"
     unfolding objT_def constT_def
     apply (clarsimp)
     done
 
   definition wf_fact :: "fact \<Rightarrow> bool" where
     "wf_fact = wf_pred_atom objT"
+
+
+  text \<open>This definition is needed for well-formedness of the initial model,
+    and forward-references to the concept of world model.
+  \<close>
+  (* What makes a world-model well-formed? Since the initial state is essentially
+      equivalent to the effect of a non-action, it being well-formed means, that it
+      is unquantified. *)
+  definition wf_world_model::"ground_formula set \<Rightarrow> bool" where
+    "wf_world_model M = (\<forall>f\<in>M. wf_fmla_atom objT f)"
+
+  definition wf_problem_decs where
+    "wf_problem_decs \<equiv>
+      wf_domain_decs
+    \<and> distinct (map fst (objects PD) @ map fst (consts DD))
+    \<and> (\<forall>(n,T)\<in>set (objects PD). wf_type T)
+    \<and> distinct (init PD)
+    \<and> wf_world_model (set (init PD))
+    "
+
 
   text \<open>An action schema is well-formed if the parameter names are distinct,
     and the precondition and effect is well-formed wrt.\ the parameters.
@@ -609,31 +635,7 @@ begin
         distinct (map fst params)
       \<and> wf_fmla tyt pre
       \<and> wf_effect tyt eff)"
-
-  text \<open>This definition is needed for well-formedness of the initial model,
-    and forward-references to the concept of world model.
-  \<close>
-  (* What makes a world-model well-formed? Since the initial state is essentially
-      equivalent to the effect of a non-action, it being well-formed means, that it
-      is unquantified. *)
-  definition wf_world_model::"ground_formula set \<Rightarrow> bool" where
-    "wf_world_model M = (\<forall>f\<in>M. wf_fmla_atom objT f)"
-
-  definition wf_goal::"schematic_formula \<Rightarrow> bool" where
-    "wf_goal = wf_fmla (ty_term (Map.empty) objT)"
-
-  (*Note: current semantics assigns each object a unique type *)
-  definition wf_problem where
-    "wf_problem \<equiv>
-      wf_domain
-    \<and> (\<forall>a\<in>set (actions D). wf_action_schema a)
-    \<and> distinct (map fst (objects P) @ map fst (consts D))
-    \<and> (\<forall>(n,T)\<in>set (objects P). wf_type T)
-    \<and> distinct (init P)
-    \<and> wf_world_model (set (init P))
-    \<and> wf_goal (goal P)
-    "
-
+  
   fun wf_effect_inst :: "object ast_effect \<Rightarrow> bool" where
     "wf_effect_inst (Effect (a) (d))
       \<longleftrightarrow> (\<forall>a\<in>set a \<union> set d. wf_fmla_atom objT a)"
@@ -641,32 +643,43 @@ begin
   lemma wf_effect_inst_alt: "wf_effect_inst eff = wf_effect objT eff"
     by (cases eff) auto
 
-end
-
-context ast_problem
-begin
-  
-  text \<open>Filter those constants in the domain that belong to the type.\<close>
-  definition t_dom::"type \<Rightarrow> object list" where
-  "t_dom typ \<equiv> map fst (filter (\<lambda>(c, t). of_type t typ) (consts D @ objects P))"
-
-lemma t_dom_corr: "objT v = Some t \<Longrightarrow> of_type t T \<longleftrightarrow> v \<in> set (t_dom T)"
-proof -
-  
-qed
+  definition wf_goal::"schematic_formula \<Rightarrow> bool" where
+    "wf_goal = wf_fmla (ty_term (Map.empty) objT)"
 
 end
 
-sublocale ast_problem \<subseteq> quantifier_semantics term_atom_vars term_atom_objs term_atom_subst t_dom
-  by (unfold_locales) (auto simp: subst_subst_all subst_replaces subst_idem)
-
-subsubsection \<open>Conditions for the preservation of well-formedness\<close>
-context ast_problem
+locale ast_domain = ast_problem_decs "problem_decs D"
+  for D::ast_domain
 begin
-  notation all    ("\<^bold>\<forall>_ - _._") 
-  notation exists ("\<^bold>\<exists>_ - _._") 
-  find_theorems all
+  abbreviation "PD \<equiv> problem_decs D"
 
+  text \<open>A domain is well-formed if in addition to the declarations being well-formed
+    \<^item> there are no duplicate declared actions,
+    \<^item> and all declared actions are well-formed
+    \<close>
+  definition wf_domain :: "bool" where
+    "wf_domain \<equiv>
+      wf_problem_decs
+      \<and> distinct (map ast_action_schema.name (actions D))
+      \<and> (\<forall>a\<in>set (actions D). wf_action_schema a)
+    "
+end
+
+locale ast_problem = ast_domain "domain P"
+  for P::ast_problem
+begin
+  abbreviation "D \<equiv> domain P"
+  text \<open>A problem is well-formed if in addition to the domain being well-formed, the goal is\<close>
+  definition wf_problem where
+    "wf_problem \<equiv>
+      wf_domain
+    \<and> wf_goal (goal P)
+    "
+end
+subsection \<open>Conditions for the preservation of well-formedness\<close>
+
+context ast_problem_decs
+begin
   text \<open>This section proves that well-formedness under one type environment implies
         well-formedness under another.\<close>
 
@@ -884,14 +897,267 @@ begin
     using wf_fmla_mono wf_fmla_vars wf_fmla_bw 
     by blast
 
-  text \<open>A well-formed goal is a well-formed formula but without any free variables\<close>
+  text \<open>A well-formed goal is a well-formed formula without any free variables\<close>
   
   theorem wf_goal_alt: "wf_goal \<phi> \<longleftrightarrow> wf_fmla (ty_term Q objT) \<phi> \<and> fvars \<phi> = {}"
     unfolding wf_goal_def
     using wf_fmla_alt_lemma[of "(\<lambda>_. None)"]
     by simp
 
-end \<comment> \<open>locale \<open>ast_problem\<close>\<close>
+end
+
+context ast_problem_decs
+begin
+  
+  text \<open>Here are some lemmas reused in multiple well-formedness proofs for instantiation\<close>
+
+  lemma of_type_refl[simp, intro!]: "of_type T T"
+    unfolding of_type_def by auto
+
+  lemma of_type_trans[trans]:
+    "of_type T1 T2 \<Longrightarrow> of_type T2 T3 \<Longrightarrow> of_type T1 T3"
+    unfolding of_type_def
+    by clarsimp (metis (no_types, opaque_lifting)
+      Image_mono contra_subsetD order_refl rtrancl_image_idem)
+ 
+  lemma is_of_type_map_ofE:
+    assumes "is_of_type (map_of params) x T"
+    obtains i xT where "i<length params" "params!i = (x,xT)" "of_type xT T"
+    using assms
+    unfolding is_of_type_def
+    by (auto split: option.splits dest!: map_of_SomeD simp: in_set_conv_nth)
+
+  context
+    fixes Q::"'a \<rightharpoonup> type" and R::"'b \<rightharpoonup> type" and f :: "'a \<Rightarrow> 'b"
+    assumes INST: "is_of_type Q x T \<Longrightarrow> is_of_type R (f x) T"
+  begin
+    lemma X1: assumes "list_all2 (is_of_type Q) xs Ts"
+      shows "list_all2 (is_of_type R) (map f xs) Ts" 
+      using assms INST by (induction rule: list_all2_induct) auto
+
+    thm is_of_type_def
+    lemma wf_inst_eq_aux: "Q x = Some T \<Longrightarrow> R (f x) \<noteq> None"
+      using INST[of x T] unfolding is_of_type_def
+      by (auto split: option.splits)
+
+    lemma wf_inst_atom:
+      assumes "wf_atom Q a"
+      shows "wf_atom R (map_atom f a)"
+      using X1 assms wf_inst_eq_aux
+      by (cases a; auto split: option.splits)
+
+    lemma wf_inst_formula_atom:
+      assumes "wf_fmla_atom Q a"
+      shows "wf_fmla_atom R (map_formula (map_atom f) a)"
+      using assms wf_inst_atom
+      apply (cases a rule: wf_fmla_atom.cases; auto split: option.splits)
+      by (simp add: INST list.rel_map(1) list_all2_mono)
+
+    lemma wf_inst_effect:
+      assumes "wf_effect Q \<phi>"
+      shows "wf_effect R (map_ast_effect f \<phi>)"
+      using assms wf_inst_formula_atom by (cases \<phi>) auto
+
+    lemma wf_inst_formula:
+      assumes "wf_fmla Q \<phi>"
+      shows "wf_fmla R (map_formula (map_atom f) \<phi>)"
+      using assms
+      by (induction \<phi>) (auto simp: wf_inst_atom dest: wf_inst_eq_aux)
+  end
+
+end \<comment> \<open>locale \<open>ast_problem_decs\<close>\<close>
+
+
+subsection \<open>Quantifiers\<close>
+context ast_problem_decs
+begin
+  text \<open>Filter those constants in the domain that belong to the type.\<close>
+  definition t_dom::"type \<Rightarrow> object list" where
+  "t_dom typ \<equiv> map fst (filter (\<lambda>(c, t). of_type t typ) (consts DD @ objects PD))"
+
+  definition all::"variable \<Rightarrow> type \<Rightarrow> schematic_formula \<Rightarrow> schematic_formula" ("\<^bold>\<forall>_ - _._") where
+    "all v t \<phi> \<equiv> (if (v \<notin> fvars \<phi> \<and> (t_dom t \<noteq> [])) then \<phi> else  \<^bold>\<And>(map (\<lambda>c. (map_formula (term_atom_subst v c)) \<phi>) (t_dom t)))"
+
+  definition exists::"variable \<Rightarrow> type \<Rightarrow> schematic_formula \<Rightarrow> schematic_formula" ("\<^bold>\<exists>_ - _._") where
+    "exists v t \<phi> \<equiv> (if (v \<notin> fvars \<phi> \<and> (t_dom t \<noteq> [])) then \<phi> else \<^bold>\<Or>(map (\<lambda>c. (map_formula (term_atom_subst v c)) \<phi>) (t_dom t)))"
+
+  definition pddl_all::"(variable \<times> type) list \<Rightarrow> schematic_formula \<Rightarrow> schematic_formula" where
+    "pddl_all ps \<phi> = foldr (\<lambda>(v, t) \<phi>. all v t \<phi>) ps \<phi>"
+
+  definition pddl_exists::"(variable \<times> type) list \<Rightarrow> schematic_formula \<Rightarrow> schematic_formula" where
+    "pddl_exists ps \<phi> = foldr (\<lambda>(v, t) \<phi>. exists v t \<phi>) ps \<phi>"
+end
+
+locale wf_problem_decs = ast_problem_decs +
+  assumes wf_problem_decs: wf_problem_decs
+begin
+
+  text \<open>The correctness of t_dom\<close>
+  lemma t_dom_corr: "objT v = Some t \<Longrightarrow> of_type t T \<longleftrightarrow> v \<in> set (t_dom T)"
+  proof -                                   
+    assume a: "objT v = Some t"
+    hence 0: "map_of (consts DD @ objects PD) v = Some t"
+      using objT_alt by argo
+
+    from wf_problem_decs
+    have 1: "distinct (map fst (objects PD @ consts DD))"
+      unfolding wf_problem_decs_def
+      by simp
+    
+    have 2: "t_dom T = map fst (filter (\<lambda>(c, t). of_type t T) (consts DD @ objects PD))"
+      unfolding t_dom_def by simp 
+    
+    show "of_type t T \<longleftrightarrow> v \<in> set (t_dom T)"
+      apply (rule iffI)
+      using 0 1 2
+      by fastforce+
+  qed
+    
+
+  text \<open>The circumstances under which using a quantifier will result in a well-formed formula\<close>
+  lemma c_ty: "\<forall>c \<in> set (t_dom ty). \<exists>ty'. objT c = Some ty' \<and> of_type ty' ty"
+  proof 
+    fix c
+    assume "c \<in> set (t_dom ty)"
+    hence "c \<in> set (map fst (filter (\<lambda>(c, t) \<Rightarrow> of_type t ty) (consts DD @ objects PD)))"
+      unfolding t_dom_def by blast
+    hence "\<exists>t. (c,t) \<in> set (consts DD @ objects PD) \<and> of_type t ty"
+      unfolding t_dom_def
+      by auto
+    then obtain t where
+      t: "(c,t) \<in> set (consts DD @ objects PD)" 
+      "of_type t ty"
+      by auto
+    from wf_problem_decs
+    have "distinct (map fst (consts DD @ objects PD))"
+      unfolding wf_problem_decs_def
+      by auto
+    with t
+    have "map_of (consts DD @ objects PD) c = Some t"
+      using map_of_is_SomeI
+      by metis
+    with t
+    show "\<exists>ty'. objT c = Some ty' \<and> of_type ty' ty"
+      using objT_alt
+      by auto
+  qed
+  
+  lemma quant_inst:
+    assumes "c \<in> set (t_dom ty)"
+        and "is_of_type (ty_term (Q(v\<mapsto>ty)) objT) t T" 
+    shows "is_of_type (ty_term (Q(v:=None)) objT) (term_subst v c t) T"
+  proof (cases t)
+    case (VAR x)
+    show ?thesis
+    proof (cases "x = v")
+      case True
+      hence "ty_term (Q(v\<mapsto>ty)) objT t = Some ty \<and> of_type ty T" using VAR assms
+        unfolding is_of_type_def by auto
+      moreover 
+      have "\<exists>ty'. ty_term (Q(v:=None)) objT (term_subst v c t) = Some ty' \<and> of_type ty' T"
+        by (metis True VAR assms(1) of_type_trans calculation term_subst.simps(1) ty_term.simps(2) c_ty)
+      then show ?thesis unfolding is_of_type_def of_type_trans by force
+    next
+      case False
+      thus ?thesis using VAR assms unfolding is_of_type_def by simp
+    qed
+  next
+    case (CONST c)
+    then show ?thesis using assms unfolding is_of_type_def by fastforce
+  qed
+  
+  lemma wf_quant_inst': 
+    assumes "wf_fmla (ty_term (Q(v \<mapsto> ty)) objT) \<phi>"
+        and "c \<in> set (t_dom ty)"
+      shows "wf_fmla (ty_term (Q(v := None)) objT) (map_formula (term_atom_subst v c) \<phi>)"
+    using wf_inst_formula[OF quant_inst[OF assms(2)] assms(1)]
+    by simp
+  
+  lemma wf_subst_t_dom:
+    assumes "wf_fmla (ty_term (Q(v \<mapsto> ty)) objT) \<phi>"
+    shows "list_all (wf_fmla (ty_term (Q(v := None)) objT)) 
+        (map (\<lambda>c. map_formula (term_atom_subst v c) \<phi>) (t_dom ty))"
+    using assms wf_quant_inst'
+    by (subst sym[OF Ball_set], simp)
+    
+  lemma wf_fmla_upd: 
+    assumes "v \<notin> fvars \<phi>"
+      shows "wf_fmla (ty_term (Q(v \<mapsto> ty)) objT) \<phi> \<longleftrightarrow> wf_fmla (ty_term (Q(v := None)) objT) \<phi>"
+    using wf_fmla_restr[of "Q(v \<mapsto> ty)"] wf_fmla_restr[of "Q(v := None)"] assms
+    by simp
+  
+  lemma Big_Or_wf_comm: "list_all (wf_fmla Q) \<phi>s \<longleftrightarrow> wf_fmla Q (\<^bold>\<Or> \<phi>s)"
+    by (induction \<phi>s) auto
+  
+  lemma Big_And_wf_comm: "list_all (wf_fmla Q) \<phi>s \<longleftrightarrow> wf_fmla Q (\<^bold>\<And> \<phi>s)"
+    by (induction \<phi>s) auto
+  
+  lemma wf_Big_Or:
+    assumes "wf_fmla (ty_term (Q(v \<mapsto> ty)) objT) \<phi>"
+    shows "wf_fmla (ty_term (Q(v := None)) objT) 
+      (\<^bold>\<Or>(map (\<lambda>c. (map_formula (term_atom_subst v c)) \<phi>) (t_dom ty)))"
+    using wf_subst_t_dom[OF assms] Big_Or_wf_comm
+    by blast
+  
+  lemma wf_Big_And:
+    assumes "wf_fmla (ty_term (Q(v \<mapsto> ty)) objT) \<phi>"
+    shows "wf_fmla (ty_term (Q(v := None)) objT) 
+      (\<^bold>\<And>(map (\<lambda>c. (map_formula (term_atom_subst v c)) \<phi>) (t_dom ty)))"
+    using wf_subst_t_dom[OF assms] Big_And_wf_comm
+    by blast
+  
+  lemma wf_ex_inst':
+    assumes "wf_fmla (ty_term (Q(v \<mapsto> ty)) objT) \<phi>" 
+      shows "wf_fmla (ty_term (Q(v := None)) objT) \<^bold>\<exists>v - ty. \<phi>"
+    using wf_Big_Or[OF assms] wf_fmla_upd assms unfolding exists_def by auto
+  
+  lemma wf_ex_inst:
+    assumes "wf_fmla (ty_term (Q(v \<mapsto> ty)) objT) \<phi>" 
+      shows "wf_fmla (ty_term Q objT) \<^bold>\<exists>v - ty. \<phi>"
+    using wf_fmla_mono'[OF wf_ex_inst'] assms unfolding exists_def by auto
+
+  
+  (* Note: The other direction does not work. Quantifiers expand into long formulae 
+            by substitution of variables for constants. Assume there is a 
+            predicate PD:: t2 \<Rightarrow> bool, that v has a type of t1, that t2 \<subseteq> t1, and the only
+            object in the domain of t1 has a type t2. In this case, PD is not
+            well-formed. *)
+  
+  lemma wf_ex_goal: 
+    assumes "wf_fmla (ty_term [v \<mapsto> ty] objT) \<phi>" 
+      shows "wf_goal \<^bold>\<exists>v - ty. \<phi>"
+    unfolding wf_goal_def using wf_ex_inst'[OF assms] by simp
+
+  lemma wf_ex_goal_alt:
+    assumes "wf_fmla (ty_term (Q(v \<mapsto> ty)) objT) \<phi>"
+        and "fvars \<phi> \<subseteq> {v}"
+      shows "wf_goal \<^bold>\<exists>v - ty. \<phi>"
+    using assms wf_fmla_alt_lemma[of "Map.empty(v \<mapsto> ty)" "(Q(v \<mapsto> ty))"] wf_ex_goal by simp
+    
+    
+  lemma wf_univ_inst':
+    assumes "wf_fmla (ty_term (Q(v \<mapsto> ty)) objT) \<phi>" 
+      shows "wf_fmla (ty_term (Q(v := None)) objT) \<^bold>\<forall>v - ty. \<phi>"
+    using wf_Big_And[OF assms] wf_fmla_upd assms unfolding all_def by auto
+  
+  lemma wf_univ_inst:
+    assumes "wf_fmla (ty_term (Q(v \<mapsto> ty)) objT) \<phi>" 
+      shows "wf_fmla (ty_term Q objT) \<^bold>\<forall>v - ty. \<phi>"
+    using wf_fmla_mono'[OF wf_univ_inst'] assms unfolding all_def by auto
+  
+  lemma wf_univ_goal: 
+    assumes "wf_fmla (ty_term [v \<mapsto> ty] objT) \<phi>" 
+      shows "wf_goal \<^bold>\<forall>v - ty. \<phi>"
+    unfolding wf_goal_def using wf_univ_inst'[OF assms] by simp
+
+   lemma wf_univ_goal_alt:
+    assumes "wf_fmla (ty_term (Q(v \<mapsto> ty)) objT) \<phi>"
+        and "fvars \<phi> \<subseteq> {v}"
+      shows "wf_goal \<^bold>\<forall>v - ty. \<phi>"
+    using assms wf_fmla_alt_lemma[of "Map.empty(v \<mapsto> ty)" "(Q(v \<mapsto> ty))"] wf_univ_goal by simp
+
+
+end \<comment> \<open>Context of \<open>wf_problem_decs\<close>\<close>
 
 subsection \<open>PDDL Semantics\<close>
 
@@ -936,7 +1202,7 @@ context ast_problem begin
 
   text \<open>Initial model\<close>
   definition I :: "world_model" where
-    "I \<equiv> set (init P)"
+    "I \<equiv> set (init PD)"
 
   text \<open>Resolve a plan action and instantiate the referenced action schema.\<close>
   fun resolve_instantiate :: "plan_action \<Rightarrow> ground_action" where
@@ -997,7 +1263,7 @@ context ast_problem begin
   text \<open>Instantiation of a goal\<close>
   fun inst_goal::"schematic_formula \<Rightarrow> ground_formula" where
   "inst_goal \<phi> = (let tsubst = subst_term (the o (Map.empty))
-        in (map_formula o map_atom) tsubst \<phi>)"                           
+        in (map_formula o map_atom) tsubst \<phi>)"
   
   text \<open>A plan is valid wrt.\ a given initial model, if it forms a path to a
     goal model \<close>
@@ -1018,7 +1284,6 @@ context ast_problem begin
 
 
 end \<comment> \<open>Context of \<open>ast_problem\<close>\<close>
-
 
 
 subsection \<open>Preservation of Well-Formedness\<close>
@@ -1047,60 +1312,6 @@ context ast_problem begin
     We begin with some auxiliary lemmas before the actual theorem.
   \<close>
 
-  text \<open>Here are some lemmas reused in multiple well-formedness proofs for instantiation\<close>
-
-  lemma (in ast_domain) of_type_refl[simp, intro!]: "of_type T T"
-    unfolding of_type_def by auto
-
-  lemma (in ast_domain) of_type_trans[trans]:
-    "of_type T1 T2 \<Longrightarrow> of_type T2 T3 \<Longrightarrow> of_type T1 T3"
-    unfolding of_type_def
-    by clarsimp (metis (no_types, opaque_lifting)
-      Image_mono contra_subsetD order_refl rtrancl_image_idem)
- 
-  lemma is_of_type_map_ofE:
-    assumes "is_of_type (map_of params) x T"
-    obtains i xT where "i<length params" "params!i = (x,xT)" "of_type xT T"
-    using assms
-    unfolding is_of_type_def
-    by (auto split: option.splits dest!: map_of_SomeD simp: in_set_conv_nth)
-
-  context
-    fixes Q::"'a \<rightharpoonup> type" and R::"'b \<rightharpoonup> type" and f :: "'a \<Rightarrow> 'b"
-    assumes INST: "is_of_type Q x T \<Longrightarrow> is_of_type R (f x) T"
-  begin
-    lemma X1: assumes "list_all2 (is_of_type Q) xs Ts"
-      shows "list_all2 (is_of_type R) (map f xs) Ts" 
-      using assms INST by (induction rule: list_all2_induct) auto
-
-    lemma wf_inst_eq_aux: "Q x = Some T \<Longrightarrow> R (f x) \<noteq> None"
-      using INST[of x T] unfolding is_of_type_def
-      by (auto split: option.splits)
-
-    lemma wf_inst_atom:
-      assumes "wf_atom Q a"
-      shows "wf_atom R (map_atom f a)"
-      using X1 assms wf_inst_eq_aux
-      by (cases a; auto split: option.splits)
-
-    lemma wf_inst_formula_atom:
-      assumes "wf_fmla_atom Q a"
-      shows "wf_fmla_atom R (map_formula (map_atom f) a)"
-      using assms wf_inst_atom
-      apply (cases a rule: wf_fmla_atom.cases; auto split: option.splits)
-      by (simp add: INST list.rel_map(1) list_all2_mono)
-
-    lemma wf_inst_effect:
-      assumes "wf_effect Q \<phi>"
-      shows "wf_effect R (map_ast_effect f \<phi>)"
-      using assms wf_inst_formula_atom by (cases \<phi>) auto
-
-    lemma wf_inst_formula:
-      assumes "wf_fmla Q \<phi>"
-      shows "wf_fmla R (map_formula (map_atom f) \<phi>)"
-      using assms
-      by (induction \<phi>) (auto simp: wf_inst_atom dest: wf_inst_eq_aux)
-  end
                     
   lemma constT_ss_objT: "constT \<subseteq>\<^sub>m objT"
     unfolding constT_def objT_def
@@ -1194,11 +1405,135 @@ context ast_problem begin
 
 end
 
+subsubsection \<open>Preservation\<close>
+
+text \<open>Locale to express a well-formed domain\<close>
+locale wf_ast_domain = ast_domain +
+  assumes wf_domain: wf_domain
+
+
+context ast_problem
+begin
+  text \<open>Shorthand for enabled plan action: It is well-formed, and the
+    precondition holds for its instance.\<close>
+  definition plan_action_enabled :: "plan_action \<Rightarrow> world_model \<Rightarrow> bool" where
+    "plan_action_enabled \<pi> M
+      \<longleftrightarrow> wf_plan_action \<pi> \<and> M \<^sup>c\<TTurnstile>\<^sub>= precondition (resolve_instantiate \<pi>)"
+
+  text \<open>Shorthand for executing a plan action: Resolve, instantiate, and
+    apply effect\<close>
+  definition execute_plan_action :: "plan_action \<Rightarrow> world_model \<Rightarrow> world_model"
+    where "execute_plan_action \<pi> M
+      = (apply_effect (effect (resolve_instantiate \<pi>)) M)"
+
+  text \<open>The @{const plan_action_path} predicate can be decomposed naturally
+    using these shorthands: \<close>
+  lemma plan_action_path_Nil[simp]: "plan_action_path M [] M' \<longleftrightarrow> M'=M"
+    by (auto simp: plan_action_path_def)
+
+  lemma plan_action_path_Cons[simp]:
+    "plan_action_path M (\<pi>#\<pi>s) M' \<longleftrightarrow>
+      plan_action_enabled \<pi> M
+    \<and> plan_action_path (execute_plan_action \<pi> M) \<pi>s M'"
+    by (auto
+      simp: plan_action_path_def execute_plan_action_def
+            execute_ground_action_def plan_action_enabled_def)
+end
+
+text \<open>Locale to express a well-formed problem\<close>
+locale wf_ast_problem = ast_problem P for P +
+  assumes wf_problem: wf_problem
+begin
+  sublocale wf_ast_domain "domain P"
+    apply unfold_locales
+    using wf_problem
+    unfolding wf_problem_def by simp
+
+sublocale wf_problem_decs "problem_decs (domain P)"
+  apply unfold_locales
+  using wf_problem
+  unfolding wf_problem_def wf_domain_def by blast
+  
+  text \<open>We start by defining two shorthands for enabledness and execution of
+    a plan action.\<close>
+
+
+  text \<open>The initial world model is well-formed\<close>
+  lemma wf_I: "wf_world_model I"
+    using wf_problem
+    unfolding I_def wf_world_model_def wf_problem_def wf_problem_decs_def wf_domain_def wf_domain_decs_def
+    apply(safe) subgoal for f by (induction f) auto
+    done
+
+  text \<open>Application of a well-formed effect preserves well-formedness
+    of the model\<close>
+  lemma wf_apply_effect:
+    assumes "wf_effect objT e"
+    assumes "wf_world_model s"
+    shows "wf_world_model (apply_effect e s)"
+    using assms wf_problem
+    unfolding wf_world_model_def wf_problem_def wf_domain_def
+    by (cases e) (auto split: formula.splits prod.splits)
+
+  text \<open>Execution of plan actions preserves well-formedness\<close>
+  theorem wf_execute:
+    assumes "plan_action_enabled \<pi> s"
+    assumes "wf_world_model s"
+    shows "wf_world_model (execute_plan_action \<pi> s)"
+    using assms
+  proof (cases \<pi>)
+    case [simp]: (PAction name args)
+
+    from \<open>plan_action_enabled \<pi> s\<close> have "wf_plan_action \<pi>"
+      unfolding plan_action_enabled_def by auto
+    then obtain a where
+      "resolve_action_schema name = Some a" and
+      T: "action_params_match a args"
+      by (auto split: option.splits)
+
+    from wf_domain have
+      [simp]: "distinct (map ast_action_schema.name (actions D))"
+      unfolding wf_domain_def
+      by blast
+    from \<open>resolve_action_schema name = Some a\<close> have
+      "a \<in> set (actions D)"
+      unfolding resolve_action_schema_def by auto
+    with wf_problem have "wf_action_schema a"
+      unfolding wf_problem_def wf_domain_def by auto
+    hence "wf_ground_action (resolve_instantiate \<pi>)"
+      using \<open>resolve_action_schema name = Some a\<close> T
+        wf_instantiate_action_schema
+      by auto
+    thus ?thesis
+      apply (simp add: execute_plan_action_def execute_ground_action_def)
+      apply (rule wf_apply_effect)
+      apply (cases "resolve_instantiate \<pi>"; simp)
+      by (rule \<open>wf_world_model s\<close>)
+  qed
+
+  theorem wf_execute_compact_notation:
+    "plan_action_enabled \<pi> s \<Longrightarrow> wf_world_model s
+    \<Longrightarrow> wf_world_model (execute_plan_action \<pi> s)"
+    by (rule wf_execute)
+
+
+  text \<open>Execution of a plan preserves well-formedness\<close>
+  corollary wf_plan_action_path:
+    assumes "wf_world_model M" and "plan_action_path M \<pi>s M'"
+    shows "wf_world_model M'"
+    using assms
+    by (induction \<pi>s arbitrary: M) (auto intro: wf_execute)
+
+end
+
 subsubsection \<open>Semantics of quantifiers under instantiation\<close>
 
-text \<open>Here are some lemmas that prove that the semantics of quantified formulae 
-      are correct under instantiation.\<close>
+text \<open>Here are some lemmas that prove that the semantics of quantified formulas
+      are correct following instantiation.\<close>
 context ast_problem begin
+  
+  notation all ("\<^bold>\<forall>_ - _._")   
+  notation exists ("\<^bold>\<exists>_ - _._")
 
   text \<open>The semantics of quantifiers in preconditions and the goal 
         will behave as expected\<close>
@@ -1222,7 +1557,7 @@ context ast_problem begin
     lemma Big_Or_sem: "\<A> \<Turnstile> f (\<^bold>\<Or>\<phi>s) \<longleftrightarrow> (\<exists>\<phi> \<in> set (\<phi>s). \<A> \<Turnstile> f \<phi>)"
       using f_dist_disj f
       by (induction \<phi>s) auto
-
+    
     lemma all_inst: "\<A> \<Turnstile> (f \<^bold>\<forall>v - ty. \<phi>) \<longleftrightarrow>
       (\<forall>c \<in> set (t_dom ty). \<A> \<Turnstile> f (map_formula (term_atom_subst v c) \<phi>))"
     proof cases
@@ -1230,7 +1565,7 @@ context ast_problem begin
       hence "\<^bold>\<forall>v - ty. \<phi> = \<phi>" unfolding all_def by auto
       hence "\<A> \<Turnstile> (f \<^bold>\<forall>v - ty. \<phi>) \<longleftrightarrow> \<A> \<Turnstile> f \<phi>" by presburger
       moreover from a
-      have "\<forall>c. map_formula (term_atom_subst v c) \<phi> = \<phi>" using subst_idem fvars_alt by (simp add: formula.map_ident_strong)
+      have "\<forall>c. map_formula (term_atom_subst v c) \<phi> = \<phi>" using subst_idem by (induction \<phi>) auto
       hence "(\<forall>c\<in>set (t_dom ty). \<A> \<Turnstile> f \<phi>) \<longleftrightarrow> (\<forall>c\<in>set (t_dom ty). \<A> \<Turnstile> f (map_formula (term_atom_subst v c) \<phi>))" by simp
       ultimately show ?thesis unfolding all_def using a by blast
     next
@@ -1247,7 +1582,7 @@ context ast_problem begin
       assume a: "v \<notin> fvars \<phi> \<and> t_dom ty \<noteq> []"
       hence "\<A> \<Turnstile> (f \<^bold>\<exists>v - ty. \<phi>) \<longleftrightarrow> \<A> \<Turnstile> f \<phi>" unfolding exists_def by auto
       moreover from a
-      have "\<forall>c. map_formula (term_atom_subst v c) \<phi> = \<phi>" using subst_idem fvars_alt by (simp add: formula.map_ident_strong)
+      have "\<forall>c. map_formula (term_atom_subst v c) \<phi> = \<phi>" using subst_idem by (induction \<phi>) auto
       hence "(\<exists>c\<in>set (t_dom ty). \<A> \<Turnstile> f \<phi>) \<longleftrightarrow> (\<exists>c\<in>set (t_dom ty). \<A> \<Turnstile> f (map_formula (term_atom_subst v c) \<phi>))" by simp
       ultimately show ?thesis using a by blast
     next
@@ -1299,266 +1634,5 @@ context ast_problem begin
     ultimately show ?thesis using all_inst[where f = "inst_pre (tsubst params args)"] by blast
   qed
 end \<comment> \<open>Context of \<open>ast_problem\<close>\<close>
-
-subsubsection \<open>Preservation\<close>
-
-text \<open>Locale to express a well-formed domain\<close>
-locale wf_ast_domain = ast_domain +
-  assumes wf_domain: wf_domain
-
-
-context ast_problem
-begin
-  text \<open>Shorthand for enabled plan action: It is well-formed, and the
-    precondition holds for its instance.\<close>
-  definition plan_action_enabled :: "plan_action \<Rightarrow> world_model \<Rightarrow> bool" where
-    "plan_action_enabled \<pi> M
-      \<longleftrightarrow> wf_plan_action \<pi> \<and> M \<^sup>c\<TTurnstile>\<^sub>= precondition (resolve_instantiate \<pi>)"
-
-  text \<open>Shorthand for executing a plan action: Resolve, instantiate, and
-    apply effect\<close>
-  definition execute_plan_action :: "plan_action \<Rightarrow> world_model \<Rightarrow> world_model"
-    where "execute_plan_action \<pi> M
-      = (apply_effect (effect (resolve_instantiate \<pi>)) M)"
-
-  text \<open>The @{const plan_action_path} predicate can be decomposed naturally
-    using these shorthands: \<close>
-  lemma plan_action_path_Nil[simp]: "plan_action_path M [] M' \<longleftrightarrow> M'=M"
-    by (auto simp: plan_action_path_def)
-
-  lemma plan_action_path_Cons[simp]:
-    "plan_action_path M (\<pi>#\<pi>s) M' \<longleftrightarrow>
-      plan_action_enabled \<pi> M
-    \<and> plan_action_path (execute_plan_action \<pi> M) \<pi>s M'"
-    by (auto
-      simp: plan_action_path_def execute_plan_action_def
-            execute_ground_action_def plan_action_enabled_def)
-end
-
-text \<open>Locale to express a well-formed problem\<close>
-locale wf_ast_problem = ast_problem P for P +
-  assumes wf_problem: wf_problem
-begin
-  sublocale wf_ast_domain "domain P"
-    apply unfold_locales
-    using wf_problem
-    unfolding wf_problem_def by simp
-  text \<open>We start by defining two shorthands for enabledness and execution of
-    a plan action.\<close>
-
-
-  text \<open>The initial world model is well-formed\<close>
-  lemma wf_I: "wf_world_model I"
-    using wf_problem
-    unfolding I_def wf_world_model_def wf_problem_def
-    apply(safe) subgoal for f by (induction f) auto
-    done
-
-  text \<open>Application of a well-formed effect preserves well-formedness
-    of the model\<close>
-  lemma wf_apply_effect:
-    assumes "wf_effect objT e"
-    assumes "wf_world_model s"
-    shows "wf_world_model (apply_effect e s)"
-    using assms wf_problem
-    unfolding wf_world_model_def wf_problem_def wf_domain_def
-    by (cases e) (auto split: formula.splits prod.splits)
-
-  text \<open>Execution of plan actions preserves well-formedness\<close>
-  theorem wf_execute:
-    assumes "plan_action_enabled \<pi> s"
-    assumes "wf_world_model s"
-    shows "wf_world_model (execute_plan_action \<pi> s)"
-    using assms
-  proof (cases \<pi>)
-    case [simp]: (PAction name args)
-
-    from \<open>plan_action_enabled \<pi> s\<close> have "wf_plan_action \<pi>"
-      unfolding plan_action_enabled_def by auto
-    then obtain a where
-      "resolve_action_schema name = Some a" and
-      T: "action_params_match a args"
-      by (auto split: option.splits)
-
-    from wf_domain have
-      [simp]: "distinct (map ast_action_schema.name (actions D))"
-      unfolding wf_domain_def by auto
-
-    from \<open>resolve_action_schema name = Some a\<close> have
-      "a \<in> set (actions D)"
-      unfolding resolve_action_schema_def by auto
-    with wf_problem have "wf_action_schema a"
-      unfolding wf_problem_def by auto
-    hence "wf_ground_action (resolve_instantiate \<pi>)"
-      using \<open>resolve_action_schema name = Some a\<close> T
-        wf_instantiate_action_schema
-      by auto
-    thus ?thesis
-      apply (simp add: execute_plan_action_def execute_ground_action_def)
-      apply (rule wf_apply_effect)
-      apply (cases "resolve_instantiate \<pi>"; simp)
-      by (rule \<open>wf_world_model s\<close>)
-  qed
-
-  theorem wf_execute_compact_notation:
-    "plan_action_enabled \<pi> s \<Longrightarrow> wf_world_model s
-    \<Longrightarrow> wf_world_model (execute_plan_action \<pi> s)"
-    by (rule wf_execute)
-
-
-  text \<open>Execution of a plan preserves well-formedness\<close>
-  corollary wf_plan_action_path:
-    assumes "wf_world_model M" and "plan_action_path M \<pi>s M'"
-    shows "wf_world_model M'"
-    using assms
-    by (induction \<pi>s arbitrary: M) (auto intro: wf_execute)
-
-  text \<open>The circumstances under which using a quantifier will result in a well-formed formula\<close>
-  lemma c_ty: "\<forall>c \<in> set (t_dom ty). \<exists>ty'. objT c = Some ty' \<and> of_type ty' ty"
-  proof 
-    fix c
-    assume "c \<in> set (t_dom ty)"
-    hence "c \<in> set (map fst (filter (\<lambda>(c, t) \<Rightarrow> of_type t ty) (consts D @ objects P)))"
-      unfolding t_dom_def by blast
-    hence "\<exists>t. (c,t) \<in> set (consts D @ objects P) \<and> of_type t ty"
-      unfolding t_dom_def
-      by auto
-    then obtain t where
-      t: "(c,t) \<in> set (consts D @ objects P)" 
-      "of_type t ty"
-      by auto
-    from wf_problem
-    have "distinct (map fst (consts D @ objects P))"
-      unfolding wf_problem_def
-      by auto
-    with t
-    have "map_of (consts D @ objects P) c = Some t"
-      using map_of_is_SomeI
-      by metis
-    with t
-    show "\<exists>ty'. objT c = Some ty' \<and> of_type ty' ty"
-      using objT_alt
-      by auto
-  qed
-  
-  lemma quant_inst:
-    assumes "c \<in> set (t_dom ty)"
-        and "is_of_type (ty_term (Q(v\<mapsto>ty)) objT) t T" 
-    shows "is_of_type (ty_term (Q(v:=None)) objT) (term_subst v c t) T"
-  proof (cases t)
-    case (VAR x)
-    show ?thesis
-    proof (cases "x = v")
-      case True
-      hence "ty_term (Q(v\<mapsto>ty)) objT t = Some ty \<and> of_type ty T" using VAR assms
-        unfolding is_of_type_def by auto
-      moreover 
-      have "\<exists>ty'. ty_term (Q(v:=None)) objT (term_subst v c t) = Some ty' \<and> of_type ty' T"
-        by (metis True VAR assms(1) ast_domain.of_type_trans calculation term_subst.simps(1) ty_term.simps(2) wf_ast_problem.c_ty wf_ast_problem_axioms)
-      then show ?thesis unfolding is_of_type_def of_type_trans by force
-    next
-      case False
-      thus ?thesis using VAR assms unfolding is_of_type_def by simp
-    qed
-  next
-    case (CONST c)
-    then show ?thesis using assms unfolding is_of_type_def by fastforce
-  qed
-  
-  lemma wf_quant_inst': 
-    assumes "wf_fmla (ty_term (Q(v \<mapsto> ty)) objT) \<phi>"
-        and "c \<in> set (t_dom ty)"
-      shows "wf_fmla (ty_term (Q(v := None)) objT) (map_formula (term_atom_subst v c) \<phi>)"
-    using wf_inst_formula[OF quant_inst[OF assms(2)] assms(1)]
-    by simp
-  
-  lemma wf_subst_t_dom:
-    assumes "wf_fmla (ty_term (Q(v \<mapsto> ty)) objT) \<phi>"
-    shows "list_all (wf_fmla (ty_term (Q(v := None)) objT)) 
-        (map (\<lambda>c. map_formula (term_atom_subst v c) \<phi>) (t_dom ty))"
-    using assms wf_quant_inst'
-    by (subst sym[OF Ball_set], simp)
-    
-  lemma wf_fmla_upd: 
-    assumes "v \<notin> fvars \<phi>"
-      shows "wf_fmla (ty_term (Q(v \<mapsto> ty)) objT) \<phi> \<longleftrightarrow> wf_fmla (ty_term (Q(v := None)) objT) \<phi>"
-    using wf_fmla_restr[of "Q(v \<mapsto> ty)"] wf_fmla_restr[of "Q(v := None)"] assms
-    by simp
-  
-  lemma Big_Or_wf_comm: "list_all (wf_fmla Q) \<phi>s \<longleftrightarrow> wf_fmla Q (\<^bold>\<Or> \<phi>s)"
-    by (induction \<phi>s) auto
-  
-  lemma Big_And_wf_comm: "list_all (wf_fmla Q) \<phi>s \<longleftrightarrow> wf_fmla Q (\<^bold>\<And> \<phi>s)"
-    by (induction \<phi>s) auto
-  
-  lemma wf_Big_Or:
-    assumes "wf_fmla (ty_term (Q(v \<mapsto> ty)) objT) \<phi>"
-    shows "wf_fmla (ty_term (Q(v := None)) objT) 
-      (\<^bold>\<Or>(map (\<lambda>c. (map_formula (term_atom_subst v c)) \<phi>) (t_dom ty)))"
-    using wf_subst_t_dom[OF assms] Big_Or_wf_comm
-    by blast
-  
-  lemma wf_Big_And:
-    assumes "wf_fmla (ty_term (Q(v \<mapsto> ty)) objT) \<phi>"
-    shows "wf_fmla (ty_term (Q(v := None)) objT) 
-      (\<^bold>\<And>(map (\<lambda>c. (map_formula (term_atom_subst v c)) \<phi>) (t_dom ty)))"
-    using wf_subst_t_dom[OF assms] Big_And_wf_comm
-    by blast
-  
-  lemma wf_ex_inst':
-    assumes "wf_fmla (ty_term (Q(v \<mapsto> ty)) objT) \<phi>" 
-      shows "wf_fmla (ty_term (Q(v := None)) objT) \<^bold>\<exists>v - ty. \<phi>"
-    using wf_Big_Or[OF assms] wf_fmla_upd assms unfolding exists_def by auto
-  
-  lemma wf_ex_inst:
-    assumes "wf_fmla (ty_term (Q(v \<mapsto> ty)) objT) \<phi>" 
-      shows "wf_fmla (ty_term Q objT) \<^bold>\<exists>v - ty. \<phi>"
-    using wf_fmla_mono'[OF wf_ex_inst'] assms unfolding exists_def by auto
-
-  
-  (* Note: The other direction does not work. Quantifiers expand into long formulae 
-            by substitution of variables for constants. Assume there is a 
-            predicate P:: t2 \<Rightarrow> bool, that v has a type of t1, that t2 \<subseteq> t1, and the only
-            object in the domain of t1 has a type t2. In this case, P is not
-            well-formed. *)
-  
-  lemma wf_ex_goal: 
-    assumes "wf_fmla (ty_term [v \<mapsto> ty] objT) \<phi>" 
-      shows "wf_goal \<^bold>\<exists>v - ty. \<phi>"
-    unfolding wf_goal_def using wf_ex_inst'[OF assms] by simp
-
-  lemma wf_ex_goal_alt:
-    assumes "wf_fmla (ty_term (Q(v \<mapsto> ty)) objT) \<phi>"
-        and "fvars \<phi> \<subseteq> {v}"
-      shows "wf_goal \<^bold>\<exists>v - ty. \<phi>"
-    using assms wf_fmla_alt_lemma[of "Map.empty(v \<mapsto> ty)" "(Q(v \<mapsto> ty))"] wf_ex_goal by simp
-    
-    
-  lemma wf_univ_inst':
-    assumes "wf_fmla (ty_term (Q(v \<mapsto> ty)) objT) \<phi>" 
-      shows "wf_fmla (ty_term (Q(v := None)) objT) \<^bold>\<forall>v - ty. \<phi>"
-    using wf_Big_And[OF assms] wf_fmla_upd assms unfolding all_def by auto
-  
-  lemma wf_univ_inst:
-    assumes "wf_fmla (ty_term (Q(v \<mapsto> ty)) objT) \<phi>" 
-      shows "wf_fmla (ty_term Q objT) \<^bold>\<forall>v - ty. \<phi>"
-    using wf_fmla_mono'[OF wf_univ_inst'] assms unfolding all_def by auto
-  
-  lemma wf_univ_goal: 
-    assumes "wf_fmla (ty_term [v \<mapsto> ty] objT) \<phi>" 
-      shows "wf_goal \<^bold>\<forall>v - ty. \<phi>"
-    unfolding wf_goal_def using wf_univ_inst'[OF assms] by simp
-
-   lemma wf_univ_goal_alt:
-    assumes "wf_fmla (ty_term (Q(v \<mapsto> ty)) objT) \<phi>"
-        and "fvars \<phi> \<subseteq> {v}"
-      shows "wf_goal \<^bold>\<forall>v - ty. \<phi>"
-    using assms wf_fmla_alt_lemma[of "Map.empty(v \<mapsto> ty)" "(Q(v \<mapsto> ty))"] wf_univ_goal by simp
-
-
-end \<comment> \<open>Context of \<open>wf_ast_problem\<close>\<close>
-
-
-
 
 end \<comment> \<open>Theory\<close>

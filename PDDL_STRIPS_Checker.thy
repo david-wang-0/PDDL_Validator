@@ -379,15 +379,6 @@ context ast_problem begin
 end \<comment> \<open>Context of \<open>ast_problem\<close>\<close>
 
 
-context ast_problem begin
-text \<open>Filter those constants in the domain that belong to the type.\<close>
-thm t_dom_def
-
-definition t_dom_impl::"type \<Rightarrow> object list" where
-  "t_dom_impl = undefined"
-end
-
-
 context wf_ast_problem begin
   text \<open>Resolving an action yields a well-founded action schema.\<close>
   (* TODO: This must be implicitly proved when showing that plan execution
@@ -408,6 +399,87 @@ context wf_ast_problem begin
 
 end \<comment> \<open>Context of \<open>ast_domain\<close>\<close>
 
+subsubsection \<open>Implementation of the quantifier macros\<close>
+
+derive ceq variable
+derive ccompare variable
+derive (rbt) set_impl variable
+
+context ast_problem begin
+text \<open>Filter those constants in the object and domain that belong to the type.\<close>
+
+  fun term_atom_vars_impl::"term atom \<Rightarrow> variable set" where
+    "term_atom_vars_impl (predAtm p vs) = (foldr (\<lambda>v l. term_vars v \<union> l) vs {})"
+  | "term_atom_vars_impl (atom.Eq v1 v2) = term_vars v1 \<union> term_vars v2"
+
+  lemma term_atom_vars_impl_correct': "term_atom_vars_impl a = term_atom_vars a"
+  proof (cases a)
+    case (predAtm p vs)
+    have "x \<in> term_atom_vars_impl (predAtm p vs)" 
+      if "x \<in> term_atom_vars (predAtm p vs)"
+      for x
+      using that
+      apply (induction vs)
+      unfolding term_atom_vars_def by fastforce+
+    moreover 
+    have "x \<in> term_atom_vars (predAtm p vs)"
+      if "x \<in> term_atom_vars_impl (predAtm p vs)" 
+      for x
+      using that
+      apply (induction vs)
+      unfolding term_atom_vars_def by fastforce+
+    ultimately
+    show ?thesis using predAtm by blast
+  next
+    case (Eq a b)
+    then show ?thesis unfolding term_atom_vars_def by simp
+  qed
+
+  primrec fvars_impl::"term atom formula \<Rightarrow> variable set" where
+    "fvars_impl (Atom p) = term_atom_vars_impl p" 
+  | "fvars_impl Bot = {}"
+  | "fvars_impl (Not \<phi>\<^sub>1) = fvars_impl \<phi>\<^sub>1"
+  | "fvars_impl (And \<phi>\<^sub>1 \<phi>\<^sub>2) = fvars_impl \<phi>\<^sub>1 \<union> fvars_impl \<phi>\<^sub>2"
+  | "fvars_impl (Or \<phi>\<^sub>1 \<phi>\<^sub>2) = fvars_impl \<phi>\<^sub>1 \<union> fvars_impl \<phi>\<^sub>2"
+  | "fvars_impl (Imp \<phi>\<^sub>1 \<phi>\<^sub>2) = fvars_impl \<phi>\<^sub>1 \<union> fvars_impl \<phi>\<^sub>2"
+
+  lemma fvars_impl_correct': "fvars_impl \<phi> = fvars \<phi>"
+    using term_atom_vars_impl_correct'
+    apply (induction \<phi>)
+    by auto
+
+  definition t_dom_impl::"type \<Rightarrow> object list" where    
+    "t_dom_impl typ = map fst (filter (\<lambda>(c, t). of_type_impl STG t typ) (consts D @ objects P))"
+  
+  lemma t_dom_impl_correct': "t_dom_impl t = t_dom t" 
+    unfolding t_dom_def t_dom_impl_def
+    using of_type_impl_correct
+    by presburger
+
+  definition all_impl::"variable \<Rightarrow> type \<Rightarrow> schematic_formula \<Rightarrow> schematic_formula" where
+    "all_impl v t \<phi> \<equiv> (if (v \<notin> fvars_impl \<phi> \<and> (t_dom_impl t \<noteq> [])) then \<phi> else  \<^bold>\<And>(map (\<lambda>c. (map_formula (term_atom_subst v c)) \<phi>) (t_dom_impl t)))"
+
+  definition exists_impl::"variable \<Rightarrow> type \<Rightarrow> schematic_formula \<Rightarrow> schematic_formula" where
+    "exists_impl v t \<phi> \<equiv> (if (v \<notin> fvars_impl \<phi> \<and> (t_dom_impl t \<noteq> [])) then \<phi> else \<^bold>\<Or>(map (\<lambda>c. (map_formula (term_atom_subst v c)) \<phi>) (t_dom_impl t)))"
+
+  value "all_impl (Var ''idk'') (Either [''object'']) (Atom (atom.Eq (term.VAR (Var ''idk'')) (term.VAR (Var ''2''))))"
+
+  lemma all_impl_correct': "all_impl v t \<phi> = \<^bold>\<forall>v - t. \<phi>"
+    unfolding all_def all_impl_def 
+    using t_dom_impl_correct' fvars_impl_correct'
+    by presburger
+
+  lemma exists_impl_correct': "exists_impl v t \<phi> = \<^bold>\<exists>v - t. \<phi>"
+    unfolding exists_def exists_impl_def
+    using t_dom_impl_correct' fvars_impl_correct'
+    by presburger
+
+  definition pddl_all_impl::"(variable \<times> type) list \<Rightarrow> schematic_formula \<Rightarrow> schematic_formula" where
+    "pddl_all_impl ps \<phi> = foldr (\<lambda>(v, t) f. all_impl v t f) ps \<phi>"
+
+  definition pddl_exists_impl::"(variable \<times> type) list \<Rightarrow> schematic_formula \<Rightarrow> schematic_formula" where
+    "pddl_exists_impl ps \<phi> = foldr (\<lambda>(v, t) f. exists_impl v t f) ps \<phi>"
+end
 
 subsubsection \<open>Execution of Plan Actions\<close>
 
@@ -788,10 +860,19 @@ lemmas wf_problem_code =
   ast_problem.wf_goal'.simps
   ast_problem.wf_plan_action.simps
   ast_problem.wf_action_schema'.simps
+  ast_problem.term_atom_vars_impl.simps
+  ast_problem.fvars_impl.simps
+  ast_problem.t_dom_impl_def
+  ast_problem.all_impl_def
+  ast_problem.exists_impl_def
+  ast_problem.pddl_all_impl_def
+  ast_problem.pddl_exists_impl_def
   (*ast_problem.wf_effect_inst_weak.simps*)
 
   ast_domain.subtype_edge.simps
 declare wf_problem_code[code]
+
+thm wf_problem_code
 
 lemmas check_code =
   ast_problem.valid_plan_def
@@ -852,7 +933,8 @@ subsubsection \<open>Code Generation\<close>
 export_code
   check_plan
   nat_of_integer integer_of_nat Inl Inr
-  predAtm Eq predicate Pred Either Var Obj PredDecl BigAnd BigOr 
+  predAtm Eq predicate Pred Either Var Obj PredDecl BigAnd BigOr
+  ast_problem.pddl_all_impl ast_problem.pddl_exists_impl
   formula.Not formula.Bot Effect ast_action_schema.Action_Schema
   map_atom Domain Problem PAction
   term.CONST term.VAR (* I want to export the entire type, but I can only export the constructor because term is already an isabelle keyword. *)

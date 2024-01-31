@@ -42,22 +42,28 @@ structure PDDL_Checker_Exported : sig
   datatype predicate_decl = PredDecl of predicate * typea list
   datatype ast_domain =
     Domain of
-      predicate_decl list * ast_action_schema list *
-        (char list * char list) list * (object * typea) list
+      (char list * char list) list * predicate_decl list *
+        (object * typea) list * ast_action_schema list
   datatype ast_problem =
     Problem of
       ast_domain * (object * typea) list * object atom formula list *
         term atom formula
   datatype plan_action = PAction of char list * object list
+  val integer_of_nat : nat -> IntInf.int
   val bigOr : 'a formula list -> 'a formula
   val implode : char list -> string
   val bigAnd : 'a formula list -> 'a formula
-  val explode : string -> char list
-  val integer_of_nat : nat -> IntInf.int
   val nat_of_integer : IntInf.int -> nat
+  val explode : string -> char list
   val map_atom : ('a -> 'b) -> 'a atom -> 'b atom
   val check_plan : ast_problem -> plan_action list -> (string, unit) sum
   val predicate : 'a atom -> predicate
+  val pddl_all_impl :
+    ast_problem ->
+      (variable * typea) list -> term atom formula -> term atom formula
+  val pddl_exists_impl :
+    ast_problem ->
+      (variable * typea) list -> term atom formula -> term atom formula
 end = struct
 
 fun less_eq_bool true b = b
@@ -621,6 +627,21 @@ fun equal_variablea (Var x) (Var ya) = equal_lista equal_char x ya;
 
 val equal_variable = {equal = equal_variablea} : variable equal;
 
+fun equality_variable (Var x) (Var y) = equality_list equal_chara x y;
+
+val ceq_variablea : (variable -> variable -> bool) option =
+  SOME equality_variable;
+
+val ceq_variable = {ceq = ceq_variablea} : variable ceq;
+
+fun comparator_variable (Var x) (Var y) =
+  comparator_list (comparator_of (equal_char, linorder_char)) x y;
+
+val ccompare_variablea : (variable -> variable -> ordera) option =
+  SOME comparator_variable;
+
+val ccompare_variable = {ccompare = ccompare_variablea} : variable ccompare;
+
 val equal_predicate = {equal = equal_predicatea} : predicate equal;
 
 fun less_eq_predicate x = le_of_comp comparator_predicate x;
@@ -673,8 +694,8 @@ datatype predicate_decl = PredDecl of predicate * typea list;
 
 datatype ast_domain =
   Domain of
-    predicate_decl list * ast_action_schema list *
-      (char list * char list) list * (object * typea) list;
+    (char list * char list) list * predicate_decl list * (object * typea) list *
+      ast_action_schema list;
 
 datatype ast_problem =
   Problem of
@@ -687,6 +708,14 @@ datatype ground_action =
   Ground_Action of object atom formula * object ast_effect;
 
 fun id x = (fn xa => xa) x;
+
+fun integer_of_nat (Nat x) = x;
+
+fun plus_nat m n = Nat (IntInf.+ (integer_of_nat m, integer_of_nat n));
+
+val one_nat : nat = Nat (1 : IntInf.int);
+
+fun suc n = plus_nat n one_nat;
 
 fun zip (x :: xs) (y :: ys) = (x, y) :: zip xs ys
   | zip xs [] = []
@@ -1172,17 +1201,44 @@ fun integer_of_char (Chara (b0, b1, b2, b3, b4, b5, b6, b7)) =
 
 fun implode cs = Str_Literal.literal_of_asciis (map integer_of_char cs);
 
+fun union A_ = foldc A_ (inserta A_);
+
 fun bigAnd [] = Not Bot
   | bigAnd (f :: fs) = And (f, bigAnd fs);
+
+fun gen_length n (x :: xs) = gen_length (suc n) xs
+  | gen_length n [] = n;
+
+fun map_filter f [] = []
+  | map_filter f (x :: xs) =
+    (case f x of NONE => map_filter f xs | SOME y => y :: map_filter f xs);
 
 fun default (A1_, A2_) k v m =
   (if not (is_none (lookupa (A1_, A2_) m k)) then m
     else updateb (A1_, A2_) k v m);
 
+fun filtera A_ xb xc = Abs_dlist (filter xb (list_of_dlist A_ xc));
+
 fun bind m f = (case m of Inl a => Inl a | Inr a => f a);
 
 fun of_alist (A1_, A2_, A3_) xs =
   foldr (fn (a, b) => updateb (A1_, A2_) a b) xs (emptya (A1_, A3_));
+
+fun equal_color R B = false
+  | equal_color B R = false
+  | equal_color B B = true
+  | equal_color R R = true;
+
+fun bheight Empty = zero_nat
+  | bheight (Branch (c, lt, k, v, rt)) =
+    (if equal_color c B then suc (bheight lt) else bheight lt);
+
+fun gen_entries kvts (Branch (c, l, k, v, r)) =
+  gen_entries (((k, v), r) :: kvts) l
+  | gen_entries ((kv, t) :: kvts) Empty = kv :: gen_entries kvts t
+  | gen_entries [] Empty = [];
+
+fun entries x = gen_entries [] x;
 
 fun rbt_init x = ([], x);
 
@@ -1192,7 +1248,262 @@ fun map_entry (A1_, A2_) k f m =
   (case lookupa (A1_, A2_) m k of NONE => m
     | SOME v => updateb (A1_, A2_) k (f v) m);
 
+fun less_nat m n = IntInf.< (integer_of_nat m, integer_of_nat n);
+
+fun less_eq_nat m n = IntInf.<= (integer_of_nat m, integer_of_nat n);
+
+fun rbt_baliR t1 ab bb (Branch (R, t2, aa, ba, Branch (R, t3, a, b, t4))) =
+  Branch (R, Branch (B, t1, ab, bb, t2), aa, ba, Branch (B, t3, a, b, t4))
+  | rbt_baliR t1 ab bb (Branch (R, Branch (R, t2, aa, ba, t3), a, b, Empty)) =
+    Branch (R, Branch (B, t1, ab, bb, t2), aa, ba, Branch (B, t3, a, b, Empty))
+  | rbt_baliR t1 ab bb
+    (Branch (R, Branch (R, t2, aa, ba, t3), a, b, Branch (B, va, vb, vc, vd))) =
+    Branch
+      (R, Branch (B, t1, ab, bb, t2), aa, ba,
+        Branch (B, t3, a, b, Branch (B, va, vb, vc, vd)))
+  | rbt_baliR t1 a b Empty = Branch (B, t1, a, b, Empty)
+  | rbt_baliR t1 a b (Branch (B, va, vb, vc, vd)) =
+    Branch (B, t1, a, b, Branch (B, va, vb, vc, vd))
+  | rbt_baliR t1 a b (Branch (v, Empty, vb, vc, Empty)) =
+    Branch (B, t1, a, b, Branch (v, Empty, vb, vc, Empty))
+  | rbt_baliR t1 a b (Branch (v, Branch (B, ve, vf, vg, vh), vb, vc, Empty)) =
+    Branch (B, t1, a, b, Branch (v, Branch (B, ve, vf, vg, vh), vb, vc, Empty))
+  | rbt_baliR t1 a b (Branch (v, Empty, vb, vc, Branch (B, vf, vg, vh, vi))) =
+    Branch (B, t1, a, b, Branch (v, Empty, vb, vc, Branch (B, vf, vg, vh, vi)))
+  | rbt_baliR t1 a b
+    (Branch (v, Branch (B, ve, vj, vk, vl), vb, vc, Branch (B, vf, vg, vh, vi)))
+    = Branch
+        (B, t1, a, b,
+          Branch
+            (v, Branch (B, ve, vj, vk, vl), vb, vc,
+              Branch (B, vf, vg, vh, vi)));
+
+fun rbt_joinR l a b r =
+  (if less_eq_nat (bheight l) (bheight r) then Branch (R, l, a, b, r)
+    else (case l
+           of Branch (R, la, ab, ba, ra) =>
+             Branch (R, la, ab, ba, rbt_joinR ra a b r)
+           | Branch (B, la, ab, ba, ra) =>
+             rbt_baliR la ab ba (rbt_joinR ra a b r)));
+
+fun rbt_baliL (Branch (R, Branch (R, t1, ab, bb, t2), aa, ba, t3)) a b t4 =
+  Branch (R, Branch (B, t1, ab, bb, t2), aa, ba, Branch (B, t3, a, b, t4))
+  | rbt_baliL (Branch (R, Empty, ab, bb, Branch (R, t2, aa, ba, t3))) a b t4 =
+    Branch (R, Branch (B, Empty, ab, bb, t2), aa, ba, Branch (B, t3, a, b, t4))
+  | rbt_baliL
+    (Branch (R, Branch (B, va, vb, vc, vd), ab, bb, Branch (R, t2, aa, ba, t3)))
+    a b t4 =
+    Branch
+      (R, Branch (B, Branch (B, va, vb, vc, vd), ab, bb, t2), aa, ba,
+        Branch (B, t3, a, b, t4))
+  | rbt_baliL Empty a b t2 = Branch (B, Empty, a, b, t2)
+  | rbt_baliL (Branch (B, va, vb, vc, vd)) a b t2 =
+    Branch (B, Branch (B, va, vb, vc, vd), a, b, t2)
+  | rbt_baliL (Branch (v, Empty, vb, vc, Empty)) a b t2 =
+    Branch (B, Branch (v, Empty, vb, vc, Empty), a, b, t2)
+  | rbt_baliL (Branch (v, Empty, vb, vc, Branch (B, ve, vf, vg, vh))) a b t2 =
+    Branch (B, Branch (v, Empty, vb, vc, Branch (B, ve, vf, vg, vh)), a, b, t2)
+  | rbt_baliL (Branch (v, Branch (B, vf, vg, vh, vi), vb, vc, Empty)) a b t2 =
+    Branch (B, Branch (v, Branch (B, vf, vg, vh, vi), vb, vc, Empty), a, b, t2)
+  | rbt_baliL
+    (Branch (v, Branch (B, vf, vg, vh, vi), vb, vc, Branch (B, ve, vj, vk, vl)))
+    a b t2 =
+    Branch
+      (B, Branch
+            (v, Branch (B, vf, vg, vh, vi), vb, vc, Branch (B, ve, vj, vk, vl)),
+        a, b, t2);
+
+fun rbt_joinL l a b r =
+  (if less_eq_nat (bheight r) (bheight l) then Branch (R, l, a, b, r)
+    else (case r
+           of Branch (R, la, ab, ba, ra) =>
+             Branch (R, rbt_joinL l a b la, ab, ba, ra)
+           | Branch (B, la, ab, ba, ra) =>
+             rbt_baliL (rbt_joinL l a b la) ab ba ra));
+
+fun rbt_join l a b r =
+  let
+    val bhl = bheight l;
+    val bhr = bheight r;
+  in
+    (if less_nat bhr bhl then paint B (rbt_joinR l a b r)
+      else (if less_nat bhl bhr then paint B (rbt_joinL l a b r)
+             else Branch (B, l, a, b, r)))
+  end;
+
 fun init A_ xa = rbt_init (impl_ofa A_ xa);
+
+fun rbt_split_comp c Empty k = (Empty, (NONE, Empty))
+  | rbt_split_comp c (Branch (uu, l, a, b, r)) x =
+    (case c x a of Eq => (l, (SOME b, r))
+      | Lt => let
+                val (l1, (beta, l2)) = rbt_split_comp c l x;
+              in
+                (l1, (beta, rbt_join l2 a b r))
+              end
+      | Gt => let
+                val (r1, (beta, r2)) = rbt_split_comp c r x;
+              in
+                (rbt_join l a b r1, (beta, r2))
+              end);
+
+fun max A_ a b = (if less_eq A_ a b then b else a);
+
+fun nat_of_integer k = Nat (max ord_integer (0 : IntInf.int) k);
+
+fun rbt_comp_union_swap_rec c f gamma t1 t2 =
+  let
+    val bh1 = bheight t1;
+    val bh2 = bheight t2;
+    val (gammaa, (t2a, (bh2a, (t1a, _)))) =
+      (if less_nat bh1 bh2 then (not gamma, (t1, (bh1, (t2, bh2))))
+        else (gamma, (t2, (bh2, (t1, bh1)))));
+    val fa = (if gammaa then (fn k => fn v => fn va => f k va v) else f);
+  in
+    (if less_nat bh2a (nat_of_integer (4 : IntInf.int))
+      then folda (rbt_comp_insert_with_key c fa) t2a t1a
+      else (case t1a of Empty => t2a
+             | Branch (_, l1, a, b, r1) =>
+               let
+                 val (l2, (beta, r2)) = rbt_split_comp c t2a a;
+               in
+                 rbt_join (rbt_comp_union_swap_rec c f gammaa l1 l2) a
+                   (case beta of NONE => b | SOME ca => fa a b ca)
+                   (rbt_comp_union_swap_rec c f gammaa r1 r2)
+               end))
+  end;
+
+fun rbt_comp_union_with_key c f t1 t2 =
+  paint B (rbt_comp_union_swap_rec c f false t1 t2);
+
+fun join A_ xc xd xe =
+  Mapping_RBTa
+    (rbt_comp_union_with_key (the (ccompare A_)) xc (impl_ofa A_ xd)
+      (impl_ofa A_ xe));
+
+fun map_filter_comp_inter c f t1 t2 =
+  map_filter
+    (fn (k, v) =>
+      (case rbt_comp_lookup c t1 k of NONE => NONE
+        | SOME va => SOME (k, f k va v)))
+    (entries t2);
+
+fun size_list x = gen_length zero_nat x;
+
+fun equal_nat m n = (((integer_of_nat m) : IntInf.int) = (integer_of_nat n));
+
+fun map_prod f g (a, b) = (f a, g b);
+
+fun divmod_nat m n =
+  let
+    val k = integer_of_nat m;
+    val l = integer_of_nat n;
+  in
+    map_prod nat_of_integer nat_of_integer
+      (if ((k : IntInf.int) = (0 : IntInf.int))
+        then ((0 : IntInf.int), (0 : IntInf.int))
+        else (if ((l : IntInf.int) = (0 : IntInf.int))
+               then ((0 : IntInf.int), k)
+               else IntInf.divMod (IntInf.abs k, IntInf.abs l)))
+  end;
+
+fun apfst f (x, y) = (f x, y);
+
+fun rbtreeify_g n kvs =
+  (if equal_nat n zero_nat orelse equal_nat n one_nat then (Empty, kvs)
+    else let
+           val (na, r) = divmod_nat n (nat_of_integer (2 : IntInf.int));
+         in
+           (if equal_nat r zero_nat
+             then let
+                    val (t1, (k, v) :: kvsa) = rbtreeify_g na kvs;
+                  in
+                    apfst (fn a => Branch (B, t1, k, v, a))
+                      (rbtreeify_g na kvsa)
+                  end
+             else let
+                    val (t1, (k, v) :: kvsa) = rbtreeify_f na kvs;
+                  in
+                    apfst (fn a => Branch (B, t1, k, v, a))
+                      (rbtreeify_g na kvsa)
+                  end)
+         end)
+and rbtreeify_f n kvs =
+  (if equal_nat n zero_nat then (Empty, kvs)
+    else (if equal_nat n one_nat then let
+val (k, v) :: kvsa = kvs;
+                                      in
+(Branch (R, Empty, k, v, Empty), kvsa)
+                                      end
+           else let
+                  val (na, r) = divmod_nat n (nat_of_integer (2 : IntInf.int));
+                in
+                  (if equal_nat r zero_nat
+                    then let
+                           val (t1, (k, v) :: kvsa) = rbtreeify_f na kvs;
+                         in
+                           apfst (fn a => Branch (B, t1, k, v, a))
+                             (rbtreeify_g na kvsa)
+                         end
+                    else let
+                           val (t1, (k, v) :: kvsa) = rbtreeify_f na kvs;
+                         in
+                           apfst (fn a => Branch (B, t1, k, v, a))
+                             (rbtreeify_f na kvsa)
+                         end)
+                end));
+
+fun rbtreeify kvs = fst (rbtreeify_g (suc (size_list kvs)) kvs);
+
+fun is_rbt_empty t =
+  (case t of Empty => true | Branch (_, _, _, _, _) => false);
+
+fun rbt_split_min Empty = (raise Fail "undefined")
+  | rbt_split_min (Branch (uu, l, a, b, r)) =
+    (if is_rbt_empty l then (a, (b, r))
+      else let
+             val (aa, (ba, la)) = rbt_split_min l;
+           in
+             (aa, (ba, rbt_join la a b r))
+           end);
+
+fun rbt_join2 l r =
+  (if is_rbt_empty r then l else let
+                                   val (a, (b, c)) = rbt_split_min r;
+                                 in
+                                   rbt_join l a b c
+                                 end);
+
+fun rbt_comp_inter_swap_rec c f gamma t1 t2 =
+  let
+    val bh1 = bheight t1;
+    val bh2 = bheight t2;
+    val (gammaa, (t2a, (bh2a, (t1a, _)))) =
+      (if less_nat bh1 bh2 then (not gamma, (t1, (bh1, (t2, bh2))))
+        else (gamma, (t2, (bh2, (t1, bh1)))));
+    val fa = (if gammaa then (fn k => fn v => fn va => f k va v) else f);
+  in
+    (if less_nat bh2a (nat_of_integer (4 : IntInf.int))
+      then rbtreeify (map_filter_comp_inter c fa t1a t2a)
+      else (case t1a of Empty => Empty
+             | Branch (_, l1, a, b, r1) =>
+               let
+                 val (l2, (beta, r2)) = rbt_split_comp c t2a a;
+                 val l = rbt_comp_inter_swap_rec c f gammaa l1 l2;
+                 val r = rbt_comp_inter_swap_rec c f gammaa r1 r2;
+               in
+                 (case beta of NONE => rbt_join2 l r
+                   | SOME ba => rbt_join l a (fa a b ba) r)
+               end))
+  end;
+
+fun rbt_comp_inter_with_key c f t1 t2 =
+  paint B (rbt_comp_inter_swap_rec c f false t1 t2);
+
+fun meet A_ xc xd xe =
+  Mapping_RBTa
+    (rbt_comp_inter_with_key (the (ccompare A_)) xc (impl_ofa A_ xd)
+      (impl_ofa A_ xe));
 
 fun list_all p [] = true
   | list_all p (x :: xs) = p x andalso list_all p xs;
@@ -1213,6 +1524,19 @@ fun list_all2 p (x :: xs) (y :: ys) = p x y andalso list_all2 p xs ys
 
 fun map_default (A1_, A2_) k v f m =
   map_entry (A1_, A2_) k f (default (A1_, A2_) k v m);
+
+fun filterb A_ xb xc =
+  Mapping_RBTa (rbtreeify (filter xb (entries (impl_ofa A_ xc))));
+
+fun inter_list A_ xb xc =
+  Mapping_RBTa
+    (fold (fn k => rbt_comp_insert (the (ccompare A_)) k ())
+      (filter
+        (fn x =>
+          not (is_none
+                (rbt_comp_lookup (the (ccompare A_)) (impl_ofa A_ xb) x)))
+        xc)
+      Empty);
 
 fun rbt_has_next ([], Empty) = false
   | rbt_has_next (vb :: vc, va) = true
@@ -1269,17 +1593,181 @@ fun explode s = map char_of_integer (Str_Literal.asciis_of_literal s);
 
 fun whilea b c s = (if b s then whilea b c (c s) else s);
 
-fun max A_ a b = (if less_eq A_ a b then b else a);
-
 fun lift_opt m e = (case m of NONE => Inl e | SOME a => Inr a);
 
-val one_nat : nat = Nat (1 : IntInf.int);
+fun uminus_set (Complement b) = b
+  | uminus_set (Collect_set p) = Collect_set (fn x => not (p x))
+  | uminus_set a = Complement a;
+
+fun inf_set (A1_, A2_) (RBT_set rbt1) (Set_Monad xs) =
+  (case ccompare A2_
+    of NONE =>
+      (raise Fail "inter RBT_set Set_Monad: ccompare = None")
+        (fn _ => inf_set (A1_, A2_) (RBT_set rbt1) (Set_Monad xs))
+    | SOME _ => RBT_set (inter_list A2_ rbt1 xs))
+  | inf_set (A1_, A2_) (RBT_set rbt) (DList_set dxs) =
+    (case ccompare A2_
+      of NONE =>
+        (raise Fail "inter RBT_set DList_set: ccompare = None")
+          (fn _ => inf_set (A1_, A2_) (RBT_set rbt) (DList_set dxs))
+      | SOME _ =>
+        (case ceq A1_
+          of NONE =>
+            (raise Fail "inter RBT_set DList_set: ceq = None")
+              (fn _ => inf_set (A1_, A2_) (RBT_set rbt) (DList_set dxs))
+          | SOME _ => RBT_set (inter_list A2_ rbt (list_of_dlist A1_ dxs))))
+  | inf_set (A1_, A2_) (RBT_set rbt1) (RBT_set rbt2) =
+    (case ccompare A2_
+      of NONE =>
+        (raise Fail "inter RBT_set RBT_set: ccompare = None")
+          (fn _ => inf_set (A1_, A2_) (RBT_set rbt1) (RBT_set rbt2))
+      | SOME _ => RBT_set (meet A2_ (fn _ => fn _ => id) rbt1 rbt2))
+  | inf_set (A1_, A2_) (DList_set dxs1) (Set_Monad xs) =
+    (case ceq A1_
+      of NONE =>
+        (raise Fail "inter DList_set Set_Monad: ceq = None")
+          (fn _ => inf_set (A1_, A2_) (DList_set dxs1) (Set_Monad xs))
+      | SOME eq => DList_set (filtera A1_ (list_member eq xs) dxs1))
+  | inf_set (A1_, A2_) (DList_set dxs1) (DList_set dxs2) =
+    (case ceq A1_
+      of NONE =>
+        (raise Fail "inter DList_set DList_set: ceq = None")
+          (fn _ => inf_set (A1_, A2_) (DList_set dxs1) (DList_set dxs2))
+      | SOME _ => DList_set (filtera A1_ (memberc A1_ dxs2) dxs1))
+  | inf_set (A1_, A2_) (DList_set dxs) (RBT_set rbt) =
+    (case ccompare A2_
+      of NONE =>
+        (raise Fail "inter DList_set RBT_set: ccompare = None")
+          (fn _ => inf_set (A1_, A2_) (DList_set dxs) (RBT_set rbt))
+      | SOME _ =>
+        (case ceq A1_
+          of NONE =>
+            (raise Fail "inter DList_set RBT_set: ceq = None")
+              (fn _ => inf_set (A1_, A2_) (DList_set dxs) (RBT_set rbt))
+          | SOME _ => RBT_set (inter_list A2_ rbt (list_of_dlist A1_ dxs))))
+  | inf_set (A1_, A2_) (Set_Monad xs1) (Set_Monad xs2) =
+    (case ceq A1_
+      of NONE =>
+        (raise Fail "inter Set_Monad Set_Monad: ceq = None")
+          (fn _ => inf_set (A1_, A2_) (Set_Monad xs1) (Set_Monad xs2))
+      | SOME eq => Set_Monad (filter (list_member eq xs2) xs1))
+  | inf_set (A1_, A2_) (Set_Monad xs) (DList_set dxs2) =
+    (case ceq A1_
+      of NONE =>
+        (raise Fail "inter Set_Monad DList_set: ceq = None")
+          (fn _ => inf_set (A1_, A2_) (Set_Monad xs) (DList_set dxs2))
+      | SOME eq => DList_set (filtera A1_ (list_member eq xs) dxs2))
+  | inf_set (A1_, A2_) (Set_Monad xs) (RBT_set rbt1) =
+    (case ccompare A2_
+      of NONE =>
+        (raise Fail "inter Set_Monad RBT_set: ccompare = None")
+          (fn _ => inf_set (A1_, A2_) (RBT_set rbt1) (Set_Monad xs))
+      | SOME _ => RBT_set (inter_list A2_ rbt1 xs))
+  | inf_set (A1_, A2_) (Complement ba) (Complement b) =
+    Complement (sup_set (A1_, A2_) ba b)
+  | inf_set (A1_, A2_) g (RBT_set rbt2) =
+    (case ccompare A2_
+      of NONE =>
+        (raise Fail "inter RBT_set2: ccompare = None")
+          (fn _ => inf_set (A1_, A2_) g (RBT_set rbt2))
+      | SOME _ =>
+        RBT_set (filterb A2_ ((fn x => member (A1_, A2_) x g) o fst) rbt2))
+  | inf_set (A1_, A2_) (RBT_set rbt1) g =
+    (case ccompare A2_
+      of NONE =>
+        (raise Fail "inter RBT_set1: ccompare = None")
+          (fn _ => inf_set (A1_, A2_) (RBT_set rbt1) g)
+      | SOME _ =>
+        RBT_set (filterb A2_ ((fn x => member (A1_, A2_) x g) o fst) rbt1))
+  | inf_set (A1_, A2_) h (DList_set dxs2) =
+    (case ceq A1_
+      of NONE =>
+        (raise Fail "inter DList_set2: ceq = None")
+          (fn _ => inf_set (A1_, A2_) h (DList_set dxs2))
+      | SOME _ => DList_set (filtera A1_ (fn x => member (A1_, A2_) x h) dxs2))
+  | inf_set (A1_, A2_) (DList_set dxs1) h =
+    (case ceq A1_
+      of NONE =>
+        (raise Fail "inter DList_set1: ceq = None")
+          (fn _ => inf_set (A1_, A2_) (DList_set dxs1) h)
+      | SOME _ => DList_set (filtera A1_ (fn x => member (A1_, A2_) x h) dxs1))
+  | inf_set (A1_, A2_) i (Set_Monad xs) =
+    Set_Monad (filter (fn x => member (A1_, A2_) x i) xs)
+  | inf_set (A1_, A2_) (Set_Monad xs) i =
+    Set_Monad (filter (fn x => member (A1_, A2_) x i) xs)
+  | inf_set (A1_, A2_) j (Collect_set a) =
+    Collect_set (fn x => a x andalso member (A1_, A2_) x j)
+  | inf_set (A1_, A2_) (Collect_set a) j =
+    Collect_set (fn x => a x andalso member (A1_, A2_) x j)
+and sup_set (A1_, A2_) ba (Complement b) =
+  Complement (inf_set (A1_, A2_) (uminus_set ba) b)
+  | sup_set (A1_, A2_) (Complement ba) b =
+    Complement (inf_set (A1_, A2_) ba (uminus_set b))
+  | sup_set (A1_, A2_) b (Collect_set a) =
+    Collect_set (fn x => a x orelse member (A1_, A2_) x b)
+  | sup_set (A1_, A2_) (Collect_set a) b =
+    Collect_set (fn x => a x orelse member (A1_, A2_) x b)
+  | sup_set (A1_, A2_) (Set_Monad xs) (Set_Monad ys) = Set_Monad (xs @ ys)
+  | sup_set (A1_, A2_) (DList_set dxs1) (Set_Monad ws) =
+    (case ceq A1_
+      of NONE =>
+        (raise Fail "union DList_set Set_Monad: ceq = None")
+          (fn _ => sup_set (A1_, A2_) (DList_set dxs1) (Set_Monad ws))
+      | SOME _ => DList_set (fold (inserta A1_) ws dxs1))
+  | sup_set (A1_, A2_) (Set_Monad ws) (DList_set dxs2) =
+    (case ceq A1_
+      of NONE =>
+        (raise Fail "union Set_Monad DList_set: ceq = None")
+          (fn _ => sup_set (A1_, A2_) (Set_Monad ws) (DList_set dxs2))
+      | SOME _ => DList_set (fold (inserta A1_) ws dxs2))
+  | sup_set (A1_, A2_) (RBT_set rbt1) (Set_Monad zs) =
+    (case ccompare A2_
+      of NONE =>
+        (raise Fail "union RBT_set Set_Monad: ccompare = None")
+          (fn _ => sup_set (A1_, A2_) (RBT_set rbt1) (Set_Monad zs))
+      | SOME _ => RBT_set (fold (fn k => insertb A2_ k ()) zs rbt1))
+  | sup_set (A1_, A2_) (Set_Monad zs) (RBT_set rbt2) =
+    (case ccompare A2_
+      of NONE =>
+        (raise Fail "union Set_Monad RBT_set: ccompare = None")
+          (fn _ => sup_set (A1_, A2_) (Set_Monad zs) (RBT_set rbt2))
+      | SOME _ => RBT_set (fold (fn k => insertb A2_ k ()) zs rbt2))
+  | sup_set (A1_, A2_) (DList_set dxs1) (DList_set dxs2) =
+    (case ceq A1_
+      of NONE =>
+        (raise Fail "union DList_set DList_set: ceq = None")
+          (fn _ => sup_set (A1_, A2_) (DList_set dxs1) (DList_set dxs2))
+      | SOME _ => DList_set (union A1_ dxs1 dxs2))
+  | sup_set (A1_, A2_) (DList_set dxs) (RBT_set rbt) =
+    (case ccompare A2_
+      of NONE =>
+        (raise Fail "union DList_set RBT_set: ccompare = None")
+          (fn _ => sup_set (A1_, A2_) (RBT_set rbt) (DList_set dxs))
+      | SOME _ =>
+        (case ceq A1_
+          of NONE =>
+            (raise Fail "union DList_set RBT_set: ceq = None")
+              (fn _ => sup_set (A1_, A2_) (RBT_set rbt) (DList_set dxs))
+          | SOME _ => RBT_set (foldc A1_ (fn k => insertb A2_ k ()) dxs rbt)))
+  | sup_set (A1_, A2_) (RBT_set rbt) (DList_set dxs) =
+    (case ccompare A2_
+      of NONE =>
+        (raise Fail "union RBT_set DList_set: ccompare = None")
+          (fn _ => sup_set (A1_, A2_) (RBT_set rbt) (DList_set dxs))
+      | SOME _ =>
+        (case ceq A1_
+          of NONE =>
+            (raise Fail "union RBT_set DList_set: ceq = None")
+              (fn _ => sup_set (A1_, A2_) (RBT_set rbt) (DList_set dxs))
+          | SOME _ => RBT_set (foldc A1_ (fn k => insertb A2_ k ()) dxs rbt)))
+  | sup_set (A1_, A2_) (RBT_set rbt1) (RBT_set rbt2) =
+    (case ccompare A2_
+      of NONE =>
+        (raise Fail "union RBT_set RBT_set: ccompare = None")
+          (fn _ => sup_set (A1_, A2_) (RBT_set rbt1) (RBT_set rbt2))
+      | SOME _ => RBT_set (join A2_ (fn _ => fn _ => id) rbt1 rbt2));
 
 fun has_next g = fst (generator g);
-
-fun integer_of_nat (Nat x) = x;
-
-fun less_nat m n = IntInf.< (integer_of_nat m, integer_of_nat n);
 
 fun divmod_integer k l =
   (if ((k : IntInf.int) = (0 : IntInf.int))
@@ -1320,10 +1808,6 @@ fun divide_integer k l = fst (divmod_integer k l);
 
 fun divide_nat m n = Nat (divide_integer (integer_of_nat m) (integer_of_nat n));
 
-fun equal_nat m n = (((integer_of_nat m) : IntInf.int) = (integer_of_nat n));
-
-fun nat_of_integer k = Nat (max ord_integer (0 : IntInf.int) k);
-
 fun string_of_digit n =
   (if equal_nat n zero_nat
     then [Chara (false, false, false, false, true, true, false, false)]
@@ -1360,8 +1844,6 @@ fun showsp_nat p n =
            shows_string
              (string_of_digit
                (modulo_nat n (nat_of_integer (10 : IntInf.int)))));
-
-fun plus_nat m n = Nat (IntInf.+ (integer_of_nat m, integer_of_nat n));
 
 val rbt_keys_generator :
   ('a, (('a * ('a, 'b) rbt) list * ('a, 'b) rbt)) generator
@@ -1498,7 +1980,7 @@ fun instantiate_action_schema (Action_Schema (n, params, pre, eff)) args =
 
 fun namea (Action_Schema (x1, x2, x3, x4)) = x1;
 
-fun actions (Domain (x1, x2, x3, x4)) = x2;
+fun actions (Domain (x1, x2, x3, x4)) = x4;
 
 fun index_by B_ f l = map_of B_ (map (fn x => (f x, x)) l);
 
@@ -1748,7 +2230,7 @@ fun valid_plan_fromE p stg mp si s (pi :: pi_s) =
             Chara (false, false, true, true, false, true, true, false),
             Chara (false, false, true, false, false, true, true, false)]);
 
-fun consts (Domain (x1, x2, x3, x4)) = x4;
+fun consts (Domain (x1, x2, x3, x4)) = x3;
 
 fun mp_constT d =
   of_alist (ccompare_object, equal_object, mapping_impl_object) (consts d);
@@ -1762,7 +2244,7 @@ fun mp_objT p =
 fun is_of_type ty_ent stg v t =
   (case ty_ent v of NONE => false | SOME vT => of_type_impl stg vT t);
 
-fun predicates (Domain (x1, x2, x3, x4)) = x1;
+fun predicates (Domain (x1, x2, x3, x4)) = x2;
 
 fun siga d =
   map_of equal_predicate (map (fn PredDecl (a, b) => (a, b)) (predicates d));
@@ -1814,7 +2296,7 @@ fun wf_fmla_atom2 p mp stg f =
     | Atom (Eqa (_, _)) => false | Bot => false | Not _ => false
     | And (_, _) => false | Or (_, _) => false | Imp (_, _) => false);
 
-fun types (Domain (x1, x2, x3, x4)) = x3;
+fun types (Domain (x1, x2, x3, x4)) = x1;
 
 fun wf_type d (Either ts) =
   less_eq_set (cenum_list, ceq_list ceq_char, ccompare_list ccompare_char)
@@ -2513,6 +2995,69 @@ fun check_plan p pi_s =
     end
     (fn x => Inl (implode (x () [])));
 
+val set_impl_variable : (variable, set_impla) phantom = Phantom Set_RBT;
+
+fun term_vars (VAR x) =
+  insert (ceq_variable, ccompare_variable) x
+    (set_empty (ceq_variable, ccompare_variable) (of_phantom set_impl_variable))
+  | term_vars (CONST c) =
+    set_empty (ceq_variable, ccompare_variable) (of_phantom set_impl_variable);
+
+fun term_subst v obj (VAR x) =
+  (if equal_variablea x v then CONST obj else VAR x)
+  | term_subst uu uv (CONST obj) = CONST obj;
+
 fun predicate (PredAtm (x11, x12)) = x11;
+
+fun t_dom_impl p typ =
+  map_filter
+    (fn x =>
+      (if let
+            val (_, t) = x;
+          in
+            of_type_impl (stg (domain p)) t typ
+          end
+        then SOME (fst x) else NONE))
+    (consts (domain p) @ objects p);
+
+fun term_atom_vars_impl (Eqa (v1, v2)) =
+  sup_set (ceq_variable, ccompare_variable) (term_vars v1) (term_vars v2)
+  | term_atom_vars_impl (PredAtm (p, vs)) =
+    foldr (fn v => sup_set (ceq_variable, ccompare_variable) (term_vars v)) vs
+      (set_empty (ceq_variable, ccompare_variable)
+        (of_phantom set_impl_variable));
+
+fun fvars_impl (Imp (phi_1, phi_2)) =
+  sup_set (ceq_variable, ccompare_variable) (fvars_impl phi_1)
+    (fvars_impl phi_2)
+  | fvars_impl (Or (phi_1, phi_2)) =
+    sup_set (ceq_variable, ccompare_variable) (fvars_impl phi_1)
+      (fvars_impl phi_2)
+  | fvars_impl (And (phi_1, phi_2)) =
+    sup_set (ceq_variable, ccompare_variable) (fvars_impl phi_1)
+      (fvars_impl phi_2)
+  | fvars_impl (Not phi_1) = fvars_impl phi_1
+  | fvars_impl Bot =
+    set_empty (ceq_variable, ccompare_variable) (of_phantom set_impl_variable)
+  | fvars_impl (Atom p) = term_atom_vars_impl p;
+
+fun all_impl p v t phi =
+  (if not (member (ceq_variable, ccompare_variable) v (fvars_impl phi)) andalso
+        not (null (t_dom_impl p t))
+    then phi
+    else bigAnd
+           (map (fn c => map_formula (map_atom (term_subst v c)) phi)
+             (t_dom_impl p t)));
+
+fun exists_impl p v t phi =
+  (if not (member (ceq_variable, ccompare_variable) v (fvars_impl phi)) andalso
+        not (null (t_dom_impl p t))
+    then phi
+    else bigOr (map (fn c => map_formula (map_atom (term_subst v c)) phi)
+                 (t_dom_impl p t)));
+
+fun pddl_all_impl p ps phi = foldr (fn (a, b) => all_impl p a b) ps phi;
+
+fun pddl_exists_impl p ps phi = foldr (fn (a, b) => exists_impl p a b) ps phi;
 
 end; (*struct PDDL_Checker_Exported*)
