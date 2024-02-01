@@ -44,10 +44,10 @@ structure PDDL_Checker_Exported : sig
     DomainDecls of
       (char list * char list) list * predicate_decl list * (object * typea) list
   datatype ast_problem_decs =
-    ProbDecls of
-      ast_domain_decs * (object * typea) list * object atom formula list
+    ProbDecls of ast_domain_decs * (object * typea) list
   datatype ast_domain = Domain of ast_problem_decs * ast_action_schema list
-  datatype ast_problem = Problem of ast_domain * term atom formula
+  datatype ast_problem =
+    Problem of ast_domain * object atom formula list * term atom formula
   datatype plan_action = PAction of char list * object list
   val integer_of_nat : nat -> IntInf.int
   val bigOr : 'a formula list -> 'a formula
@@ -697,12 +697,12 @@ datatype ast_domain_decs =
     (char list * char list) list * predicate_decl list * (object * typea) list;
 
 datatype ast_problem_decs =
-  ProbDecls of
-    ast_domain_decs * (object * typea) list * object atom formula list;
+  ProbDecls of ast_domain_decs * (object * typea) list;
 
 datatype ast_domain = Domain of ast_problem_decs * ast_action_schema list;
 
-datatype ast_problem = Problem of ast_domain * term atom formula;
+datatype ast_problem =
+  Problem of ast_domain * object atom formula list * term atom formula;
 
 datatype plan_action = PAction of char list * object list;
 
@@ -1949,7 +1949,7 @@ and quicksort_part A_ ac x lts eqs gts (z :: zs) =
 
 fun quicksort A_ = quicksort_acc A_ [];
 
-fun domain_decs (ProbDecls (x1, x2, x3)) = x1;
+fun domain_decs (ProbDecls (x1, x2)) = x1;
 
 fun shows_prec_nat x = showsp_nat x;
 
@@ -2057,7 +2057,7 @@ fun precondition (Ground_Action (x1, x2)) = x1;
 
 fun effect (Ground_Action (x1, x2)) = x2;
 
-fun domain (Problem (x1, x2)) = x1;
+fun domain (Problem (x1, x2, x3)) = x1;
 
 fun valuation m =
   (fn a =>
@@ -2176,7 +2176,7 @@ fun en_exE2 p g mp =
                 (fn _ => Inr (apply_effect (effect ai) m))
             end)));
 
-fun goal (Problem (x1, x2)) = x2;
+fun goal (Problem (x1, x2, x3)) = x3;
 
 fun valid_plan_fromE p stg mp si s (pi :: pi_s) =
   bind (catch_error (en_exE2 p stg mp pi s)
@@ -2241,7 +2241,7 @@ fun consts (DomainDecls (x1, x2, x3)) = x3;
 fun mp_constT dd =
   of_alist (ccompare_object, equal_object, mapping_impl_object) (consts dd);
 
-fun objects (ProbDecls (x1, x2, x3)) = x2;
+fun objects (ProbDecls (x1, x2)) = x2;
 
 fun mp_objT pd =
   of_alist (ccompare_object, equal_object, mapping_impl_object)
@@ -2268,6 +2268,15 @@ fun wf_pred_atom dd ty_ent stg (p, vs) =
   (case siga dd p of NONE => false
     | SOME a => list_all2 (is_of_type ty_ent stg) vs a);
 
+fun wf_fact pd ot stg =
+  wf_pred_atom (domain_decs pd) (lookupa (ccompare_object, equal_object) ot)
+    stg;
+
+fun wf_fmla_atom2 pd mp stg f =
+  (case f of Atom (PredAtm (p, vs)) => wf_fact pd mp stg (p, vs)
+    | Atom (Eqa (_, _)) => false | Bot => false | Not _ => false
+    | And (_, _) => false | Or (_, _) => false | Imp (_, _) => false);
+
 fun wf_atom dd ty_ent stg (Eqa (a, b)) =
   not (is_none (ty_ent a)) andalso not (is_none (ty_ent b))
   | wf_atom dd ty_ent stg (PredAtm (p, vs)) =
@@ -2285,6 +2294,8 @@ fun wf_fmla dd ty_ent stg (Not phi) = wf_fmla dd ty_ent stg phi
 
 fun wf_goal pd obT stg phi =
   wf_fmla (domain_decs pd) (ty_term (fn _ => NONE) obT) stg phi;
+
+fun inita (Problem (x1, x2, x3)) = x2;
 
 fun prepend_err_msg A_ msg e =
   (fn _ =>
@@ -2316,15 +2327,6 @@ fun wf_action_schema pd stg obT (Action_Schema (n, params, pre, eff)) =
         wf_effect (domain_decs pd) tyv stg eff)
   end;
 
-fun wf_fact pd ot stg =
-  wf_pred_atom (domain_decs pd) (lookupa (ccompare_object, equal_object) ot)
-    stg;
-
-fun wf_fmla_atom2 pd mp stg f =
-  (case f of Atom (PredAtm (p, vs)) => wf_fact pd mp stg (p, vs)
-    | Atom (Eqa (_, _)) => false | Bot => false | Not _ => false
-    | And (_, _) => false | Or (_, _) => false | Imp (_, _) => false);
-
 fun wf_type dd (Either ts) =
   less_eq_set (cenum_list, ceq_list ceq_char, ccompare_list ccompare_char)
     (set (ceq_list ceq_char, ccompare_list ccompare_char, set_impl_list) ts)
@@ -2345,8 +2347,6 @@ fun wf_type dd (Either ts) =
                  (ccompare_list ccompare_char),
                set_impl_prod set_impl_list set_impl_list)
           (types dd))));
-
-fun inita (ProbDecls (x1, x2, x3)) = x3;
 
 fun wf_predicate_decl dd (PredDecl (p, ts)) = list_all (wf_type dd) ts;
 
@@ -2696,181 +2696,25 @@ fun check_wf_problem_decs pd stg conT mp =
                      Chara (false, true, true, true, false, true, true,
                              false)]))
           (fn _ =>
-            bind (check (list_all (fn (_, a) => wf_type dd a) (objects pd))
-                   (fn _ =>
-                     shows_prec_list show_char zero_nat
-                       [Chara (true, false, true, true, false, false, true,
-                                false),
-                         Chara (true, false, false, false, false, true, true,
-                                 false),
-                         Chara (false, false, true, true, false, true, true,
-                                 false),
-                         Chara (false, true, true, false, false, true, true,
-                                 false),
-                         Chara (true, true, true, true, false, true, true,
-                                 false),
-                         Chara (false, true, false, false, true, true, true,
-                                 false),
-                         Chara (true, false, true, true, false, true, true,
-                                 false),
-                         Chara (true, false, true, false, false, true, true,
-                                 false),
-                         Chara (false, false, true, false, false, true, true,
-                                 false),
-                         Chara (false, false, false, false, false, true, false,
-                                 false),
-                         Chara (false, false, true, false, true, true, true,
-                                 false),
-                         Chara (true, false, false, true, true, true, true,
-                                 false),
-                         Chara (false, false, false, false, true, true, true,
-                                 false),
-                         Chara (true, false, true, false, false, true, true,
-                                 false)]))
+            check (list_all (fn (_, a) => wf_type dd a) (objects pd))
               (fn _ =>
-                bind (check
-                       (distinct_ds
-                         (equal_formula (equal_atom equal_object),
-                           linorder_formula
-                             (equal_atom equal_object,
-                               linorder_atom (equal_object, linorder_object)))
-                         (inita pd))
-                       (fn _ =>
-                         shows_prec_list show_char zero_nat
-                           [Chara (false, false, true, false, false, false,
-                                    true, false),
-                             Chara (true, false, true, false, true, true, true,
-                                     false),
-                             Chara (false, false, false, false, true, true,
-                                     true, false),
-                             Chara (false, false, true, true, false, true, true,
-                                     false),
-                             Chara (true, false, false, true, false, true, true,
-                                     false),
-                             Chara (true, true, false, false, false, true, true,
-                                     false),
-                             Chara (true, false, false, false, false, true,
-                                     true, false),
-                             Chara (false, false, true, false, true, true, true,
-                                     false),
-                             Chara (true, false, true, false, false, true, true,
-                                     false),
-                             Chara (false, false, false, false, false, true,
-                                     false, false),
-                             Chara (false, true, true, false, false, true, true,
-                                     false),
-                             Chara (true, false, false, false, false, true,
-                                     true, false),
-                             Chara (true, true, false, false, false, true, true,
-                                     false),
-                             Chara (false, false, true, false, true, true, true,
-                                     false),
-                             Chara (false, false, false, false, false, true,
-                                     false, false),
-                             Chara (true, false, false, true, false, true, true,
-                                     false),
-                             Chara (false, true, true, true, false, true, true,
-                                     false),
-                             Chara (false, false, false, false, false, true,
-                                     false, false),
-                             Chara (true, false, false, true, false, true, true,
-                                     false),
-                             Chara (false, true, true, true, false, true, true,
-                                     false),
-                             Chara (true, false, false, true, false, true, true,
-                                     false),
-                             Chara (false, false, true, false, true, true, true,
-                                     false),
-                             Chara (true, false, false, true, false, true, true,
-                                     false),
-                             Chara (true, false, false, false, false, true,
-                                     true, false),
-                             Chara (false, false, true, true, false, true, true,
-                                     false),
-                             Chara (false, false, false, false, false, true,
-                                     false, false),
-                             Chara (true, true, false, false, true, true, true,
-                                     false),
-                             Chara (false, false, true, false, true, true, true,
-                                     false),
-                             Chara (true, false, false, false, false, true,
-                                     true, false),
-                             Chara (false, false, true, false, true, true, true,
-                                     false),
-                             Chara (true, false, true, false, false, true, true,
-                                     false)]))
-                  (fn _ =>
-                    check (list_all (wf_fmla_atom2 pd mp stg) (inita pd))
-                      (fn _ =>
-                        shows_prec_list show_char zero_nat
-                          [Chara (true, false, true, true, false, false, true,
-                                   false),
-                            Chara (true, false, false, false, false, true, true,
-                                    false),
-                            Chara (false, false, true, true, false, true, true,
-                                    false),
-                            Chara (false, true, true, false, false, true, true,
-                                    false),
-                            Chara (true, true, true, true, false, true, true,
-                                    false),
-                            Chara (false, true, false, false, true, true, true,
-                                    false),
-                            Chara (true, false, true, true, false, true, true,
-                                    false),
-                            Chara (true, false, true, false, false, true, true,
-                                    false),
-                            Chara (false, false, true, false, false, true, true,
-                                    false),
-                            Chara (false, false, false, false, false, true,
-                                    false, false),
-                            Chara (false, true, true, false, false, true, true,
-                                    false),
-                            Chara (true, true, true, true, false, true, true,
-                                    false),
-                            Chara (false, true, false, false, true, true, true,
-                                    false),
-                            Chara (true, false, true, true, false, true, true,
-                                    false),
-                            Chara (true, false, true, false, true, true, true,
-                                    false),
-                            Chara (false, false, true, true, false, true, true,
-                                    false),
-                            Chara (true, false, false, false, false, true, true,
-                                    false),
-                            Chara (false, false, false, false, false, true,
-                                    false, false),
-                            Chara (true, false, false, true, false, true, true,
-                                    false),
-                            Chara (false, true, true, true, false, true, true,
-                                    false),
-                            Chara (false, false, false, false, false, true,
-                                    false, false),
-                            Chara (true, false, false, true, false, true, true,
-                                    false),
-                            Chara (false, true, true, true, false, true, true,
-                                    false),
-                            Chara (true, false, false, true, false, true, true,
-                                    false),
-                            Chara (false, false, true, false, true, true, true,
-                                    false),
-                            Chara (true, false, false, true, false, true, true,
-                                    false),
-                            Chara (true, false, false, false, false, true, true,
-                                    false),
-                            Chara (false, false, true, true, false, true, true,
-                                    false),
-                            Chara (false, false, false, false, false, true,
-                                    false, false),
-                            Chara (true, true, false, false, true, true, true,
-                                    false),
-                            Chara (false, false, true, false, true, true, true,
-                                    false),
-                            Chara (true, false, false, false, false, true, true,
-                                    false),
-                            Chara (false, false, true, false, true, true, true,
-                                    false),
-                            Chara (true, false, true, false, false, true, true,
-                                    false)])))))
+                shows_prec_list show_char zero_nat
+                  [Chara (true, false, true, true, false, false, true, false),
+                    Chara (true, false, false, false, false, true, true, false),
+                    Chara (false, false, true, true, false, true, true, false),
+                    Chara (false, true, true, false, false, true, true, false),
+                    Chara (true, true, true, true, false, true, true, false),
+                    Chara (false, true, false, false, true, true, true, false),
+                    Chara (true, false, true, true, false, true, true, false),
+                    Chara (true, false, true, false, false, true, true, false),
+                    Chara (false, false, true, false, false, true, true, false),
+                    Chara (false, false, false, false, false, true, false,
+                            false),
+                    Chara (false, false, true, false, true, true, true, false),
+                    Chara (true, false, false, true, true, true, true, false),
+                    Chara (false, false, false, false, true, true, true, false),
+                    Chara (true, false, true, false, false, true, true,
+                            false)])))
   end;
 
 fun check_wf_domain d stg conT mp =
@@ -3024,37 +2868,187 @@ fun check_wf_problem p stg conT mp =
                              false)]
                    x)))
       (fn _ =>
-        check (wf_goal pd mp stg (goal p))
+        bind (check (wf_goal pd mp stg (goal p))
+               (fn _ =>
+                 shows_prec_list show_char zero_nat
+                   [Chara (true, false, true, true, false, false, true, false),
+                     Chara (true, false, false, false, false, true, true,
+                             false),
+                     Chara (false, false, true, true, false, true, true, false),
+                     Chara (false, true, true, false, false, true, true, false),
+                     Chara (true, true, true, true, false, true, true, false),
+                     Chara (false, true, false, false, true, true, true, false),
+                     Chara (true, false, true, true, false, true, true, false),
+                     Chara (true, false, true, false, false, true, true, false),
+                     Chara (false, false, true, false, false, true, true,
+                             false),
+                     Chara (false, false, false, false, false, true, false,
+                             false),
+                     Chara (true, true, true, false, false, true, true, false),
+                     Chara (true, true, true, true, false, true, true, false),
+                     Chara (true, false, false, false, false, true, true,
+                             false),
+                     Chara (false, false, true, true, false, true, true, false),
+                     Chara (false, false, false, false, false, true, false,
+                             false),
+                     Chara (false, true, true, false, false, true, true, false),
+                     Chara (true, true, true, true, false, true, true, false),
+                     Chara (false, true, false, false, true, true, true, false),
+                     Chara (true, false, true, true, false, true, true, false),
+                     Chara (true, false, true, false, true, true, true, false),
+                     Chara (false, false, true, true, false, true, true, false),
+                     Chara (true, false, false, false, false, true, true,
+                             false)]))
           (fn _ =>
-            shows_prec_list show_char zero_nat
-              [Chara (true, false, true, true, false, false, true, false),
-                Chara (true, false, false, false, false, true, true, false),
-                Chara (false, false, true, true, false, true, true, false),
-                Chara (false, true, true, false, false, true, true, false),
-                Chara (true, true, true, true, false, true, true, false),
-                Chara (false, true, false, false, true, true, true, false),
-                Chara (true, false, true, true, false, true, true, false),
-                Chara (true, false, true, false, false, true, true, false),
-                Chara (false, false, true, false, false, true, true, false),
-                Chara (false, false, false, false, false, true, false, false),
-                Chara (true, true, true, false, false, true, true, false),
-                Chara (true, true, true, true, false, true, true, false),
-                Chara (true, false, false, false, false, true, true, false),
-                Chara (false, false, true, true, false, true, true, false),
-                Chara (false, false, false, false, false, true, false, false),
-                Chara (false, true, true, false, false, true, true, false),
-                Chara (true, true, true, true, false, true, true, false),
-                Chara (false, true, false, false, true, true, true, false),
-                Chara (true, false, true, true, false, true, true, false),
-                Chara (true, false, true, false, true, true, true, false),
-                Chara (false, false, true, true, false, true, true, false),
-                Chara (true, false, false, false, false, true, true, false)]))
+            bind (check
+                   (distinct_ds
+                     (equal_formula (equal_atom equal_object),
+                       linorder_formula
+                         (equal_atom equal_object,
+                           linorder_atom (equal_object, linorder_object)))
+                     (inita p))
+                   (fn _ =>
+                     shows_prec_list show_char zero_nat
+                       [Chara (false, false, true, false, false, false, true,
+                                false),
+                         Chara (true, false, true, false, true, true, true,
+                                 false),
+                         Chara (false, false, false, false, true, true, true,
+                                 false),
+                         Chara (false, false, true, true, false, true, true,
+                                 false),
+                         Chara (true, false, false, true, false, true, true,
+                                 false),
+                         Chara (true, true, false, false, false, true, true,
+                                 false),
+                         Chara (true, false, false, false, false, true, true,
+                                 false),
+                         Chara (false, false, true, false, true, true, true,
+                                 false),
+                         Chara (true, false, true, false, false, true, true,
+                                 false),
+                         Chara (false, false, false, false, false, true, false,
+                                 false),
+                         Chara (false, true, true, false, false, true, true,
+                                 false),
+                         Chara (true, false, false, false, false, true, true,
+                                 false),
+                         Chara (true, true, false, false, false, true, true,
+                                 false),
+                         Chara (false, false, true, false, true, true, true,
+                                 false),
+                         Chara (false, false, false, false, false, true, false,
+                                 false),
+                         Chara (true, false, false, true, false, true, true,
+                                 false),
+                         Chara (false, true, true, true, false, true, true,
+                                 false),
+                         Chara (false, false, false, false, false, true, false,
+                                 false),
+                         Chara (true, false, false, true, false, true, true,
+                                 false),
+                         Chara (false, true, true, true, false, true, true,
+                                 false),
+                         Chara (true, false, false, true, false, true, true,
+                                 false),
+                         Chara (false, false, true, false, true, true, true,
+                                 false),
+                         Chara (true, false, false, true, false, true, true,
+                                 false),
+                         Chara (true, false, false, false, false, true, true,
+                                 false),
+                         Chara (false, false, true, true, false, true, true,
+                                 false),
+                         Chara (false, false, false, false, false, true, false,
+                                 false),
+                         Chara (true, true, false, false, true, true, true,
+                                 false),
+                         Chara (false, false, true, false, true, true, true,
+                                 false),
+                         Chara (true, false, false, false, false, true, true,
+                                 false),
+                         Chara (false, false, true, false, true, true, true,
+                                 false),
+                         Chara (true, false, true, false, false, true, true,
+                                 false)]))
+              (fn _ =>
+                check (list_all (wf_fmla_atom2 pd mp stg) (inita p))
+                  (fn _ =>
+                    shows_prec_list show_char zero_nat
+                      [Chara (true, false, true, true, false, false, true,
+                               false),
+                        Chara (true, false, false, false, false, true, true,
+                                false),
+                        Chara (false, false, true, true, false, true, true,
+                                false),
+                        Chara (false, true, true, false, false, true, true,
+                                false),
+                        Chara (true, true, true, true, false, true, true,
+                                false),
+                        Chara (false, true, false, false, true, true, true,
+                                false),
+                        Chara (true, false, true, true, false, true, true,
+                                false),
+                        Chara (true, false, true, false, false, true, true,
+                                false),
+                        Chara (false, false, true, false, false, true, true,
+                                false),
+                        Chara (false, false, false, false, false, true, false,
+                                false),
+                        Chara (false, true, true, false, false, true, true,
+                                false),
+                        Chara (true, true, true, true, false, true, true,
+                                false),
+                        Chara (false, true, false, false, true, true, true,
+                                false),
+                        Chara (true, false, true, true, false, true, true,
+                                false),
+                        Chara (true, false, true, false, true, true, true,
+                                false),
+                        Chara (false, false, true, true, false, true, true,
+                                false),
+                        Chara (true, false, false, false, false, true, true,
+                                false),
+                        Chara (false, false, false, false, false, true, false,
+                                false),
+                        Chara (true, false, false, true, false, true, true,
+                                false),
+                        Chara (false, true, true, true, false, true, true,
+                                false),
+                        Chara (false, false, false, false, false, true, false,
+                                false),
+                        Chara (true, false, false, true, false, true, true,
+                                false),
+                        Chara (false, true, true, true, false, true, true,
+                                false),
+                        Chara (true, false, false, true, false, true, true,
+                                false),
+                        Chara (false, false, true, false, true, true, true,
+                                false),
+                        Chara (true, false, false, true, false, true, true,
+                                false),
+                        Chara (true, false, false, false, false, true, true,
+                                false),
+                        Chara (false, false, true, true, false, true, true,
+                                false),
+                        Chara (false, false, false, false, false, true, false,
+                                false),
+                        Chara (true, true, false, false, true, true, true,
+                                false),
+                        Chara (false, false, true, false, true, true, true,
+                                false),
+                        Chara (true, false, false, false, false, true, true,
+                                false),
+                        Chara (false, false, true, false, true, true, true,
+                                false),
+                        Chara (true, false, true, false, false, true, true,
+                                false)]))))
   end;
 
 fun i p =
   set (ceq_formula (ceq_atom ceq_object),
         ccompare_formula (ccompare_atom ccompare_object), set_impl_formula)
-    (inita (problem_decs (domain p)));
+    (inita p);
 
 fun check_plan p pi_s =
   catch_error

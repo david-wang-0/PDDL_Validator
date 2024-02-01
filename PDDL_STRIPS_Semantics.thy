@@ -129,7 +129,6 @@ text \<open>Declarations of objects and an initial state in the problem\<close>
 datatype ast_problem_decs = ProbDecls
   (domain_decs: ast_domain_decs)
   (objects: "(object \<times> type) list")
-  (init: "ground_formula list")
 
 text \<open>In addition to the declaration of types, predicates, and constants, 
       a domain contains actions\<close>
@@ -141,6 +140,7 @@ text \<open>A problem consists of a domain, a list of objects,
   a description of the initial state, and a description of the goal state.\<close>
 datatype ast_problem = Problem
   (domain: ast_domain)
+  (init: "ground_formula list")
   (goal: "schematic_formula")
 
 subsubsection \<open>Plans\<close>
@@ -480,6 +480,8 @@ lemma ty_term_mono: "varT \<subseteq>\<^sub>m varT' \<Longrightarrow> objT \<sub
     done
   done
 
+subsubsection \<open>Declarations of types, constants and predicates in the domain\<close>
+
 locale ast_domain_decs =
   fixes DD :: ast_domain_decs
 begin
@@ -607,6 +609,8 @@ begin
 
 end \<comment> \<open>locale \<open>ast_domain\<close>\<close>
 
+subsubsection \<open>Declarations of types and objects in the problem\<close>
+
 text \<open>We fix the declarations of types and such from the domain and include the declarations
       from the problem as well\<close>
 locale ast_problem_decs = ast_domain_decs "domain_decs PD"
@@ -629,22 +633,11 @@ begin
     "wf_fact = wf_pred_atom objT"
 
 
-  text \<open>This definition is needed for well-formedness of the initial model,
-    and forward-references to the concept of world model.
-  \<close>
-  (* What makes a world-model well-formed? Since the initial state is essentially
-      equivalent to the effect of a non-action, it being well-formed means, that it
-      is unquantified. *)
-  definition wf_world_model::"ground_formula set \<Rightarrow> bool" where
-    "wf_world_model M = (\<forall>f\<in>M. wf_fmla_atom objT f)"
-
   definition wf_problem_decs where
     "wf_problem_decs \<equiv>
       wf_domain_decs
     \<and> distinct (map fst (objects PD) @ map fst (consts DD))
     \<and> (\<forall>(n,T)\<in>set (objects PD). wf_type T)
-    \<and> distinct (init PD)
-    \<and> wf_world_model (set (init PD))
     "
 
 
@@ -676,6 +669,8 @@ begin
 
 end
 
+subsubsection \<open>The entire domain\<close>
+
 text \<open>AST domain needs parts of the declarations from a problem, because 
       we need them to use the macro that simulates the use of quantifiers
       in formulas.\<close>
@@ -684,6 +679,16 @@ locale ast_domain = ast_problem_decs "problem_decs D"
 begin
   abbreviation "PD \<equiv> problem_decs D"
 
+
+  text \<open>This definition is needed for well-formedness of the initial model,
+    and forward-references to the concept of world model.
+  \<close>
+  (* What makes a world-model well-formed? Since the initial state is essentially
+      equivalent to the effect of a non-action, it being well-formed means, that it
+      is unquantified. *)
+  definition wf_world_model::"ground_formula set \<Rightarrow> bool" where
+    "wf_world_model M = (\<forall>f\<in>M. wf_fmla_atom objT f)"
+  
   text \<open>A domain is well-formed if in addition to the declarations being well-formed
     \<^item> there are no duplicate declared actions,
     \<^item> and all declared actions are well-formed
@@ -696,6 +701,8 @@ begin
     "
 end
 
+subsubsection \<open>The problem\<close>
+
 locale ast_problem = ast_domain "domain P"
   for P::ast_problem
 begin
@@ -704,6 +711,8 @@ begin
   definition wf_problem where
     "wf_problem \<equiv>
       wf_domain
+    \<and> distinct (init P)
+    \<and> wf_world_model (set (init P))
     \<and> wf_goal (goal P)
     "
 end
@@ -1238,7 +1247,7 @@ context ast_problem begin
 
   text \<open>Initial model\<close>
   definition I :: "world_model" where
-    "I \<equiv> set (init PD)"
+    "I \<equiv> set (init P)"
 
   text \<open>Resolve a plan action and instantiate the referenced action schema.\<close>
   fun resolve_instantiate :: "plan_action \<Rightarrow> ground_action" where

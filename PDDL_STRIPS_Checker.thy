@@ -281,13 +281,11 @@ context ast_problem_decs begin
   definition "wf_problem_decs' stg conT mp \<equiv>
       wf_domain_decs' stg conT
     \<and> distinct (map fst (objects PD) @ map fst (consts DD))
-    \<and> (\<forall>(n,T)\<in>set (objects PD). wf_type T)
-    \<and> distinct (init PD)
-    \<and> (\<forall>f\<in>set (init PD). wf_fmla_atom2' mp stg f)"
+    \<and> (\<forall>(n,T)\<in>set (objects PD). wf_type T)"
 
   lemma wf_problem_decs'_correct:
     "wf_problem_decs' STG mp_constT mp_objT = wf_problem_decs"
-    unfolding wf_problem_decs_def wf_problem_decs'_def wf_world_model_def
+    unfolding wf_problem_decs_def wf_problem_decs'_def 
     by (auto simp: wf_domain_decs'_correct wf_fmla'_correct)
   
   fun wf_action_schema' :: "_ \<Rightarrow> _ \<Rightarrow> ast_action_schema \<Rightarrow> bool" where
@@ -318,7 +316,7 @@ begin
 
   lemma wf_domain'_correct:
     "wf_domain' STG mp_constT mp_objT = wf_domain"
-    unfolding wf_domain_def wf_domain'_def
+    unfolding wf_domain_def wf_domain'_def 
     by (auto simp: wf_problem_decs'_correct wf_action_schema'_correct wf_fmla'_correct)
 end
 
@@ -327,11 +325,13 @@ begin
 
   definition "wf_problem' stg conT mp \<equiv>
       wf_domain' stg conT mp
-    \<and> wf_goal' mp stg (goal P)"
+    \<and> wf_goal' mp stg (goal P)
+    \<and> distinct (init P)
+    \<and> (\<forall>f\<in>set (init P). wf_fmla_atom2' mp stg f)"
 
   lemma wf_problem'_correct:
     "wf_problem' STG mp_constT mp_objT = wf_problem"
-    unfolding wf_problem_def wf_problem'_def wf_goal_def
+    unfolding wf_problem_def wf_problem'_def wf_goal_def wf_world_model_def
     by (auto simp: wf_domain'_correct wf_fmla'_correct)
 end
 subsubsection \<open>Implementation of the quantifier macros\<close>
@@ -792,9 +792,7 @@ definition "check_wf_problem_decs PD stg conT mp \<equiv> do {
   let DD = ast_problem_decs.domain_decs PD;
   check_wf_domain_decs DD stg conT <+? prepend_err_msg ''Domain declarations not well-formed'';
   check (distinct (map fst (objects PD) @ map fst (consts DD))) (ERRS ''Duplicate object declaration'');
-  check ((\<forall>(n,T)\<in>set (objects PD). ast_domain_decs.wf_type DD T)) (ERRS ''Malformed type'');
-  check (distinct (init PD)) (ERRS ''Duplicate fact in initial state'');
-  check (\<forall>f\<in>set (init PD). ast_problem_decs.wf_fmla_atom2' PD mp stg f) (ERRS ''Malformed formula in initial state'')
+  check ((\<forall>(n,T)\<in>set (objects PD). ast_domain_decs.wf_type DD T)) (ERRS ''Malformed type'')
 }"
 
 lemma check_wf_problem_decs_return_iff[return_iff]:
@@ -826,7 +824,9 @@ definition "check_wf_problem P stg conT mp \<equiv> do {
   let D = ast_problem.domain P;
   let PD = ast_domain.problem_decs D;
   check_wf_domain D stg conT mp <+? prepend_err_msg ''Domain not well-formed'';
-  check (ast_problem_decs.wf_goal' PD mp stg (goal P)) (ERRS ''Malformed goal formula'')
+  check (ast_problem_decs.wf_goal' PD mp stg (goal P)) (ERRS ''Malformed goal formula'');
+  check (distinct (init P)) (ERRS ''Duplicate fact in initial state'');
+  check (\<forall>f\<in>set (init P). ast_problem_decs.wf_fmla_atom2' PD mp stg f) (ERRS ''Malformed formula in initial state'')
 }"
 
 lemma check_wf_problem_return_iff[return_iff]:
