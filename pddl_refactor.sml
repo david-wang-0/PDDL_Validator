@@ -36,7 +36,8 @@ struct
     val identStart     = identLetter
     val opStart        = fail "Operators not supported" : scanner
     val opLetter       = opStart
-    val reservedNames  = [":requirements", ":strips", ":equality", ":typing", ":action-costs", ":negative-preconditions", ":disjunctive-preconditions",
+    val reservedNames  = [":requirements", ":strips", ":equality", ":typing", ":action-costs", 
+                          ":negative-preconditions", ":disjunctive-preconditions", ":existential-preconditions", ":universal-preconditions", ":quantified-preconditions",
                           "define", "domain",
                           ":predicates", "either", ":functions",
                           ":types", (*"object",*)
@@ -117,7 +118,8 @@ struct
   fun pddl_reserved wrd = (reserved wrd) ?? "resereved word"
 
   val require_key = (pddl_reserved ":strips" || pddl_reserved ":equality" ||  pddl_reserved ":typing" ||  pddl_reserved ":action-costs"
-                      ||  pddl_reserved ":disjunctive-preconditions" ||  pddl_reserved ":negative-preconditions") ?? "require_key"
+                      ||  pddl_reserved ":disjunctive-preconditions" ||  pddl_reserved ":negative-preconditions" 
+                      ||  pddl_reserved ":universal-preconditions" ||  pddl_reserved ":existential-preconditions" ||  pddl_reserved ":quantified-preconditions") ?? "require_key"
   val require_def = (in_paren(pddl_reserved ":requirements" >> repeat1 require_key)) ?? "require_def"
 
   val primitive_type = (pddl_name wth (fn tp => PDDL_PRIM_TYPE tp)

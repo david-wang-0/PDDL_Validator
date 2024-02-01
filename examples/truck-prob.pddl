@@ -1,8 +1,3 @@
-
-
-
-
-
 (define (problem TruckProb)
 (:domain TruckDom)
 (:objects
@@ -26,7 +21,7 @@
 	(connected l2 l3)
 	(connected l3 l1)
 	(connected l3 l2)
-    )
+)
 
 (:goal (and 
 	(delivered package1 l3)

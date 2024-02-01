@@ -2,7 +2,7 @@
 ;;; 4 Op-blocks world
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(define (domain blocks-dom)
+(define (domain BlocksDom)
   (:requirements :strips)
   (:predicates (on ?x ?y)
 	       (ontable ?x)
