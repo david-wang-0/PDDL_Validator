@@ -1,8 +1,8 @@
 section \<open>PDDL and STRIPS Semantics\<close>
 theory PDDL_STRIPS_Semantics
 imports
-  "FO_proof_systems/Formulas"
-  "FO_proof_systems/Sema"
+  "Propositional_Proof_Systems.Formulas"
+  "Propositional_Proof_Systems.Sema"
   "Automatic_Refinement.Misc"
   "Automatic_Refinement.Refine_Util"
   "Show.Show_Instances" 
@@ -123,23 +123,22 @@ subsubsection \<open>Problems\<close>
 
 
 text \<open>A fact is a predicate applied to objects.\<close>
-text \<open>Changed to object, because this makes some other changes easier.
-    However, the change from object term to ground term in general requires
-    us to assert that variables in instantiations are bound.\<close>
-text \<open> Question: are facts only used in effects? See \<open>wf_fact\<close> as well. \<close>
 type_synonym fact = "predicate \<times> object list"
 
-text \<open>A problem consists of a domain, a list of objects,
-  a description of the initial state, and a description of the goal state. \<close>
+text \<open>Declarations of objects and an initial state in the problem\<close>
 datatype ast_problem_decs = ProbDecls
   (domain_decs: ast_domain_decs)
   (objects: "(object \<times> type) list")
   (init: "ground_formula list")
 
+text \<open>In addition to the declaration of types, predicates, and constants, 
+      a domain contains actions\<close>
 datatype ast_domain = Domain
   (problem_decs: ast_problem_decs)
   (actions: "ast_action_schema list")
 
+text \<open>A problem consists of a domain, a list of objects,
+  a description of the initial state, and a description of the goal state.\<close>
 datatype ast_problem = Problem
   (domain: ast_domain)
   (goal: "schematic_formula")
@@ -236,6 +235,36 @@ proof -
   hence "\<forall>e \<in> ent a. term_subst v c e = e" using term_subst_idem by auto
   thus "term_atom_subst v c a = a" by (simp add: atom.map_ident_strong)
 qed
+
+
+locale formula_syntax =
+  fixes vars  ::"'p \<Rightarrow> 'v set"
+    and objs  ::"'p \<Rightarrow> 'c set"
+begin
+
+ fun fvars::"'p formula \<Rightarrow> 'v set" where
+    "fvars (Atom p) = vars p" 
+  | "fvars Bot = {}"
+  | "fvars (Not \<phi>\<^sub>1) = fvars \<phi>\<^sub>1"
+  | "fvars (And \<phi>\<^sub>1 \<phi>\<^sub>2) = fvars \<phi>\<^sub>1 \<union> fvars \<phi>\<^sub>2"
+  | "fvars (Or \<phi>\<^sub>1 \<phi>\<^sub>2) = fvars \<phi>\<^sub>1 \<union> fvars \<phi>\<^sub>2"
+  | "fvars (Imp \<phi>\<^sub>1 \<phi>\<^sub>2) = fvars \<phi>\<^sub>1 \<union> fvars \<phi>\<^sub>2"
+  
+  
+  fun fobjs::"'p formula \<Rightarrow> 'c set" where
+    "fobjs (Atom p) = objs p" 
+  | "fobjs Bot = {}"
+  | "fobjs (Not \<phi>\<^sub>1) = fobjs \<phi>\<^sub>1"
+  | "fobjs (And \<phi>\<^sub>1 \<phi>\<^sub>2) = fobjs \<phi>\<^sub>1 \<union> fobjs \<phi>\<^sub>2"
+  | "fobjs (Or \<phi>\<^sub>1 \<phi>\<^sub>2) = fobjs \<phi>\<^sub>1 \<union> fobjs \<phi>\<^sub>2"
+  | "fobjs (Imp \<phi>\<^sub>1 \<phi>\<^sub>2) = fobjs \<phi>\<^sub>1 \<union> fobjs \<phi>\<^sub>2"
+
+  lemma fvars_alt: "fvars \<phi> = \<Union>(vars ` (atoms \<phi>))"
+    by (induction \<phi>) auto
+    
+  lemma fobjs_alt: "fobjs \<phi> = \<Union>(objs ` (atoms \<phi>))"
+    by (induction \<phi>) auto
+end
 
 global_interpretation term_formulas: formula_syntax term_atom_vars term_atom_objs
   defines fvars = term_formulas.fvars
@@ -622,7 +651,9 @@ begin
   text \<open>An action schema is well-formed if the parameter names are distinct,
     and the precondition and effect is well-formed wrt.\ the parameters.
   \<close>
-
+  text \<open>This is here, because the semantic properties of an action schema
+        containing semantic properties require the declarations from the problem
+        to be well-formed. \<close>
   (* action schemas are well-formed only in relation to the problem *)
   fun wf_action_schema :: "ast_action_schema \<Rightarrow> bool" where
     "wf_action_schema (Action_Schema n params pre eff) \<longleftrightarrow> (
@@ -645,6 +676,9 @@ begin
 
 end
 
+text \<open>AST domain needs parts of the declarations from a problem, because 
+      we need them to use the macro that simulates the use of quantifiers
+      in formulas.\<close>
 locale ast_domain = ast_problem_decs "problem_decs D"
   for D::ast_domain
 begin

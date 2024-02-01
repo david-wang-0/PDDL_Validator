@@ -72,38 +72,6 @@ primrec BigOr :: "'a formula list \<Rightarrow> 'a formula" ("\<^bold>\<Or>_") w
 lemma atoms_BigOr[simp]: "atoms (\<^bold>\<Or>Fs) = \<Union>(atoms ` set Fs)"
   by(induction Fs; simp)
 
-
-locale formula_syntax =
-  fixes vars  ::"'p \<Rightarrow> 'v set"
-    and objs  ::"'p \<Rightarrow> 'c set"
-begin
-
- fun fvars::"'p formula \<Rightarrow> 'v set" where
-    "fvars (Atom p) = vars p" 
-  | "fvars Bot = {}"
-  | "fvars (Not \<phi>\<^sub>1) = fvars \<phi>\<^sub>1"
-  | "fvars (And \<phi>\<^sub>1 \<phi>\<^sub>2) = fvars \<phi>\<^sub>1 \<union> fvars \<phi>\<^sub>2"
-  | "fvars (Or \<phi>\<^sub>1 \<phi>\<^sub>2) = fvars \<phi>\<^sub>1 \<union> fvars \<phi>\<^sub>2"
-  | "fvars (Imp \<phi>\<^sub>1 \<phi>\<^sub>2) = fvars \<phi>\<^sub>1 \<union> fvars \<phi>\<^sub>2"
-  
-  
-  fun fobjs::"'p formula \<Rightarrow> 'c set" where
-    "fobjs (Atom p) = objs p" 
-  | "fobjs Bot = {}"
-  | "fobjs (Not \<phi>\<^sub>1) = fobjs \<phi>\<^sub>1"
-  | "fobjs (And \<phi>\<^sub>1 \<phi>\<^sub>2) = fobjs \<phi>\<^sub>1 \<union> fobjs \<phi>\<^sub>2"
-  | "fobjs (Or \<phi>\<^sub>1 \<phi>\<^sub>2) = fobjs \<phi>\<^sub>1 \<union> fobjs \<phi>\<^sub>2"
-  | "fobjs (Imp \<phi>\<^sub>1 \<phi>\<^sub>2) = fobjs \<phi>\<^sub>1 \<union> fobjs \<phi>\<^sub>2"
-
-  lemma fvars_alt: "fvars \<phi> = \<Union>(vars ` (atoms \<phi>))"
-    by (induction \<phi>) auto
-    
-  lemma fobjs_alt: "fobjs \<phi> = \<Union>(objs ` (atoms \<phi>))"
-    by (induction \<phi>) auto
-end
- 
-
-
 text\<open>Formulas are countable if their atoms are, and @{method countable_datatype} is really helpful with that.\<close> 
 instance formula :: (countable) countable by countable_datatype
 
