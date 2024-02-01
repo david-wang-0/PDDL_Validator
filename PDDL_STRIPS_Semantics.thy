@@ -140,7 +140,6 @@ datatype ast_domain = Domain
   (problem_decs: ast_problem_decs)
   (actions: "ast_action_schema list")
 
-
 datatype ast_problem = Problem
   (domain: ast_domain)
   (goal: "schematic_formula")
@@ -577,8 +576,6 @@ begin
     \<and> distinct (map fst (consts DD))
     \<and> (\<forall>(n,T)\<in>set (consts DD). wf_type T)"
 
-  
-
 end \<comment> \<open>locale \<open>ast_domain\<close>\<close>
 
 text \<open>We fix the declarations of types and such from the domain and include the declarations
@@ -897,13 +894,6 @@ begin
     using wf_fmla_mono wf_fmla_vars wf_fmla_bw 
     by blast
 
-  text \<open>A well-formed goal is a well-formed formula without any free variables\<close>
-  
-  theorem wf_goal_alt: "wf_goal \<phi> \<longleftrightarrow> wf_fmla (ty_term Q objT) \<phi> \<and> fvars \<phi> = {}"
-    unfolding wf_goal_def
-    using wf_fmla_alt_lemma[of "(\<lambda>_. None)"]
-    by simp
-
 end
 
 context ast_problem_decs
@@ -967,6 +957,17 @@ begin
 
 end \<comment> \<open>locale \<open>ast_problem_decs\<close>\<close>
 
+context ast_problem_decs
+begin
+
+  text \<open>A well-formed goal is a well-formed formula without any free variables\<close>
+  
+  theorem wf_goal_alt: "wf_goal \<phi> \<longleftrightarrow> wf_fmla (ty_term Q objT) \<phi> \<and> fvars \<phi> = {}"
+    unfolding wf_goal_def
+    using wf_fmla_alt_lemma[of "(\<lambda>_. None)"]
+    by simp
+
+end
 
 subsection \<open>Quantifiers\<close>
 context ast_problem_decs
@@ -981,6 +982,7 @@ begin
   definition exists::"variable \<Rightarrow> type \<Rightarrow> schematic_formula \<Rightarrow> schematic_formula" ("\<^bold>\<exists>_ - _._") where
     "exists v t \<phi> \<equiv> (if (v \<notin> fvars \<phi> \<and> (t_dom t \<noteq> [])) then \<phi> else \<^bold>\<Or>(map (\<lambda>c. (map_formula (term_atom_subst v c)) \<phi>) (t_dom t)))"
 
+  text \<open>PDDL quantifiers act on typed lists of variables\<close>
   definition pddl_all::"(variable \<times> type) list \<Rightarrow> schematic_formula \<Rightarrow> schematic_formula" where
     "pddl_all ps \<phi> = foldr (\<lambda>(v, t) \<phi>. all v t \<phi>) ps \<phi>"
 
@@ -1117,11 +1119,11 @@ begin
     using wf_fmla_mono'[OF wf_ex_inst'] assms unfolding exists_def by auto
 
   
-  (* Note: The other direction does not work. Quantifiers expand into long formulae 
-            by substitution of variables for constants. Assume there is a 
-            predicate PD:: t2 \<Rightarrow> bool, that v has a type of t1, that t2 \<subseteq> t1, and the only
-            object in the domain of t1 has a type t2. In this case, PD is not
-            well-formed. *)
+  (* Note: The other direction does not work. Quantifiers expand into long con-/disjunctions 
+            by substitution of variables for all suitably typed constants. Assume there is a 
+            predicate P::t2 \<Rightarrow> bool, a v::t1, t2 \<subseteq> t1, and the only
+            object o1 in the domain of t1 has a type t2. In this case, P(v) is not
+            well-formed, but the instantiation P(o1) is. *)
   
   lemma wf_ex_goal: 
     assumes "wf_fmla (ty_term [v \<mapsto> ty] objT) \<phi>" 
@@ -1148,7 +1150,7 @@ begin
   lemma wf_univ_goal: 
     assumes "wf_fmla (ty_term [v \<mapsto> ty] objT) \<phi>" 
       shows "wf_goal \<^bold>\<forall>v - ty. \<phi>"
-    unfolding wf_goal_def using wf_univ_inst'[OF assms] by simp
+    using wf_univ_inst'[OF assms] unfolding wf_goal_def by simp
 
    lemma wf_univ_goal_alt:
     assumes "wf_fmla (ty_term (Q(v \<mapsto> ty)) objT) \<phi>"
@@ -1260,7 +1262,7 @@ context ast_problem begin
         ((\<forall>\<pi> \<in> set \<pi>s. wf_plan_action \<pi>)
       \<and> ground_action_path M (map resolve_instantiate \<pi>s) M')"
 
-  text \<open>Instantiation of a goal\<close>
+  text \<open>Instantiation of a goal. No variables are instantiated\<close>
   fun inst_goal::"schematic_formula \<Rightarrow> ground_formula" where
   "inst_goal \<phi> = (let tsubst = subst_term (the o (Map.empty))
         in (map_formula o map_atom) tsubst \<phi>)"
@@ -1269,7 +1271,7 @@ context ast_problem begin
     goal model \<close>
   definition valid_plan_from :: "world_model \<Rightarrow> plan \<Rightarrow> bool" where
     "valid_plan_from M \<pi>s = (\<exists>M'. plan_action_path M \<pi>s M' \<and> M' \<^sup>c\<TTurnstile>\<^sub>= inst_goal (goal P))"
-  (* instantiate the goal wrt nothing *)
+  
   (* Implementation note: resolve and instantiate already done inside
       enabledness check, redundancy! *)
 
@@ -1407,11 +1409,6 @@ end
 
 subsubsection \<open>Preservation\<close>
 
-text \<open>Locale to express a well-formed domain\<close>
-locale wf_ast_domain = ast_domain +
-  assumes wf_domain: wf_domain
-
-
 context ast_problem
 begin
   text \<open>Shorthand for enabled plan action: It is well-formed, and the
@@ -1440,19 +1437,24 @@ begin
             execute_ground_action_def plan_action_enabled_def)
 end
 
+text \<open>Locale to express a well-formed domain\<close>
+locale wf_ast_domain = ast_domain +
+  assumes wf_domain: wf_domain
+
+
 text \<open>Locale to express a well-formed problem\<close>
 locale wf_ast_problem = ast_problem P for P +
   assumes wf_problem: wf_problem
 begin
   sublocale wf_ast_domain "domain P"
     apply unfold_locales
-    using wf_problem
+    using wf_problem                
     unfolding wf_problem_def by simp
 
-sublocale wf_problem_decs "problem_decs (domain P)"
-  apply unfold_locales
-  using wf_problem
-  unfolding wf_problem_def wf_domain_def by blast
+  sublocale wf_problem_decs "problem_decs (domain P)"
+    apply unfold_locales
+    using wf_problem
+    unfolding wf_problem_def wf_domain_def by blast
   
   text \<open>We start by defining two shorthands for enabledness and execution of
     a plan action.\<close>
@@ -1529,7 +1531,9 @@ end
 subsubsection \<open>Semantics of quantifiers under instantiation\<close>
 
 text \<open>Here are some lemmas that prove that the semantics of quantified formulas
-      are correct following instantiation.\<close>
+      are correct following instantiation. If we have a goal or an action schema that
+      used a macro expansion for formulae with quantifiers, we can be sure that its 
+      semantics are behaving as we expected.\<close>
 context ast_problem begin
   
   notation all ("\<^bold>\<forall>_ - _._")   

@@ -138,28 +138,29 @@ lemma ty_term'_correct_aux: "ty_term' varT objT t = ty_term varT (Mapping.lookup
 lemma ty_term'_correct[simp]: "ty_term' varT objT = ty_term varT (Mapping.lookup objT)"
   using ty_term'_correct_aux by auto
 
-context ast_domain begin
+
+context ast_domain_decs begin
 
   definition "of_type1 pt T \<longleftrightarrow> pt \<in> subtype_rel\<^sup>* `` set (primitives T)"
 
   lemma of_type_refine1: "of_type oT T \<longleftrightarrow> (\<forall>pt\<in>set (primitives oT). of_type1 pt T)"
     unfolding of_type_def of_type1_def by auto
 
-  definition "STG \<equiv> (tab_succ (map subtype_edge (types D)))"
+  definition "STG \<equiv> (tab_succ (map subtype_edge (types DD)))"
 
-  lemma subtype_rel_impl: "subtype_rel = E_of_succ (tab_succ (map subtype_edge (types D)))"
+  lemma subtype_rel_impl: "subtype_rel = E_of_succ (tab_succ (map subtype_edge (types DD)))"
     by (simp add: tab_succ_correct subtype_rel_def)
 
-  lemma of_type1_impl: "of_type1 pt T \<longleftrightarrow> dfs_reachable (tab_succ (map subtype_edge (types D))) ((=)pt) (primitives T)"
+  lemma of_type1_impl: "of_type1 pt T \<longleftrightarrow> dfs_reachable (tab_succ (map subtype_edge (types DD))) ((=)pt) (primitives T)"
     by (simp add: subtype_rel_impl of_type1_def dfs_reachable_tab_succ_correct tab_succ_correct)
 
   lemma of_type_impl_correct: "of_type_impl STG oT T \<longleftrightarrow> of_type oT T"
     unfolding of_type1_impl STG_def of_type_impl_def of_type_refine1 ..
 
   definition mp_constT :: "(object, type) mapping" where
-    "mp_constT = Mapping.of_alist (consts D)"
+    "mp_constT = Mapping.of_alist (consts DD)"
 
-  lemma mp_objT_correct[simp]: "Mapping.lookup mp_constT = constT"
+  lemma mp_constT_correct[simp]: "Mapping.lookup mp_constT = constT"
     unfolding mp_constT_def constT_def
     apply transfer 
     by (simp add: Map_To_Mapping.map_apply_def)
@@ -225,70 +226,25 @@ context ast_domain begin
   end \<comment> \<open>Context fixing \<open>ty_ent\<close>\<close>
 
 
-  definition wf_domain' :: "_ \<Rightarrow> _ \<Rightarrow> bool" where
-    "wf_domain' stg conT \<equiv>
+  definition wf_domain_decs' :: "_ \<Rightarrow> _ \<Rightarrow> bool" where
+    "wf_domain_decs' stg conT \<equiv>
       wf_types
-    \<and> distinct (map (predicate_decl.pred) (predicates D))
-    \<and> (\<forall>p\<in>set (predicates D). wf_predicate_decl p)
-    \<and> distinct (map fst (consts D))
-    \<and> (\<forall>(n,T)\<in>set (consts D). wf_type T)
-    \<and> distinct (map ast_action_schema.name (actions D))
+    \<and> distinct (map (predicate_decl.pred) (predicates DD))
+    \<and> (\<forall>p\<in>set (predicates DD). wf_predicate_decl p)
+    \<and> distinct (map fst (consts DD))
+    \<and> (\<forall>(n,T)\<in>set (consts DD). wf_type T)
     "
 
-  lemma wf_domain'_correct: "wf_domain' STG mp_constT = wf_domain"
-    unfolding wf_domain_def wf_domain'_def
+  lemma wf_domain_decs'_correct: "wf_domain_decs' STG mp_constT = wf_domain_decs"
+    unfolding wf_domain_decs_def wf_domain_decs'_def
     by (auto)
 
 
 end \<comment> \<open>Context of \<open>ast_domain\<close>\<close>
 
-subsubsection \<open>Application of Effects\<close>
-
-context ast_domain begin
-  text \<open>We implement the application of an effect by explicit iteration over
-    the additions and deletions\<close>
-  fun apply_effect_exec
-    :: "object ast_effect \<Rightarrow> world_model \<Rightarrow> world_model"
-  where
-    "apply_effect_exec (Effect a d) s
-      = fold (\<lambda>add s. Set.insert add s) a
-          (fold (\<lambda>del s. Set.remove del s) d s)"
-
-  lemma apply_effect_exec_refine[simp]:
-    "apply_effect_exec (Effect (a) (d)) s
-    = apply_effect (Effect (a) (d)) s"
-  proof(induction a arbitrary: s)
-    case Nil
-    then show ?case
-    proof(induction d arbitrary: s)
-      case Nil
-      then show ?case by auto
-    next
-      case (Cons a d)
-      then show ?case
-        by (auto simp add: image_def)
-    qed
-  next
-    case (Cons a a)
-    then show ?case
-    proof(induction d arbitrary: s)
-      case Nil
-      then show ?case by (auto; metis Set.insert_def sup_assoc insert_iff)
-    next
-      case (Cons a d)
-      then show ?case
-        by (auto simp: Un_commute minus_set_fold union_set_fold)
-    qed
-  qed
-
-  lemmas apply_effect_eq_impl_eq
-    = apply_effect_exec_refine[symmetric, unfolded apply_effect_exec.simps]
-
-end \<comment> \<open>Context of \<open>ast_domain\<close>\<close>
-
 subsubsection \<open>Well-Formedness\<close>
 
-context ast_problem begin
+context ast_problem_decs begin
 
   text \<open> We start by defining a mapping from objects to types. The container
     framework will generate efficient, red-black tree based code for that
@@ -297,23 +253,12 @@ context ast_problem begin
   type_synonym objT = "(object, type) mapping"
 
   definition mp_objT :: "(object, type) mapping" where
-    "mp_objT = Mapping.of_alist (consts D @ objects P)"
+    "mp_objT = Mapping.of_alist (consts DD @ objects PD)"
 
   lemma mp_objT_correct[simp]: "Mapping.lookup mp_objT = objT"
     unfolding mp_objT_def objT_alt
     by transfer (simp add: Map_To_Mapping.map_apply_def)
 
-  text \<open>We refine the typecheck to use the mapping\<close>
-
-  definition "is_obj_of_type_impl stg mp n T = (
-    case Mapping.lookup mp n of None \<Rightarrow> False | Some oT \<Rightarrow> of_type_impl stg oT T
-  )"
-
-  lemma is_obj_of_type_impl_correct[simp]:
-    "is_obj_of_type_impl STG mp_objT = is_obj_of_type"
-    apply (intro ext)
-    apply (auto simp: is_obj_of_type_impl_def is_obj_of_type_def of_type_impl_correct split: option.split)
-    done
 
   text \<open>We refine the well-formedness checks to use the mapping\<close>
 
@@ -325,10 +270,6 @@ context ast_problem begin
     by (auto simp: wf_fact'_def wf_fact_def wf_pred_atom'_correct[abs_def])
 
 
-  fun wf_goal' where
-    "wf_goal' obT stg \<phi> \<longleftrightarrow> wf_fmla' (ty_term' (Map.empty) obT)  stg \<phi>"
-
-
   definition "wf_fmla_atom2' mp stg f
     = (case f of formula.Atom (predAtm p vs) \<Rightarrow> (wf_fact' mp stg (p,vs)) | _ \<Rightarrow> False)"
 
@@ -336,6 +277,18 @@ context ast_problem begin
     "wf_fmla_atom2' mp_objT STG \<phi> = wf_fmla_atom objT \<phi>"
     apply (cases \<phi> rule: wf_fmla_atom.cases)
     by (auto simp: wf_fmla_atom2'_def wf_fact_def split: option.splits)
+
+  definition "wf_problem_decs' stg conT mp \<equiv>
+      wf_domain_decs' stg conT
+    \<and> distinct (map fst (objects PD) @ map fst (consts DD))
+    \<and> (\<forall>(n,T)\<in>set (objects PD). wf_type T)
+    \<and> distinct (init PD)
+    \<and> (\<forall>f\<in>set (init PD). wf_fmla_atom2' mp stg f)"
+
+  lemma wf_problem_decs'_correct:
+    "wf_problem_decs' STG mp_constT mp_objT = wf_problem_decs"
+    unfolding wf_problem_decs_def wf_problem_decs'_def wf_world_model_def
+    by (auto simp: wf_domain_decs'_correct wf_fmla'_correct)
   
   fun wf_action_schema' :: "_ \<Rightarrow> _ \<Rightarrow> ast_action_schema \<Rightarrow> bool" where
     "wf_action_schema' stg obT (Action_Schema n params pre eff) \<longleftrightarrow> (
@@ -349,63 +302,45 @@ context ast_problem begin
   lemma wf_action_schema'_correct: "wf_action_schema' STG mp_objT s = wf_action_schema s"
     by (cases s) (auto simp: wf_fmla'_correct wf_effect'_correct)
 
+  fun wf_goal' where
+    "wf_goal' obT stg \<phi> \<longleftrightarrow> wf_fmla' (ty_term' (Map.empty) obT)  stg \<phi>"
+
+end
+
+context ast_domain
+begin
+  definition wf_domain' :: "_ \<Rightarrow> _ \<Rightarrow> _ \<Rightarrow> bool" where
+    "wf_domain' stg conT mp \<equiv>
+      wf_problem_decs' stg conT mp
+    \<and> distinct (map ast_action_schema.name (actions D))
+    \<and> (\<forall>a\<in>set (actions D). wf_action_schema' stg mp a)
+    "
+
+  lemma wf_domain'_correct:
+    "wf_domain' STG mp_constT mp_objT = wf_domain"
+    unfolding wf_domain_def wf_domain'_def
+    by (auto simp: wf_problem_decs'_correct wf_action_schema'_correct wf_fmla'_correct)
+end
+
+context ast_problem
+begin
+
   definition "wf_problem' stg conT mp \<equiv>
-      wf_domain' stg conT
-    \<and> distinct (map fst (objects P) @ map fst (consts D))
-    \<and> (\<forall>(n,T)\<in>set (objects P). wf_type T)
-    \<and> distinct (init P)
-    \<and> (\<forall>f\<in>set (init P). wf_fmla_atom2' mp stg f)
-    \<and> wf_goal' mp stg (goal P)
-    \<and> (\<forall>a\<in>set (actions D). wf_action_schema' stg mp a)"
+      wf_domain' stg conT mp
+    \<and> wf_goal' mp stg (goal P)"
 
   lemma wf_problem'_correct:
     "wf_problem' STG mp_constT mp_objT = wf_problem"
-    unfolding wf_problem_def wf_problem'_def wf_world_model_def wf_goal_def
-    by (auto simp: wf_domain'_correct wf_fmla'_correct wf_action_schema'_correct)
-
-
-  text \<open>Instantiating actions will yield well-founded effects.
-    Corollary of @{thm wf_instantiate_action_schema}.\<close>
-  lemma wf_effect_inst_weak:
-    fixes a args
-    defines "ai \<equiv> instantiate_action_schema a args"
-    assumes A: "action_params_match a args"
-      "wf_action_schema a"
-    shows "wf_effect_inst (effect ai)"
-    using wf_instantiate_action_schema[OF A] unfolding ai_def[symmetric]
-    by (cases ai) (auto simp: wf_effect_inst_alt)
-
-
-end \<comment> \<open>Context of \<open>ast_problem\<close>\<close>
-
-
-context wf_ast_problem begin
-  text \<open>Resolving an action yields a well-founded action schema.\<close>
-  (* TODO: This must be implicitly proved when showing that plan execution
-    preserves wf. Try to remove this redundancy!*)
-  lemma resolve_action_wf:
-    assumes "resolve_action_schema n = Some a"
-    shows "wf_action_schema a"
-  proof -
-    from wf_problem have
-      X1: "distinct (map ast_action_schema.name (actions D))"
-      and X2: "\<forall>a\<in>set (actions D). wf_action_schema a"
-      unfolding wf_problem_def wf_domain_def by auto
-
-    show ?thesis
-      using assms unfolding resolve_action_schema_def
-      by (auto simp add: index_by_eq_Some_eq[OF X1] X2)
-  qed
-
-end \<comment> \<open>Context of \<open>ast_domain\<close>\<close>
-
+    unfolding wf_problem_def wf_problem'_def wf_goal_def
+    by (auto simp: wf_domain'_correct wf_fmla'_correct)
+end
 subsubsection \<open>Implementation of the quantifier macros\<close>
 
 derive ceq variable
 derive ccompare variable
 derive (rbt) set_impl variable
 
-context ast_problem begin
+context ast_problem_decs begin
 text \<open>Filter those constants in the object and domain that belong to the type.\<close>
 
   fun term_atom_vars_impl::"term atom \<Rightarrow> variable set" where
@@ -449,7 +384,7 @@ text \<open>Filter those constants in the object and domain that belong to the t
     by auto
 
   definition t_dom_impl::"type \<Rightarrow> object list" where    
-    "t_dom_impl typ = map fst (filter (\<lambda>(c, t). of_type_impl STG t typ) (consts D @ objects P))"
+    "t_dom_impl typ = map fst (filter (\<lambda>(c, t). of_type_impl STG t typ) (consts DD @ objects PD))"
   
   lemma t_dom_impl_correct': "t_dom_impl t = t_dom t" 
     unfolding t_dom_def t_dom_impl_def
@@ -480,6 +415,99 @@ text \<open>Filter those constants in the object and domain that belong to the t
   definition pddl_exists_impl::"(variable \<times> type) list \<Rightarrow> schematic_formula \<Rightarrow> schematic_formula" where
     "pddl_exists_impl ps \<phi> = foldr (\<lambda>(v, t) f. exists_impl v t f) ps \<phi>"
 end
+
+
+subsubsection \<open>Application of Effects\<close>
+
+context ast_domain begin
+  text \<open>We implement the application of an effect by explicit iteration over
+    the additions and deletions\<close>
+  fun apply_effect_exec
+    :: "object ast_effect \<Rightarrow> world_model \<Rightarrow> world_model"
+  where
+    "apply_effect_exec (Effect a d) s
+      = fold (\<lambda>add s. Set.insert add s) a
+          (fold (\<lambda>del s. Set.remove del s) d s)"
+
+  lemma apply_effect_exec_refine[simp]:
+    "apply_effect_exec (Effect (a) (d)) s
+    = apply_effect (Effect (a) (d)) s"
+  proof(induction a arbitrary: s)
+    case Nil
+    then show ?case
+    proof(induction d arbitrary: s)
+      case Nil
+      then show ?case by auto
+    next
+      case (Cons a d)
+      then show ?case
+        by (auto simp add: image_def)
+    qed
+  next
+    case (Cons a a)
+    then show ?case
+    proof(induction d arbitrary: s)
+      case Nil
+      then show ?case by (auto; metis Set.insert_def sup_assoc insert_iff)
+    next
+      case (Cons a d)
+      then show ?case
+        by (auto simp: Un_commute minus_set_fold union_set_fold)
+    qed
+  qed
+
+  lemmas apply_effect_eq_impl_eq
+    = apply_effect_exec_refine[symmetric, unfolded apply_effect_exec.simps]
+  
+end \<comment> \<open>Context of \<open>ast_domain\<close>\<close>
+
+context ast_problem
+begin
+
+  text \<open>We refine the typecheck to use the mapping\<close>
+
+  definition "is_obj_of_type_impl stg mp n T = (
+    case Mapping.lookup mp n of None \<Rightarrow> False | Some oT \<Rightarrow> of_type_impl stg oT T
+  )"
+
+  lemma is_obj_of_type_impl_correct[simp]:
+    "is_obj_of_type_impl STG mp_objT = is_obj_of_type"
+    apply (intro ext)
+    apply (auto simp: is_obj_of_type_impl_def is_obj_of_type_def of_type_impl_correct split: option.split)
+    done
+  text \<open>Instantiating actions will yield well-founded effects.
+    Corollary of @{thm wf_instantiate_action_schema}.\<close>
+  lemma wf_effect_inst_weak:
+    fixes a args
+    defines "ai \<equiv> instantiate_action_schema a args"
+    assumes A: "action_params_match a args"
+      "wf_action_schema a"
+    shows "wf_effect_inst (effect ai)"
+    using wf_instantiate_action_schema[OF A] unfolding ai_def[symmetric]
+    by (cases ai) (auto simp: wf_effect_inst_alt)
+
+end \<comment> \<open>Context of \<open>ast_problem\<close>\<close>
+
+
+context wf_ast_problem begin
+  text \<open>Resolving an action yields a well-founded action schema.\<close>
+  (* TODO: This must be implicitly proved when showing that plan execution
+    preserves wf. Try to remove this redundancy!*)
+  lemma resolve_action_wf:
+    assumes "resolve_action_schema n = Some a"
+    shows "wf_action_schema a"
+  proof -
+    from wf_problem have
+      X1: "distinct (map ast_action_schema.name (actions D))"
+      and X2: "\<forall>a\<in>set (actions D). wf_action_schema a"
+      unfolding wf_problem_def wf_domain_def by auto
+
+    show ?thesis
+      using assms unfolding resolve_action_schema_def
+      by (auto simp add: index_by_eq_Some_eq[OF X1] X2)
+  qed
+
+end \<comment> \<open>Context of \<open>ast_domain\<close>\<close>
 
 subsubsection \<open>Execution of Plan Actions\<close>
 
@@ -677,8 +705,8 @@ context ast_problem begin
       simp: execute_ground_action_def)
     subgoal for n args schema fmla
       apply (cases "effect (instantiate_action_schema schema args)"; simp)
-      by (metis ground_action.sel(2) ast_domain.wf_effect.simps
-            ast_domain.wf_fmla_atom_alt resolve_action_wf
+      by (metis ground_action.sel(2) wf_effect.simps
+            wf_fmla_atom_alt resolve_action_wf
             wf_ground_action.elims(2) wf_instantiate_action_schema)
     done
 
@@ -735,41 +763,70 @@ definition "check_wf_types D \<equiv> do {
   check_all_list (\<lambda>(_,t). t=''object'' \<or> t\<in>fst`set (types D)) (types D) ''Undeclared supertype'' (shows o snd)
 }"
 
-lemma check_wf_types_return_iff[return_iff]: "check_wf_types D = Inr () \<longleftrightarrow> ast_domain.wf_types D"
-  unfolding ast_domain.wf_types_def check_wf_types_def
+lemma check_wf_types_return_iff[return_iff]: "check_wf_types D = Inr () \<longleftrightarrow> ast_domain_decs.wf_types D"
+  unfolding ast_domain_decs.wf_types_def check_wf_types_def
   by (force simp: return_iff)
 
-definition "check_wf_domain D stg conT \<equiv> do {
-  check_wf_types D;
-  check (distinct (map (predicate_decl.pred) (predicates D))) (ERRS ''Duplicate predicate declaration'');
-  check_all_list (ast_domain.wf_predicate_decl D) (predicates D) ''Malformed predicate declaration'' (shows o predicate.name o predicate_decl.pred);
-  check (distinct (map fst (consts D))) (ERRS  ''Duplicate constant declaration'');
-  check (\<forall>(n,T)\<in>set (consts D). ast_domain.wf_type D T) (ERRS ''Malformed type'');
-  check (distinct (map ast_action_schema.name (actions D))  ) (ERRS ''Duplicate action name'')
+definition "check_wf_domain_decs DD stg conT \<equiv> do {
+  check_wf_types DD;
+  check (distinct (map (predicate_decl.pred) (predicates DD))) (ERRS ''Duplicate predicate declaration'');
+  check_all_list (ast_domain_decs.wf_predicate_decl DD) (predicates DD) ''Malformed predicate declaration'' (shows o predicate.name o predicate_decl.pred);
+  check (distinct (map fst (consts DD))) (ERRS  ''Duplicate constant declaration'');
+  check (\<forall>(n,T)\<in>set (consts DD). ast_domain_decs.wf_type DD T) (ERRS ''Malformed type'')
 }"
 
+lemma check_wf_domain_decs_return_iff[return_iff]:
+  "check_wf_domain_decs DD stg conT = Inr () \<longleftrightarrow> ast_domain_decs.wf_domain_decs' DD stg conT"
+proof -
+  interpret ast_domain_decs DD .
+  show ?thesis
+    unfolding check_wf_domain_decs_def wf_domain_decs'_def
+    by (auto simp: return_iff)
+qed
 
+
+definition "prepend_err_msg msg e \<equiv> \<lambda>_::unit. shows msg o shows '': '' o e ()"
+
+
+definition "check_wf_problem_decs PD stg conT mp \<equiv> do {
+  let DD = ast_problem_decs.domain_decs PD;
+  check_wf_domain_decs DD stg conT <+? prepend_err_msg ''Domain declarations not well-formed'';
+  check (distinct (map fst (objects PD) @ map fst (consts DD))) (ERRS ''Duplicate object declaration'');
+  check ((\<forall>(n,T)\<in>set (objects PD). ast_domain_decs.wf_type DD T)) (ERRS ''Malformed type'');
+  check (distinct (init PD)) (ERRS ''Duplicate fact in initial state'');
+  check (\<forall>f\<in>set (init PD). ast_problem_decs.wf_fmla_atom2' PD mp stg f) (ERRS ''Malformed formula in initial state'')
+}"
+
+lemma check_wf_problem_decs_return_iff[return_iff]:
+  "check_wf_problem_decs PD stg conT mp = Inr () \<longleftrightarrow> ast_problem_decs.wf_problem_decs' PD stg conT mp"
+proof -
+  interpret ast_problem_decs PD .
+  show ?thesis
+    unfolding check_wf_problem_decs_def wf_problem_decs'_def
+    by (auto simp: return_iff)
+qed
+
+
+definition "check_wf_domain D stg conT mp \<equiv> do {
+  let PD = ast_domain.problem_decs D;
+  check_wf_problem_decs PD stg conT mp <+? prepend_err_msg ''Declarations from problem not well-formed'';
+  check (distinct (map ast_action_schema.name (actions D))  ) (ERRS ''Duplicate action name'');
+  check_all_list (ast_problem_decs.wf_action_schema' PD stg mp) (actions D) ''Malformed action'' (shows o ast_action_schema.name)
+}"
 
 lemma check_wf_domain_return_iff[return_iff]:
-  "check_wf_domain D stg conT = Inr () \<longleftrightarrow> ast_domain.wf_domain' D stg conT"
+  "check_wf_domain D stg conT mp = Inr () \<longleftrightarrow> ast_domain.wf_domain' D stg conT mp"
 proof -
   interpret ast_domain D .
   show ?thesis
     unfolding check_wf_domain_def wf_domain'_def
     by (auto simp: return_iff)
 qed
-
-definition "prepend_err_msg msg e \<equiv> \<lambda>_::unit. shows msg o shows '': '' o e ()"
-
 definition "check_wf_problem P stg conT mp \<equiv> do {
   let D = ast_problem.domain P;
-  check_wf_domain D stg conT <+? prepend_err_msg ''Domain not well-formed'';
-  check (distinct (map fst (objects P) @ map fst (consts D))) (ERRS ''Duplicate object declaration'');
-  check ((\<forall>(n,T)\<in>set (objects P). ast_domain.wf_type D T)) (ERRS ''Malformed type'');
-  check (distinct (init P)) (ERRS ''Duplicate fact in initial state'');
-  check (\<forall>f\<in>set (init P). ast_problem.wf_fmla_atom2' P mp stg f) (ERRS ''Malformed formula in initial state'');
-  check (ast_problem.wf_goal' P mp stg (goal P)) (ERRS ''Malformed goal formula'');
-  check_all_list (ast_problem.wf_action_schema' P stg mp) (actions D) ''Malformed action'' (shows o ast_action_schema.name)
+  let PD = ast_domain.problem_decs D;
+  check_wf_domain D stg conT mp <+? prepend_err_msg ''Domain not well-formed'';
+  check (ast_problem_decs.wf_goal' PD mp stg (goal P)) (ERRS ''Malformed goal formula'')
 }"
 
 lemma check_wf_problem_return_iff[return_iff]:
@@ -782,9 +839,12 @@ proof -
 qed
 
 definition "check_plan P \<pi>s \<equiv> do {
-  let stg=ast_domain.STG (ast_problem.domain P);
-  let conT = ast_domain.mp_constT (ast_problem.domain P);
-  let mp = ast_problem.mp_objT P;
+  let D = ast_problem.domain P;
+  let PD = ast_domain.problem_decs D;
+  let DD = ast_problem_decs.domain_decs PD;
+  let stg=ast_domain_decs.STG DD;
+  let conT = ast_domain_decs.mp_constT DD;
+  let mp = ast_problem_decs.mp_objT PD;
   check_wf_problem P stg conT mp;
   ast_problem.valid_plan_fromE P stg mp 1 (ast_problem.I P) \<pi>s
 } <+? (\<lambda>e. String.implode (e () ''''))"
@@ -796,14 +856,15 @@ theorem check_plan_return_iff[return_iff]: "check_plan P \<pi>s = Inr ()
   \<longleftrightarrow> ast_problem.wf_problem P \<and> ast_problem.valid_plan P \<pi>s"
 proof -
   interpret ast_problem P .
+  thm return_iff
   show ?thesis
-    unfolding check_plan_def
+    unfolding check_plan_def 
     by (auto
-      simp: return_iff wf_world_model_def wf_fmla_atom_alt I_def wf_problem_def isOK_iff
+      simp: return_iff wf_world_model_def wf_fmla_atom_alt I_def wf_problem_def wf_domain_def wf_problem_decs_def wf_domain_decs_def isOK_iff 
       simp: wf_problem'_correct ast_problem.I_def ast_problem.valid_plan_def wm_basic_def
+      simp: Let_def
       )
 qed
-
 
 
 subsection \<open>Code Setup\<close>
@@ -817,24 +878,43 @@ text \<open>We first register the code equations for the functions of the checke
   optimized ones.
 \<close>
 
+lemmas wf_domain_decs_code =
+  ast_domain_decs.sig_def
+  ast_domain_decs.wf_types_def
+  ast_domain_decs.wf_type.simps
+  ast_domain_decs.wf_predicate_decl.simps
+  ast_domain_decs.STG_def
+  ast_domain_decs.is_of_type'_def
+  ast_domain_decs.wf_atom'.simps
+  ast_domain_decs.wf_pred_atom'.simps
+  ast_domain_decs.wf_fmla'.simps
+  ast_domain_decs.wf_fmla_atom1'.simps
+  ast_domain_decs.wf_effect'.simps
+  ast_domain_decs.wf_domain_decs'_def
+  ast_domain_decs.mp_constT_def
+  ast_domain_decs.subtype_edge.simps
+
+declare wf_domain_decs_code[code]
+
+lemmas wf_problem_decs_code =
+  ast_problem_decs.wf_fact'_def
+  ast_problem_decs.wf_fact_def
+  ast_problem_decs.wf_goal'.simps
+  ast_problem_decs.term_atom_vars_impl.simps
+  ast_problem_decs.fvars_impl.simps
+  ast_problem_decs.t_dom_impl_def
+  ast_problem_decs.all_impl_def
+  ast_problem_decs.exists_impl_def
+  ast_problem_decs.pddl_all_impl_def
+  ast_problem_decs.pddl_exists_impl_def
+  ast_problem_decs.wf_action_schema'.simps
+
+declare wf_problem_decs_code[code]
 
 lemmas wf_domain_code =
-  ast_domain.sig_def
-  ast_domain.wf_types_def
-  ast_domain.wf_type.simps
-  ast_domain.wf_predicate_decl.simps
-  ast_domain.STG_def
-  ast_domain.is_of_type'_def
-  ast_domain.wf_atom'.simps
-  ast_domain.wf_pred_atom'.simps
-  ast_domain.wf_fmla'.simps
-  ast_domain.wf_fmla_atom1'.simps
-  ast_domain.wf_effect'.simps
-  ast_domain.wf_domain'_def
   ast_domain.subst_term.simps
   ast_domain.tsubst.simps
   ast_domain.inst_pre.simps
-  ast_domain.mp_constT_def
 (*
   ast_domain.wf_domain_def
   ast_domain.wf_action_schema.simps
@@ -851,25 +931,13 @@ find_theorems name: "ast_problem*all"
 
 lemmas wf_problem_code =
   ast_problem.wf_problem'_def
-  ast_problem.wf_fact'_def
-  (*ast_problem.objT_def*)
   ast_problem.is_obj_of_type_alt
-  (*ast_problem.wf_object_def*)
-  ast_problem.wf_fact_def
   ast_problem.inst_goal.simps 
-  ast_problem.wf_goal'.simps
   ast_problem.wf_plan_action.simps
-  ast_problem.wf_action_schema'.simps
-  ast_problem.term_atom_vars_impl.simps
-  ast_problem.fvars_impl.simps
-  ast_problem.t_dom_impl_def
-  ast_problem.all_impl_def
-  ast_problem.exists_impl_def
-  ast_problem.pddl_all_impl_def
-  ast_problem.pddl_exists_impl_def
   (*ast_problem.wf_effect_inst_weak.simps*)
+  (*ast_problem.wf_object_def*)
+  (*ast_problem.objT_def*)
 
-  ast_domain.subtype_edge.simps
 declare wf_problem_code[code]
 
 thm wf_problem_code
@@ -888,9 +956,9 @@ lemmas check_code =
   ast_domain.apply_effect_eq_impl_eq
   (*ast_domain.apply_atomic.simps*)
   ast_problem.holds_def
-  ast_problem.mp_objT_def
+  ast_problem_decs.mp_objT_def
   ast_problem.is_obj_of_type_impl_def
-  ast_problem.wf_fmla_atom2'_def
+  ast_problem_decs.wf_fmla_atom2'_def
   valuation_def
 declare check_code[code]
 
@@ -934,9 +1002,9 @@ export_code
   check_plan
   nat_of_integer integer_of_nat Inl Inr
   predAtm Eq predicate Pred Either Var Obj PredDecl BigAnd BigOr
-  ast_problem.pddl_all_impl ast_problem.pddl_exists_impl
+  ast_problem_decs.pddl_all_impl ast_problem_decs.pddl_exists_impl
   formula.Not formula.Bot Effect ast_action_schema.Action_Schema
-  map_atom Domain Problem PAction
+  map_atom Domain Problem DomainDecls ProbDecls PAction
   term.CONST term.VAR (* I want to export the entire type, but I can only export the constructor because term is already an isabelle keyword. *)
   String.explode String.implode
   in SML
