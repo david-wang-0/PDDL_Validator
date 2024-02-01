@@ -3,20 +3,18 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (define (domain BlocksDom)
-  (:requirements :strips)
+  (:requirements :strips :negative-preconditions :equality :disjunctive-preconditions)
   (:predicates (on ?x ?y)
 	       (ontable ?x)
-	       (clear ?x)
 	       (handempty)
 	       (holding ?x)
-	       )
+         )
 
   (:action pick-up
 	     :parameters (?x)
-	     :precondition (and (clear ?x) (ontable ?x) (handempty))
+	     :precondition (and (forall (?z) (not (on ?z ?x))) (ontable ?x) (handempty))
 	     :effect
 	     (and (not (ontable ?x))
-		   (not (clear ?x))
 		   (not (handempty))
 		   (holding ?x)))
 
@@ -25,24 +23,23 @@
 	     :precondition (holding ?x)
 	     :effect
 	     (and (not (holding ?x))
-		   (clear ?x)
 		   (handempty)
 		   (ontable ?x)))
+
   (:action stack
 	     :parameters (?x ?y)
-	     :precondition (and (holding ?x) (clear ?y))
+	     :precondition (and (holding ?x) (forall (?z ?a) (or (not (= ?a ?y)) (not (on ?z ?a)))))
 	     :effect
 	     (and (not (holding ?x))
-		   (not (clear ?y))
-		   (clear ?x)
 		   (handempty)
 		   (on ?x ?y)))
+
   (:action unstack
 	     :parameters (?x ?y)
-	     :precondition (and (on ?x ?y) (clear ?x) (handempty))
+	     :precondition (and (on ?x ?y) (not (exists (?z) (on ?z ?x))) (handempty))
 	     :effect
 	     (and (holding ?x)
-		   (clear ?y)
-		   (not (clear ?x))
 		   (not (handempty))
-		   (not (on ?x ?y)))))
+		   (not (on ?x ?y))))
+)
+
