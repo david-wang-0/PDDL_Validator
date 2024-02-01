@@ -2,6 +2,9 @@ mlton -mlb-path-var 'ISABELLE_FILES /usr/share/afp-2024-01-23/thy/AI_Planning_La
 
 mlton -mlb-path-var 'ISABELLE_FILES /home/david/University/AI-planning-semantics-with-quantifiers' -cc-opt -O3 -cc-opt -g0 pddl_validate_plan.mlb
 
-./validate_pddl_plan.sh ../examples/truck-dom.pddl ../examples/truck-prob.pddl ../examples/truck-plan
+./validate_pddl_plan.sh ../examples/ged3-itt_no_invariants.pddl ../examples/d-1-2.pddl ../examples/plan
 
 ./validate_pddl_plan.sh ../examples/blocks-dom.pddl ../examples/blocks-prob.pddl ../examples/blocks-plan
+
+./validate_pddl_plan.sh ../examples/truck-dom.pddl ../examples/truck-prob.pddl ../examples/truck-plan
+

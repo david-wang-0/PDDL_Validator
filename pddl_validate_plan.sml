@@ -181,8 +181,7 @@ open PDDL
                         (dom_decs: ast_domain_decs)
                       = PDDL_Checker_Exported.ProbDecls(
                           dom_decs, 
-                          objDefToIsabelle objs,
-                          pddlInitToIsabelle init (List.concat (map #1 objs)))
+                          objDefToIsabelle objs)
   
   fun pddlDomAndProbDecsToIsaDom 
                         (reqs:PDDL_REQUIRE_DEF,
@@ -204,7 +203,12 @@ open PDDL
                                 (goal_form:PDDL_GOAL,
                                    metric))))
                           (dom: ast_domain)
-                          = case dom of PDDL_Checker_Exported.Domain (prob_decs, actions) => PDDL_Checker_Exported.Problem(dom, pddlGoalToIsabelle prob_decs goal_form)
+                          = case dom of 
+                            PDDL_Checker_Exported.Domain (prob_decs, actions) => 
+                              PDDL_Checker_Exported.Problem(
+                                dom,
+                                pddlInitToIsabelle init (List.concat (map #1 objs)), 
+                                pddlGoalToIsabelle prob_decs goal_form)
 
 
   fun planActionToIsabelle (act_name, args) = PAction(stringToIsabelle act_name, map pddlObjConsToIsabelle args)
