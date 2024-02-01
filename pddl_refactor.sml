@@ -180,6 +180,7 @@ struct
   (*TODO: The n is disgusting, there must be a way to remove it.*)
 
   fun GD x n = (literal x ||
+                in_paren(pddl_reserved "not" >> (if n >= 0 then GD x (n - 1) else literal x)) wth Prop_not  || (* not sure if this is legal *)
                 in_paren(pddl_reserved "and" >> (if n >= 0 then repeat1  (GD x (n - 1)) else repeat1 (literal x))) wth (fn gd => Prop_and gd) ||
                 in_paren(pddl_reserved "or" >> (if n >= 0 then repeat1  (GD x (n - 1)) else repeat1 (literal x))) wth (fn gd => Prop_or gd) ||
                 in_paren(pddl_reserved "forall" >> (in_paren(typed_list pddl_var) && (if n >= 0 then GD x (n - 1) else literal x))) wth (fn (ps, gd) => Prop_all (ps, gd)) ||
