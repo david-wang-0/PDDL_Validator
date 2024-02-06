@@ -40,6 +40,17 @@ definition "dfs_reachable D w \<equiv>
     ) ({},w,False)
   in brk"
 
+definition "dfs_all w \<equiv>
+  let (V,w) = while (\<lambda>(V,w). w\<noteq>[]) (\<lambda>(V,w).
+    case w of v#w \<Rightarrow>
+    if v\<in>V then (V,w)
+    else
+      let V = insert v V in
+      let w = succ v @ w in
+      (V,w)
+    ) ({},w)
+  in V"
+
 
 context
   fixes w\<^sub>0 :: "'a list"
@@ -54,6 +65,11 @@ definition "dfs_reachable_invar D V W brk \<longleftrightarrow>
   \<and> E``V \<subseteq> W \<union> V
   \<and> Collect D \<inter> V = {}
   \<and> (brk \<longrightarrow> Collect D \<inter> E\<^sup>* `` W\<^sub>0 \<noteq> {})"
+
+definition "dfs_all_invar V W \<longleftrightarrow>
+    W\<^sub>0 \<subseteq> W \<union> V
+  \<and> W \<union> V \<subseteq> E\<^sup>* `` W\<^sub>0
+  \<and> E``V \<subseteq> W \<union> V"
 
 lemma card_decreases: "
    \<lbrakk>finite V; y \<notin> V; dfs_reachable_invar D V (Set.insert y W) brk \<rbrakk>
@@ -79,6 +95,26 @@ lemma dfs_reachable_correct: "dfs_reachable D w\<^sub>0 \<longleftrightarrow> Co
   subgoal by (fastforce simp: dfs_reachable_invar_def dest: Image_closed_trancl)
   subgoal by blast
   subgoal by (auto simp: neq_Nil_conv card_decreases)
+  done
+
+lemma card_decreases': "\<lbrakk>finite V; y \<notin> V; dfs_all_invar V (Set.insert y W) \<rbrakk>
+   \<Longrightarrow> card (E\<^sup>* `` W\<^sub>0 - Set.insert y V) < card (E\<^sup>* `` W\<^sub>0 - V)"
+  apply (rule psubset_card_mono)
+  apply (auto simp: dfs_all_invar_def)
+  done
+
+lemma dfs_all_correct: "dfs_all w\<^sub>0 = E\<^sup>* `` set w\<^sub>0"
+  unfolding dfs_all_def
+  thm while_rule
+  apply (rule while_rule[where
+    P="\<lambda>(V, w). dfs_all_invar V (set w) \<and> finite V"
+    and r="measure (\<lambda>V. card (E\<^sup>* `` (set w\<^sub>0) - V)) <*lex*> measure length"
+    ])
+  subgoal by (auto simp: dfs_all_invar_def)
+  subgoal by (auto simp: neq_Nil_conv succ_as_E[of succ] split: if_splits) (auto simp: dfs_all_invar_def Image_iff intro: rtrancl.rtrancl_into_rtrancl)
+  subgoal by (fastforce simp: dfs_all_invar_def dest: Image_closed_trancl)
+  subgoal by blast
+  subgoal by (auto simp: neq_Nil_conv card_decreases')
   done
 
 end
@@ -119,7 +155,15 @@ lemma dfs_reachable_tab_succ_correct: "dfs_reachable (tab_succ l) D vs\<^sub>0 \
   apply (subst dfs_reachable_correct)
   by (simp_all add: tab_succ_correct finite_imp_finite_dfs_reachable)
 
+lemma dfs_all_tab_succ_correct: "dfs_all (tab_succ l) vs\<^sub>0 = (set l)\<^sup>*``set vs\<^sub>0"
+  apply (subst dfs_all_correct)
+  by (simp_all add: tab_succ_correct finite_imp_finite_dfs_reachable)
 
+find_theorems name: "rel*inv"
+
+term "(A\<inverse>)"
+
+term "A `` B"
 
 subsection \<open>Implementation Refinements\<close>
 
@@ -341,7 +385,12 @@ derive ccompare variable
 derive (rbt) set_impl variable
 
 context ast_problem_decs begin
-text \<open>Filter those constants in the object and domain that belong to the type.\<close>
+
+find_theorems name: "pair*inv"
+
+  (* "of_type_impl G oT T \<equiv> (\<forall>pt\<in>set (primitives oT). dfs_reachable G ((=) pt) (primitives T))" *)
+  
+  (* definition "t_dom_impl G T \<equiv> \<Inter> (dfs_all G (primitives T))" *)
 
   fun term_atom_vars_impl::"term atom \<Rightarrow> variable set" where
     "term_atom_vars_impl (predAtm p vs) = (foldr (\<lambda>v l. term_vars v \<union> l) vs {})"
@@ -409,11 +458,23 @@ text \<open>Filter those constants in the object and domain that belong to the t
     using t_dom_impl_correct' fvars_impl_correct'
     by presburger
 
+  text \<open>Functions to apply our quantifiers to PDDL quantifiers with argument lists\<close>
   definition pddl_all_impl::"(variable \<times> type) list \<Rightarrow> schematic_formula \<Rightarrow> schematic_formula" where
     "pddl_all_impl ps \<phi> = foldr (\<lambda>(v, t) f. all_impl v t f) ps \<phi>"
 
   definition pddl_exists_impl::"(variable \<times> type) list \<Rightarrow> schematic_formula \<Rightarrow> schematic_formula" where
     "pddl_exists_impl ps \<phi> = foldr (\<lambda>(v, t) f. exists_impl v t f) ps \<phi>"
+
+  lemma pddl_all_impl_correct': "pddl_all_impl ps \<phi> = pddl_all ps \<phi>"
+    unfolding pddl_all_def pddl_all_impl_def
+    using all_impl_correct'
+    by presburger
+
+  lemma pddl_exists_impl_correct': "pddl_exists_impl ps \<phi> = pddl_exists ps \<phi>"
+      unfolding pddl_exists_def pddl_exists_impl_def
+      using exists_impl_correct'
+      by presburger
+
 end
 
 

@@ -1025,12 +1025,70 @@ begin
   definition exists::"variable \<Rightarrow> type \<Rightarrow> schematic_formula \<Rightarrow> schematic_formula" ("\<^bold>\<exists>_ - _._") where
     "exists v t \<phi> \<equiv> (if (v \<notin> fvars \<phi> \<and> (t_dom t \<noteq> [])) then \<phi> else \<^bold>\<Or>(map (\<lambda>c. (map_formula (term_atom_subst v c)) \<phi>) (t_dom t)))"
 
+
+  
   text \<open>PDDL quantifiers act on typed lists of variables\<close>
+  text \<open>This function removes duplicate parameters, keeping the last occurrence\<close>
+  fun unique_vars'::"(variable \<times> type) list \<Rightarrow> (variable \<times> type) list \<times> variable set" where
+    "unique_vars' [] = ([], {})"
+  | "unique_vars' ((v, t)#ps) = (let (ps', s) = unique_vars' ps in (if v \<in> s then (ps', s) else (((v, t)#ps'), insert v s)))"
+
+  abbreviation "unique_vars \<equiv> fst o unique_vars'"
+
   definition pddl_all::"(variable \<times> type) list \<Rightarrow> schematic_formula \<Rightarrow> schematic_formula" where
-    "pddl_all ps \<phi> = foldr (\<lambda>(v, t) \<phi>. all v t \<phi>) ps \<phi>"
+    "pddl_all ps \<phi> = foldr (\<lambda>(v, t) \<phi>. (\<^bold>\<forall> v - t. \<phi>)) (unique_vars ps) \<phi>"
 
   definition pddl_exists::"(variable \<times> type) list \<Rightarrow> schematic_formula \<Rightarrow> schematic_formula" where
-    "pddl_exists ps \<phi> = foldr (\<lambda>(v, t) \<phi>. exists v t \<phi>) ps \<phi>"
+    "pddl_exists ps \<phi> = foldr (\<lambda>(v, t) \<phi>. (\<^bold>\<exists> v - t. \<phi>)) (unique_vars ps) \<phi>"
+
+
+  lemma v_in_unique_vars': "(v, t) \<in> set ps \<Longrightarrow> v \<in> snd (unique_vars' ps)"
+  proof (induction ps)
+    case (Cons p ps)
+    obtain v' t' where
+      v': "p = (v', t')"
+      by fastforce
+    show ?case 
+    proof cases
+      assume "(v, t) \<in> set ps"
+      hence "v \<in> snd (unique_vars' ps)" using Cons.IH by blast
+      show ?thesis
+      proof (cases "v' \<in> snd (unique_vars' ps)")
+        case True
+        with v'
+        have "unique_vars' (p # ps) = unique_vars' ps" by (auto simp: Let_def split: prod.split)
+        with \<open>v \<in> snd (unique_vars' ps)\<close>
+        show ?thesis by simp
+      next
+        case False
+        with v'
+        have "snd (unique_vars' (p # ps)) = insert v' (snd (unique_vars' ps))" by (auto simp: Let_def split: prod.split)
+        with \<open>v \<in> snd (unique_vars' ps)\<close>
+        show ?thesis by blast
+      qed
+    next
+      assume "(v, t) \<notin> set ps"
+      with v' Cons.prems
+      show ?thesis by (auto simp: Let_def split: prod.split)
+    qed
+  qed simp
+  
+  lemma unique_vars_unique: "(v, t1) \<in> set ps \<Longrightarrow> unique_vars ((v, t2)#ps) = unique_vars ps"
+  proof -
+    assume "(v, t1) \<in> set ps"
+    hence "v \<in> snd (unique_vars' ps)" using v_in_unique_vars' by blast
+    thus "unique_vars ((v, t2)#ps) = unique_vars ps" by (auto simp: Let_def split: prod.split)
+  qed
+  
+  lemma pddl_all_bind_order: "(v, t1) \<in> set ps \<Longrightarrow> pddl_all ps \<phi> = pddl_all ((v, t2)#ps) \<phi>"
+    unfolding pddl_all_def
+    using unique_vars_unique
+    by simp
+   
+  lemma pddl_exists_bind_order: "(v, t1) \<in> set ps \<Longrightarrow> pddl_exists ps \<phi> = pddl_exists ((v, t2)#ps) \<phi>"
+    unfolding pddl_exists_def
+    using unique_vars_unique
+    by simp
 end
 
 locale wf_problem_decs = ast_problem_decs +
@@ -1038,39 +1096,35 @@ locale wf_problem_decs = ast_problem_decs +
 begin
 
   text \<open>The correctness of t_dom\<close>
-  lemma t_dom_corr: "objT v = Some t \<Longrightarrow> of_type t T \<longleftrightarrow> v \<in> set (t_dom T)"
+  lemma t_dom_corr: "objT obj = Some t \<Longrightarrow> of_type t T \<longleftrightarrow> obj \<in> set (t_dom T)"
   proof -                                   
-    assume a: "objT v = Some t"
-    hence 0: "map_of (consts DD @ objects PD) v = Some t"
+    assume "objT obj = Some t"
+    hence "map_of (consts DD @ objects PD) obj = Some t"
       using objT_alt by argo
-
+    moreover
     from wf_problem_decs
-    have 1: "distinct (map fst (objects PD @ consts DD))"
-      unfolding wf_problem_decs_def
-      by simp
-    
-    have 2: "t_dom T = map fst (filter (\<lambda>(c, t). of_type t T) (consts DD @ objects PD))"
+    have "distinct (map fst (objects PD @ consts DD))"
+      unfolding wf_problem_decs_def by simp
+    moreover
+    have "t_dom T = map fst (filter (\<lambda>(c, t). of_type t T) (consts DD @ objects PD))"
       unfolding t_dom_def by simp 
-    
-    show "of_type t T \<longleftrightarrow> v \<in> set (t_dom T)"
-      apply (rule iffI)
-      using 0 1 2
-      by fastforce+
+    ultimately
+    show "of_type t T \<longleftrightarrow> obj \<in> set (t_dom T)" by fastforce+
   qed
     
 
   text \<open>The circumstances under which using a quantifier will result in a well-formed formula\<close>
-  lemma c_ty: "\<forall>c \<in> set (t_dom ty). \<exists>ty'. objT c = Some ty' \<and> of_type ty' ty"
+  lemma c_ty: "\<forall>obj \<in> set (t_dom ty). \<exists>ty'. objT obj = Some ty' \<and> of_type ty' ty"
   proof 
-    fix c
-    assume "c \<in> set (t_dom ty)"
-    hence "c \<in> set (map fst (filter (\<lambda>(c, t) \<Rightarrow> of_type t ty) (consts DD @ objects PD)))"
+    fix obj
+    assume "obj \<in> set (t_dom ty)"
+    hence "obj \<in> set (map fst (filter (\<lambda>(c, t) \<Rightarrow> of_type t ty) (consts DD @ objects PD)))"
       unfolding t_dom_def by blast
-    hence "\<exists>t. (c,t) \<in> set (consts DD @ objects PD) \<and> of_type t ty"
+    hence "\<exists>t. (obj,t) \<in> set (consts DD @ objects PD) \<and> of_type t ty"
       unfolding t_dom_def
       by auto
     then obtain t where
-      t: "(c,t) \<in> set (consts DD @ objects PD)" 
+      t: "(obj,t) \<in> set (consts DD @ objects PD)" 
       "of_type t ty"
       by auto
     from wf_problem_decs
@@ -1078,11 +1132,11 @@ begin
       unfolding wf_problem_decs_def
       by auto
     with t
-    have "map_of (consts DD @ objects PD) c = Some t"
+    have "map_of (consts DD @ objects PD) obj = Some t"
       using map_of_is_SomeI
       by metis
     with t
-    show "\<exists>ty'. objT c = Some ty' \<and> of_type ty' ty"
+    show "\<exists>ty'. objT obj = Some ty' \<and> of_type ty' ty"
       using objT_alt
       by auto
   qed
