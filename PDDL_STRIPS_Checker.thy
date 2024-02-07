@@ -460,10 +460,10 @@ find_theorems name: "pair*inv"
 
   text \<open>Functions to apply our quantifiers to PDDL quantifiers with argument lists\<close>
   definition pddl_all_impl::"(variable \<times> type) list \<Rightarrow> schematic_formula \<Rightarrow> schematic_formula" where
-    "pddl_all_impl ps \<phi> = foldr (\<lambda>(v, t) f. all_impl v t f) ps \<phi>"
+    "pddl_all_impl ps \<phi> = foldr (\<lambda>(v, t) f. all_impl v t f) (unique_vars ps) \<phi>"
 
   definition pddl_exists_impl::"(variable \<times> type) list \<Rightarrow> schematic_formula \<Rightarrow> schematic_formula" where
-    "pddl_exists_impl ps \<phi> = foldr (\<lambda>(v, t) f. exists_impl v t f) ps \<phi>"
+    "pddl_exists_impl ps \<phi> = foldr (\<lambda>(v, t) f. exists_impl v t f) (unique_vars ps) \<phi>"
 
   lemma pddl_all_impl_correct': "pddl_all_impl ps \<phi> = pddl_all ps \<phi>"
     unfolding pddl_all_def pddl_all_impl_def
@@ -964,6 +964,7 @@ lemmas wf_problem_decs_code =
   ast_problem_decs.term_atom_vars_impl.simps
   ast_problem_decs.fvars_impl.simps
   ast_problem_decs.t_dom_impl_def
+  ast_problem_decs.unique_vars'.simps
   ast_problem_decs.all_impl_def
   ast_problem_decs.exists_impl_def
   ast_problem_decs.pddl_all_impl_def

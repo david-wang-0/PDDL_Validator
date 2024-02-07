@@ -3126,8 +3126,21 @@ fun exists_impl pd v t phi =
     else bigOr (map (fn c => map_formula (map_atom (term_subst v c)) phi)
                  (t_dom_impl pd t)));
 
-fun pddl_all_impl pd ps phi = foldr (fn (a, b) => all_impl pd a b) ps phi;
+fun unique_vars ((v, t) :: ps) =
+  let
+    val (psa, s) = unique_vars ps;
+  in
+    (if member (ceq_variable, ccompare_variable) v s then (psa, s)
+      else ((v, t) :: psa, insert (ceq_variable, ccompare_variable) v s))
+  end
+  | unique_vars [] =
+    ([], set_empty (ceq_variable, ccompare_variable)
+           (of_phantom set_impl_variable));
 
-fun pddl_exists_impl pd ps phi = foldr (fn (a, b) => exists_impl pd a b) ps phi;
+fun pddl_all_impl pd ps phi =
+  foldr (fn (a, b) => all_impl pd a b) ((fst o unique_vars) ps) phi;
+
+fun pddl_exists_impl pd ps phi =
+  foldr (fn (a, b) => exists_impl pd a b) ((fst o unique_vars) ps) phi;
 
 end; (*struct PDDL_Checker_Exported*)

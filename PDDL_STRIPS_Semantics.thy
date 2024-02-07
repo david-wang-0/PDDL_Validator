@@ -1025,7 +1025,6 @@ begin
   definition exists::"variable \<Rightarrow> type \<Rightarrow> schematic_formula \<Rightarrow> schematic_formula" ("\<^bold>\<exists>_ - _._") where
     "exists v t \<phi> \<equiv> (if (v \<notin> fvars \<phi> \<and> (t_dom t \<noteq> [])) then \<phi> else \<^bold>\<Or>(map (\<lambda>c. (map_formula (term_atom_subst v c)) \<phi>) (t_dom t)))"
 
-
   
   text \<open>PDDL quantifiers act on typed lists of variables\<close>
   text \<open>This function removes duplicate parameters, keeping the last occurrence\<close>
