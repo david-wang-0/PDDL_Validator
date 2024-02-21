@@ -57,41 +57,78 @@ type_synonym name = string
 
 datatype predicate = Pred (name: name)
 
+datatype func = Func (name: name)
+
+datatype number = Num rat
+
+text \<open>Variables are identified by their names.\<close>
+datatype variable = varname: Var name
+
+text \<open>Objects and constants are identified by their names\<close>
+datatype object = name: Obj name
+
+text \<open>Schemas are used for action schemas and contain variables to be initialised\<close>
+datatype schema = Var variable | Obj object
+
+text \<open>A term represents a member of the domain, but can contain function application.\<close>
+datatype (ent: 'ent) "term" = 
+  Fun func (args: "'ent term list") 
+  | Ent 'ent
+
+datatype (ent: 'ent) num_fluent = 
+  NFun func (args: "'ent term list")
+  | Num number
+  | Add "'ent num_fluent" "'ent num_fluent"
+  | Sub "'ent num_fluent" "'ent num_fluent"
+  | Mult "'ent num_fluent" "'ent num_fluent"
+  | Div "'ent num_fluent" "'ent num_fluent"
+
+datatype (ent: 'ent) num_comp =
+  Eq "'ent num_fluent" "'ent num_fluent"
+  | Le "'ent num_fluent" "'ent num_fluent"
+  | Lt "'ent num_fluent" "'ent num_fluent"
+
+datatype (ent: 'ent) pred = predAtm (predicate: predicate) (arguments: "'ent list")
+  | Eq (lhs: 'ent) (rhs: 'ent)
+
+
+text \<open>An atom is either a predicate with arguments, or an equality statement.\<close>
+
+datatype (ent: 'ent) atom = 
+  PredAtom "'ent pred"
+  | NumComp "'ent num_comp"
+
+
+
 text \<open>Some of the AST entities are defined over a polymorphic \<open>'val\<close> type,
   which gets either instantiated by variables (for domains)
   or objects (for problems).
 \<close>
 
-text \<open>An atom is either a predicate with arguments, or an equality statement.\<close>
-datatype (ent: 'ent) atom = predAtm (predicate: predicate) (arguments: "'ent list")
-                     | Eq (lhs: 'ent) (rhs: 'ent)
 
 text \<open>A type is a list of primitive type names.
   To model a primitive type, we use a singleton list.\<close>
 datatype type = Either (primitives: "name list")
 
+datatype upd_op = Assign
+  | ScaleUp
+  | ScaleDown
+  | Increase
+  | Decrease
+
 text \<open>An effect contains a list of values to be added, and a list of values
   to be removed.\<close>
 datatype 'ent ast_effect = 
-  Effect  (adds: "(('ent atom) formula) list") 
-          (dels: "(('ent atom) formula) list")
+  Effect  (adds: "('ent pred) list") 
+          (dels: "('ent pred) list")
+          (tf_upds: "(func \<times> 'ent list \<times> 'ent) list")
+          (nf_upds: "(func \<times> upd_op \<times> 'ent list \<times> 'ent num_fluent) list")
 
-text \<open>Variables are identified by their names.\<close>
-datatype variable = varname: Var name
+type_synonym schematic_formula = "schema term atom formula"
+type_synonym schematic_effect = "schema term ast_effect"
 
-
-text \<open>Objects and constants are identified by their names\<close>
-datatype object = name: Obj name
-
-datatype "term" = VAR variable | CONST object
-hide_const (open) VAR CONST
-
-
-type_synonym schematic_formula = "(term atom) formula"
-type_synonym schematic_effect = "term ast_effect"
-
-type_synonym ground_formula = "(object atom) formula"
-type_synonym ground_effect = "object ast_effect"
+type_synonym ground_formula = "object term atom formula"
+type_synonym ground_effect = "object term ast_effect"
 
 subsubsection \<open>Domains\<close>
 
@@ -101,13 +138,33 @@ datatype ast_action_schema = Action_Schema
   (name: name)
   (parameters: "(variable \<times> type) list")
   (precondition: "schematic_formula")
-  (effect: "schematic_effect")
+  (effects: "(schematic_formula \<times> schematic_effect) list")
 
+
+datatype world_model = World_Model 
+  (preds: "object pred set")
+  (tf_int: "func \<rightharpoonup> (object list \<rightharpoonup> object)")
+  (nf_int: "func \<rightharpoonup> (object list \<rightharpoonup> number)")
+
+thm surjective_pairing
+
+term "{1}"
+
+find_theorems name: "set*remo"
 
 text \<open>A predicate declaration contains the predicate's name and its
   argument types.\<close>
 datatype predicate_decl = PredDecl
   (pred: predicate)
+  (argTs: "type list")
+
+datatype object_fluent_decl = ObjFluentDecl
+  (func: func)
+  (argTs: "type list")
+  (rT: type)
+
+datatype num_fluent_decl = NumFluentDecl
+  (func: func)
   (argTs: "type list")
 
 text \<open>A domain contains the declarations of primitive types, predicates,
@@ -116,6 +173,8 @@ text \<open>A domain contains the declarations of primitive types, predicates,
 datatype ast_domain_decs = DomainDecls
   (types: "(name \<times> name) list") \<comment> \<open> \<open>(type, supertype)\<close> declarations. \<close>
   (predicates: "predicate_decl list")
+  (object_fluents: "object_fluent_decl list")
+  (num_fluent: "num_fluent_decl list")
   ("consts": "(object \<times> type) list")
 
 
@@ -140,7 +199,7 @@ text \<open>A problem consists of a domain, a list of objects,
   a description of the initial state, and a description of the goal state.\<close>
 datatype ast_problem = Problem
   (domain: ast_domain)
-  (init: "ground_formula list")
+  (init: "world_model")
   (goal: "schematic_formula")
 
 subsubsection \<open>Plans\<close>
@@ -497,7 +556,7 @@ begin
     as we will explicitly ensure that all types used in the problem are
     declared.
     \<close>
-
+  
   fun subtype_edge where
     "subtype_edge (ty,superty) = (superty,ty)"
 
@@ -538,7 +597,6 @@ begin
       signature, equalities are well-formed if the arguments are valid
       objects (have a type).
 
-      TOdecsO: We could check that types may actually overlap
     \<close>
     fun wf_atom :: "'ent atom \<Rightarrow> bool" where
       "wf_atom (predAtm p vs) \<longleftrightarrow> wf_pred_atom (p,vs)"
