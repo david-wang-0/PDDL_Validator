@@ -59,36 +59,38 @@ datatype predicate = Pred (name: name)
 
 datatype func = Func (name: name)
 
-datatype number = Num rat
 
 text \<open>Variables are identified by their names.\<close>
 datatype variable = varname: Var name
 
-text \<open>Objects and constants are identified by their names\<close>
+text \<open>Objects and constants are identified by their names. term \<open>Undef\<close> is mainly
+      used to represent updates to object fluents which unassign them. When it occurs
+      in an argument list, the term is invalid.\<close>
 datatype object = name: Obj name
 
 text \<open>Schemas are used for action schemas and contain variables to be initialised\<close>
-datatype schema = Var variable | Obj object
+datatype symbol = Var variable | Const object
 
 text \<open>A term represents a member of the domain, but can contain function application.\<close>
-datatype (ent: 'ent) "term" = 
-  Fun func (args: "'ent term list") 
-  | Ent 'ent
+datatype (sym: 'sym) "term" = 
+  Fun func (args: "'sym term list") 
+  | Ent 'sym
 
 datatype (ent: 'ent) num_fluent = 
-  NFun func (args: "'ent term list")
-  | Num number
+  NFun func (args: "'ent list")
+  | Num rat
   | Add "'ent num_fluent" "'ent num_fluent"
   | Sub "'ent num_fluent" "'ent num_fluent"
   | Mult "'ent num_fluent" "'ent num_fluent"
   | Div "'ent num_fluent" "'ent num_fluent"
 
 datatype (ent: 'ent) num_comp =
-  Eq "'ent num_fluent" "'ent num_fluent"
+  Num_Eq "'ent num_fluent" "'ent num_fluent"
   | Le "'ent num_fluent" "'ent num_fluent"
   | Lt "'ent num_fluent" "'ent num_fluent"
 
-datatype (ent: 'ent) pred = predAtm (predicate: predicate) (arguments: "'ent list")
+datatype (ent: 'ent) pred = 
+    Pred (predicate: predicate) (arguments: "'ent list")
   | Eq (lhs: 'ent) (rhs: 'ent)
 
 
@@ -121,14 +123,21 @@ text \<open>An effect contains a list of values to be added, and a list of value
 datatype 'ent ast_effect = 
   Effect  (adds: "('ent pred) list") 
           (dels: "('ent pred) list")
-          (tf_upds: "(func \<times> 'ent list \<times> 'ent) list")
-          (nf_upds: "(func \<times> upd_op \<times> 'ent list \<times> 'ent num_fluent) list")
+          (tf_upds: "(func \<times> 'ent option list \<times> 'ent option) list")
+          (nf_upds: "(func \<times> upd_op \<times> 'ent option list \<times> 'ent num_fluent) list")
 
-type_synonym schematic_formula = "schema term atom formula"
-type_synonym schematic_effect = "schema term ast_effect"
+type_synonym schematic_formula = "symbol term atom formula"
+type_synonym schematic_effect = "symbol term ast_effect"
 
 type_synonym ground_formula = "object term atom formula"
 type_synonym ground_effect = "object term ast_effect"
+
+datatype fully_instantiated_effect =
+  Eff (adds: "(object pred) list")
+      (dels: "(object pred) list")
+      (tf_upds: "(func \<times> object list \<times> object) list")
+      (nf_upds: "(func \<times> object list \<times> rat option) list")
+
 
 subsubsection \<open>Domains\<close>
 
@@ -143,14 +152,9 @@ datatype ast_action_schema = Action_Schema
 
 datatype world_model = World_Model 
   (preds: "object pred set")
-  (tf_int: "func \<rightharpoonup> (object list \<rightharpoonup> object)")
-  (nf_int: "func \<rightharpoonup> (object list \<rightharpoonup> number)")
+  (tf_int: "func \<rightharpoonup> object list \<rightharpoonup> object")
+  (nf_int: "func \<rightharpoonup> object list \<rightharpoonup> rat")
 
-thm surjective_pairing
-
-term "{1}"
-
-find_theorems name: "set*remo"
 
 text \<open>A predicate declaration contains the predicate's name and its
   argument types.\<close>
@@ -174,7 +178,7 @@ datatype ast_domain_decs = DomainDecls
   (types: "(name \<times> name) list") \<comment> \<open> \<open>(type, supertype)\<close> declarations. \<close>
   (predicates: "predicate_decl list")
   (object_fluents: "object_fluent_decl list")
-  (num_fluent: "num_fluent_decl list")
+  (num_fluents: "num_fluent_decl list")
   ("consts": "(object \<times> type) list")
 
 
@@ -216,302 +220,173 @@ text \<open>The following datatype represents an action scheme that has been
 \<close>
 datatype ground_action = Ground_Action
   (precondition: "ground_formula")
-  (effect: "ground_effect")
+  (effects: "(ground_formula \<times> ground_effect) list")
 
 (* Syntax helpers for schematic formulae *)
 
-fun term_vars where
-  "term_vars (term.VAR x) = {x}" 
-| "term_vars (term.CONST c) = {}"
+fun sym_vars where
+  "sym_vars (Var x) = {x}" 
+| "sym_vars (Const c) = {}"
 
-fun term_objs where
-  "term_objs (term.VAR x) = {}"
-| "term_objs (term.CONST obj) = {obj}"
+fun sym_objs where
+  "sym_objs (Var x) = {}"
+| "sym_objs (Const obj) = {obj}"
 
-fun term_subst::"variable \<Rightarrow> object \<Rightarrow> term \<Rightarrow> term" where
-  "term_subst v obj (term.VAR x) = (if (x = v) then (term.CONST obj) else term.VAR x)" 
-| "term_subst _ _ (term.CONST obj) = term.CONST obj"
+fun sym_subst::"variable \<Rightarrow> object \<Rightarrow> symbol \<Rightarrow> symbol" where
+  "sym_subst v obj (Var x) = (if (x = v) then (Const obj) else Var x)" 
+| "sym_subst _ _ (Const obj) = Const obj"
 
-abbreviation term_atom_subst where
-"term_atom_subst v obj \<equiv> map_atom (term_subst v obj)"
+abbreviation sym_term_vars where
+  "sym_term_vars \<equiv> \<Union> o sym o (map_term sym_vars)"
 
-definition term_atom_vars where
-"term_atom_vars \<equiv> \<Union> o ent o (map_atom term_vars)"
+abbreviation sym_term_objs where
+  "sym_term_objs \<equiv> \<Union> o sym o (map_term sym_objs)"
 
-definition term_atom_objs where
-"term_atom_objs \<equiv> \<Union> o ent o (map_atom term_objs)"
-
-
-lemma tav_alt: "term_atom_vars x = \<Union> (term_vars ` ent x)" 
-  unfolding term_atom_vars_def by (simp add: atom.set_map) 
-
-lemma tao_alt: "term_atom_objs x = \<Union> (term_objs ` ent x)" 
-  unfolding term_atom_objs_def by (simp add: atom.set_map) 
-
-lemma tav_empty: "term_atom_vars x = {} \<longleftrightarrow> (\<forall>e \<in> ent x. term_vars e = {})"
-  using tav_alt by auto
-
-lemma tavm_alt: "term_atom_vars (map_atom f x) = \<Union> ((term_vars o f) ` ent x)"
-  unfolding term_atom_vars_def by (simp add: atom.map_comp atom.set_map)
-
-lemma taom_alt: "term_atom_objs (map_atom f x) = \<Union> ((term_objs o f) ` ent x)"
-  unfolding term_atom_objs_def by (simp add: atom.map_comp atom.set_map)
-
-lemma subst_subst_all: "v \<notin> term_atom_vars (term_atom_subst v obj a)"
-proof -
-  have "term_atom_vars (term_atom_subst v obj a) = (\<Union> o ent o (map_atom term_vars)) (map_atom (term_subst v obj) a)" unfolding term_atom_vars_def by simp
-  also have "...  = \<Union> (ent (map_atom term_vars (map_atom (term_subst v obj) a)))" by simp
-  also have "... = \<Union> (ent (map_atom (term_vars o (term_subst v obj)) a))" by (simp add: atom.map_comp)
-  finally 
-  have "term_atom_vars (term_atom_subst v obj a) = \<Union> ((term_vars o (term_subst v obj)) ` ent a)" by (simp add: atom.set_map)
-  moreover 
-  have "\<And>t. v \<notin> (term_vars (term_subst v obj t))" 
-    subgoal for t
-      by (cases t) auto
-    done
-  ultimately 
-  show "v \<notin> term_atom_vars (term_atom_subst v obj a)" by auto
-qed
-
-lemma term_subst_replaces: "v \<in> term_vars t \<Longrightarrow> c \<in> term_objs (term_subst v c t)"
-  by (cases t) auto
-
-lemma subst_replaces: "v \<in> term_atom_vars a \<Longrightarrow> c \<in> term_atom_objs (term_atom_subst v c a)"
-proof -
-  assume "v \<in> term_atom_vars a"
-  hence "v \<in> \<Union> (term_vars ` ent a)" using tav_alt by blast
-  hence "c \<in> \<Union> ((term_objs o (term_subst v c)) ` ent a)" using term_subst_replaces by auto
-  thus "c \<in> term_atom_objs (term_atom_subst v c a)" using taom_alt tao_alt by blast
-qed
-
-lemma term_subst_idem: "v \<notin> term_vars t \<Longrightarrow> term_subst v c t = t"
-  by (cases t) auto
-
-lemma subst_idem: "v \<notin> term_atom_vars a \<Longrightarrow> term_atom_subst v c a = a"
-proof -
-  assume "v \<notin> term_atom_vars a"
-  hence "v \<notin> \<Union> (term_vars ` ent a)" using tav_alt by blast
-  hence "\<forall>e \<in> ent a. term_subst v c e = e" using term_subst_idem by auto
-  thus "term_atom_subst v c a = a" by (simp add: atom.map_ident_strong)
-qed
+abbreviation sym_term_subst::"variable \<Rightarrow> object \<Rightarrow> symbol term \<Rightarrow> symbol term" where
+  "sym_term_subst v obj\<equiv> map_term (sym_subst v obj)"
 
 
-locale formula_syntax =
-  fixes vars  ::"'p \<Rightarrow> 'v set"
-    and objs  ::"'p \<Rightarrow> 'c set"
-begin
+abbreviation sym_term_nf_vars where
+  "sym_term_nf_vars \<equiv> \<Union> o num_fluent.ent o (map_num_fluent sym_term_vars)"
 
- fun fvars::"'p formula \<Rightarrow> 'v set" where
-    "fvars (Atom p) = vars p" 
-  | "fvars Bot = {}"
-  | "fvars (Not \<phi>\<^sub>1) = fvars \<phi>\<^sub>1"
-  | "fvars (And \<phi>\<^sub>1 \<phi>\<^sub>2) = fvars \<phi>\<^sub>1 \<union> fvars \<phi>\<^sub>2"
-  | "fvars (Or \<phi>\<^sub>1 \<phi>\<^sub>2) = fvars \<phi>\<^sub>1 \<union> fvars \<phi>\<^sub>2"
-  | "fvars (Imp \<phi>\<^sub>1 \<phi>\<^sub>2) = fvars \<phi>\<^sub>1 \<union> fvars \<phi>\<^sub>2"
+abbreviation sym_term_nf_objs where
+  "sym_term_nf_objs \<equiv> \<Union> o num_fluent.ent o (map_num_fluent sym_term_objs)"
+
+abbreviation sym_term_nf_subst::"variable \<Rightarrow> object \<Rightarrow> symbol term num_fluent \<Rightarrow> symbol term num_fluent" where
+  "sym_term_nf_subst v obj \<equiv> map_num_fluent (sym_term_subst v obj)"
+
+
+abbreviation sym_term_nc_vars::"symbol term num_comp \<Rightarrow> variable set" where
+  "sym_term_nc_vars \<equiv> \<Union> o num_comp.ent o (map_num_comp sym_term_vars)"
+
+abbreviation sym_term_nc_objs::"symbol term num_comp \<Rightarrow> object set" where
+  "sym_term_nc_objs \<equiv> \<Union> o num_comp.ent o (map_num_comp sym_term_objs)"
+
+abbreviation sym_term_nc_subst::"variable \<Rightarrow> object \<Rightarrow> symbol term num_comp \<Rightarrow> symbol term num_comp" where
+  "sym_term_nc_subst v c \<equiv> map_num_comp (map_term (sym_subst v c))"
+
+
+abbreviation sym_term_pred_vars where
+  "sym_term_pred_vars \<equiv> \<Union> o pred.ent o (map_pred sym_term_vars)"
+
+abbreviation sym_term_pred_objs where
+  "sym_term_pred_objs \<equiv> \<Union> o pred.ent o (map_pred sym_term_objs)"
+
+abbreviation sym_term_pred_subst where
+  "sym_term_pred_subst v c \<equiv> map_pred (map_term (sym_subst v c))"
+
+
+abbreviation sym_term_atom_vars::"symbol term atom \<Rightarrow> variable set" where
+  "sym_term_atom_vars \<equiv> \<Union> o ent o (map_atom sym_term_vars)"
+
+abbreviation sym_term_atom_objs::"symbol term atom \<Rightarrow> object set" where
+  "sym_term_atom_objs \<equiv> \<Union> o ent o (map_atom sym_term_objs)"
+
+abbreviation sym_term_atom_subst::"variable \<Rightarrow> object \<Rightarrow> symbol term atom \<Rightarrow> symbol term atom" where
+  "sym_term_atom_subst v c \<equiv> map_atom (map_term (sym_subst v c))"
+
+
+fun tf_upd_subst::"variable \<Rightarrow> object \<Rightarrow> (func \<times> symbol term list \<times> symbol term) 
+  \<Rightarrow> (func \<times> symbol term list \<times> symbol term)" where
+  "tf_upd_subst v c (f, as, r) = (f, map (sym_term_subst v c) as, sym_term_subst v c r)"
+
+fun nf_upd_subst::"variable \<Rightarrow> object \<Rightarrow> (func \<times> upd_op \<times> symbol term list \<times> symbol term num_fluent)
+  \<Rightarrow> (func \<times> upd_op \<times> symbol term list \<times> symbol term num_fluent)" where
+  "nf_upd_subst v c (f, op, as, r) = 
+    (f, op, map (sym_term_subst v c) as, sym_term_nf_subst v c r)"
+
+fun schematic_effect_subst::"variable \<Rightarrow> object \<Rightarrow> schematic_effect 
+  \<Rightarrow> schematic_effect" where
+  "schematic_effect_subst v c (Effect a d tu nu) =
+    (Effect 
+      (map (sym_term_pred_subst v c) a) 
+      (map (sym_term_pred_subst v c) d) 
+      (map (tf_upd_subst v c) tu)
+      (map (nf_upd_subst v c) nu))"
+
+definition f_vars::"schematic_formula \<Rightarrow> variable set" where
+  "f_vars = \<Union> o atoms o (map_formula sym_term_atom_vars)" 
+
+definition f_objs::"schematic_formula \<Rightarrow> object set" where
+  "f_objs = \<Union> o atoms o (map_formula sym_term_atom_objs)" 
+
+definition f_subst where 
+  "f_subst v c \<equiv> map_formula (sym_term_atom_subst v c)"
+
+subsection \<open>Semantics of terms\<close>
+  text \<open>Using None rather than Undef to represent undefined values would 
+        make this function much more involved. We would have to check that
+        all terms are defined and otherwise return None. Right now, we just
+        make the fact that no functions are defined for arguments including 
+        Undef a condition for well-formedness.\<close>
+  fun term_val::"world_model \<Rightarrow> object term \<Rightarrow> object" where
+    "term_val M (Ent obj) = obj"
+  | "term_val M (Fun fun as) = (case (tf_int M fun) of 
+      Some f \<Rightarrow> (case (f (map (\<lambda>t. term_val M t) as)) of 
+        Some obj \<Rightarrow> obj
+      | None \<Rightarrow> Undef)
+    | None \<Rightarrow> Undef)"
+
+  fun term_val'::"world_model \<Rightarrow> object term \<Rightarrow> object option" where
+    "term_val' M (Ent obj) = Some obj"
+  | "term_val' M (Fun fun as) = (case (tf_int M fun) of
+      Some f \<Rightarrow> (let arg_ints = map (\<lambda>t. term_val' M t) as
+        in (if (list_all (\<lambda>x. x \<noteq> None) arg_ints) 
+            then f (map the arg_ints) 
+            else None))
+    | None \<Rightarrow> None)"
+  
+  fun nf_val::"world_model \<Rightarrow> (object term) num_fluent \<Rightarrow> rat option" where
+    "nf_val M (NFun fun as) = (case (nf_int M fun) of 
+      Some f \<Rightarrow> f (map (\<lambda>t. term_val M t) as) |
+      None \<Rightarrow> None)"
+  | "nf_val M (Num n) = Some n"
+  | "nf_val M (Add x y) = (case (nf_val M x, nf_val M y) of 
+      (Some x, Some y) \<Rightarrow> Some (x + y) |
+      _ \<Rightarrow> None)"
+  | "nf_val M (Sub x y) = (case (nf_val M x, nf_val M y) of 
+      (Some x, Some y) \<Rightarrow> Some (x - y) |
+      _ \<Rightarrow> None)"
+  | "nf_val M (Mult x y) = (case (nf_val M x, nf_val M y) of 
+      (Some x, Some y) \<Rightarrow> Some (x * y) |
+      _ \<Rightarrow> None)"
+  | "nf_val M (Div x y) = (case (nf_val M x, nf_val M y) of 
+      (Some x, Some y) \<Rightarrow> Some (x / y) |
+      _ \<Rightarrow> None)"
+  
+  fun nc_val::"world_model \<Rightarrow> (object term) num_comp \<Rightarrow> bool" where
+    "nc_val M (Num_Eq x y) = (case (nf_val M x, nf_val M y) of
+      (Some x, Some y) \<Rightarrow> x = y |
+      _ \<Rightarrow> False)"
+  | "nc_val M (Le x y) = (case (nf_val M x, nf_val M y) of
+      (Some x, Some y) \<Rightarrow> x \<le> y |
+      _ \<Rightarrow> False)"
+  | "nc_val M (Lt x y) = (case (nf_val M x, nf_val M y) of
+      (Some x, Some y) \<Rightarrow> x < y |
+      _ \<Rightarrow> False)"
+  
+  fun pred_inst::"world_model \<Rightarrow> (object term) pred \<Rightarrow> object pred" where
+    "pred_inst M (Pred p as ) = Pred p (map (\<lambda>t. term_val M t) as)"
+  | "pred_inst M (Eq t1 t2) = Eq (term_val M t1) (term_val M t2)"
+  
+  fun pred_val::"world_model \<Rightarrow> (object term) pred \<Rightarrow> bool" where
+    "pred_val M p = (pred_inst M p \<in> preds M)"
   
   
-  fun fobjs::"'p formula \<Rightarrow> 'c set" where
-    "fobjs (Atom p) = objs p" 
-  | "fobjs Bot = {}"
-  | "fobjs (Not \<phi>\<^sub>1) = fobjs \<phi>\<^sub>1"
-  | "fobjs (And \<phi>\<^sub>1 \<phi>\<^sub>2) = fobjs \<phi>\<^sub>1 \<union> fobjs \<phi>\<^sub>2"
-  | "fobjs (Or \<phi>\<^sub>1 \<phi>\<^sub>2) = fobjs \<phi>\<^sub>1 \<union> fobjs \<phi>\<^sub>2"
-  | "fobjs (Imp \<phi>\<^sub>1 \<phi>\<^sub>2) = fobjs \<phi>\<^sub>1 \<union> fobjs \<phi>\<^sub>2"
-
-  lemma fvars_alt: "fvars \<phi> = \<Union>(vars ` (atoms \<phi>))"
-    by (induction \<phi>) auto
-    
-  lemma fobjs_alt: "fobjs \<phi> = \<Union>(objs ` (atoms \<phi>))"
-    by (induction \<phi>) auto
-end
-
-global_interpretation term_formulas: formula_syntax term_atom_vars term_atom_objs
-  defines fvars = term_formulas.fvars
-      and fobjs = term_formulas.fobjs
-  done
-
-subsection \<open>Closed-World Assumption, Equality, and Negation\<close>
-  text \<open>Discriminator for atomic predicate formulas.\<close>
-  fun is_predAtom where
-    "is_predAtom (Atom (predAtm _ _)) = True" | "is_predAtom _ = False"
-
-  text \<open>The world model is a set of (atomic) formulas\<close>
-  type_synonym world_model = "object atom formula set"
-
-  text \<open>It is basic, if it only contains atoms\<close>
-  definition "wm_basic M \<equiv> \<forall>a\<in>M. is_predAtom a"
-
-  text \<open>A valuation extracted from the atoms of the world model\<close>
-  definition valuation :: "world_model \<Rightarrow> object atom valuation"
-    where "valuation M \<equiv> \<lambda>predAtm p xs \<Rightarrow> Atom (predAtm p xs) \<in> M | Eq a b \<Rightarrow> a=b"
-
-  text \<open>Augment a world model by adding negated versions of all atoms
-    not contained in it, as well as interpretations of equality.\<close>
-  definition close_world :: "world_model \<Rightarrow> world_model" where "close_world M =
-    M \<union> {\<^bold>\<not>(Atom (predAtm p as)) | p as. Atom (predAtm p as) \<notin> M}
-    \<union> {Atom (Eq a a) | a. True} \<union> {\<^bold>\<not>(Atom (Eq a b)) | a b. a\<noteq>b}"
-
-  definition "close_neg M \<equiv> M \<union> {\<^bold>\<not>(Atom a) | a. Atom a \<notin> M}"
-  lemma "wm_basic M \<Longrightarrow> close_world M = close_neg (M \<union> {Atom (Eq a a) | a. True})"
-    unfolding close_world_def close_neg_def wm_basic_def
-    apply clarsimp
-    apply (auto 0 3)
-    by (metis atom.exhaust)
+  text \<open>A valuation according to more or less standard FOL\<close>
+  fun valuation::"world_model \<Rightarrow> object term atom valuation" where
+    "valuation M (PredAtom p) = pred_val M p"
+  | "valuation M (NumComp c) = nc_val M c"
 
 
-  abbreviation cw_entailment (infix "\<^sup>c\<TTurnstile>\<^sub>=" 53) where
-    "M \<^sup>c\<TTurnstile>\<^sub>= \<phi> \<equiv> close_world M \<TTurnstile> \<phi>"
-
-  lemma
-    close_world_extensive: "M \<subseteq> close_world M" and
-    close_world_idem[simp]: "close_world (close_world M) = close_world M"
-    by (auto simp: close_world_def)
-
-  lemma in_close_world_conv:
-    "\<phi> \<in> close_world M \<longleftrightarrow> (
-        \<phi>\<in>M
-      \<or> (\<exists>p as. \<phi>=\<^bold>\<not>(Atom (predAtm p as)) \<and> Atom (predAtm p as)\<notin>M)
-      \<or> (\<exists>a. \<phi>=Atom (Eq a a))
-      \<or> (\<exists>a b. \<phi>=\<^bold>\<not>(Atom (Eq a b)) \<and> a\<noteq>b)
-    )"
-    by (auto simp: close_world_def)
-
-  lemma valuation_aux_1:
-    fixes M :: world_model and \<phi> :: "object atom formula"
-    defines "C \<equiv> close_world M"
-    assumes A: "\<forall>\<phi>\<in>C. \<A> \<Turnstile> \<phi>"
-    shows "\<A> = valuation M"
-    using A unfolding C_def
-    apply -
-    apply (auto simp: in_close_world_conv valuation_def Ball_def intro!: ext split: atom.split)
-    apply (metis formula_semantics.simps(1) formula_semantics.simps(3))
-    apply (metis formula_semantics.simps(1) formula_semantics.simps(3))
-    by (metis atom.collapse(2) formula_semantics.simps(1) is_predAtm_def)
-
-  lemma valuation_aux_2:
-    assumes "wm_basic M"
-    shows "(\<forall>G\<in>close_world M. valuation M \<Turnstile> G)"
-    using assms unfolding wm_basic_def
-    by (force simp: in_close_world_conv valuation_def elim: is_predAtom.elims)
-
-  lemma val_imp_close_world: "valuation M \<Turnstile> \<phi> \<Longrightarrow> M \<^sup>c\<TTurnstile>\<^sub>= \<phi>"
-    unfolding entailment_def
-    using valuation_aux_1
-    by blast
-
-  lemma close_world_imp_val:
-    "wm_basic M \<Longrightarrow> M \<^sup>c\<TTurnstile>\<^sub>= \<phi> \<Longrightarrow> valuation M \<Turnstile> \<phi>"
-    unfolding entailment_def using valuation_aux_2 by blast
-
-  text \<open>Main theorem of this section:
-    If a world model \<open>M\<close> contains only atoms, its induced valuation
-    satisfies a formula \<open>\<phi>\<close> if and only if the closure of \<open>M\<close> entails \<open>\<phi>\<close>.
-
-    Note that there are no syntactic restrictions on \<open>\<phi>\<close>,
-    in particular, \<open>\<phi>\<close> may contain negation.
-  \<close>
-  theorem valuation_iff_close_world:
-    assumes "wm_basic M"
-    shows "valuation M \<Turnstile> \<phi> \<longleftrightarrow> M \<^sup>c\<TTurnstile>\<^sub>= \<phi>"
-    using assms val_imp_close_world close_world_imp_val by blast
-
-
-subsubsection \<open>Proper Generalization\<close>
-text \<open>Adding negation and equality is a proper generalization of the
-  case without negation and equality\<close>
-
-fun is_STRIPS_fmla :: "'ent atom formula \<Rightarrow> bool" where
-  "is_STRIPS_fmla (Atom (predAtm _ _)) \<longleftrightarrow> True"
-| "is_STRIPS_fmla (\<bottom>) \<longleftrightarrow> True"
-| "is_STRIPS_fmla (\<phi>\<^sub>1 \<^bold>\<and> \<phi>\<^sub>2) \<longleftrightarrow> is_STRIPS_fmla \<phi>\<^sub>1 \<and> is_STRIPS_fmla \<phi>\<^sub>2"
-| "is_STRIPS_fmla (\<phi>\<^sub>1 \<^bold>\<or> \<phi>\<^sub>2) \<longleftrightarrow> is_STRIPS_fmla \<phi>\<^sub>1 \<and> is_STRIPS_fmla \<phi>\<^sub>2"
-| "is_STRIPS_fmla (\<^bold>\<not>\<bottom>) \<longleftrightarrow> True"
-| "is_STRIPS_fmla _ \<longleftrightarrow> False"
-
-lemma aux1: "\<lbrakk>wm_basic M; is_STRIPS_fmla \<phi>; valuation M \<Turnstile> \<phi>; \<forall>G\<in>M. \<A> \<Turnstile> G\<rbrakk> \<Longrightarrow> \<A> \<Turnstile> \<phi>"
-  apply(induction \<phi> rule: is_STRIPS_fmla.induct)
-  by (auto simp: valuation_def)
-
-lemma aux2: "\<lbrakk>wm_basic M; is_STRIPS_fmla \<phi>; \<forall>\<A>. (\<forall>G\<in>M. \<A> \<Turnstile> G) \<longrightarrow> \<A> \<Turnstile> \<phi>\<rbrakk> \<Longrightarrow> valuation M \<Turnstile> \<phi>"
-  apply(induction \<phi> rule: is_STRIPS_fmla.induct)
-  apply simp_all
-  apply (metis in_close_world_conv valuation_aux_2)
-  using in_close_world_conv valuation_aux_2 apply blast
-  using in_close_world_conv valuation_aux_2 by auto
-
-
-lemma valuation_iff_STRIPS:
-  assumes "wm_basic M"
-  assumes "is_STRIPS_fmla \<phi>"
-  shows "valuation M \<Turnstile> \<phi> \<longleftrightarrow> M \<TTurnstile> \<phi>"
-proof -
-  have aux1: "\<And>\<A>. \<lbrakk>valuation M \<Turnstile> \<phi>; \<forall>G\<in>M. \<A> \<Turnstile> G\<rbrakk> \<Longrightarrow> \<A> \<Turnstile> \<phi>"
-    using assms apply(induction \<phi> rule: is_STRIPS_fmla.induct)
-    by (auto simp: valuation_def)
-  have aux2: "\<lbrakk>\<forall>\<A>. (\<forall>G\<in>M. \<A> \<Turnstile> G) \<longrightarrow> \<A> \<Turnstile> \<phi>\<rbrakk> \<Longrightarrow> valuation M \<Turnstile> \<phi>"
-    using assms
-    apply(induction \<phi> rule: is_STRIPS_fmla.induct)
-    apply simp_all
-    apply (metis in_close_world_conv valuation_aux_2)
-    using in_close_world_conv valuation_aux_2 apply blast
-    using in_close_world_conv valuation_aux_2 by auto
-  show ?thesis
-    by (auto simp: entailment_def intro: aux1 aux2)
-qed
-
-text \<open>Our extension to negation and equality is a proper generalization of the
-  standard STRIPS semantics for formula without negation and equality\<close>
-theorem proper_STRIPS_generalization:
-  "\<lbrakk>wm_basic M; is_STRIPS_fmla \<phi>\<rbrakk> \<Longrightarrow> M \<^sup>c\<TTurnstile>\<^sub>= \<phi> \<longleftrightarrow> M \<TTurnstile> \<phi>"
-  by (simp add: valuation_iff_close_world[symmetric] valuation_iff_STRIPS)
-
-subsection \<open>STRIPS Semantics\<close>
-
-text \<open>For this section, we fix a domain \<open>D\<close>, using Isabelle's
-  locale mechanism.\<close>
+subsection \<open>PDDL semantics\<close>
 context
 begin
-  text \<open>It seems to be agreed upon that, in case of a contradictory effect,
-    addition overrides deletion. We model this behaviour by first executing
-    the deletions, and then the additions.\<close>
-  fun apply_effect :: "object ast_effect \<Rightarrow> world_model \<Rightarrow> world_model"
-  where
-     "apply_effect (Effect a d) s = (s - set d) \<union> (set a)"
-
-  text \<open>Execute a ground action\<close>
-  definition execute_ground_action :: "ground_action \<Rightarrow> world_model \<Rightarrow> world_model"
-  where
-    "execute_ground_action a M = apply_effect (effect a) M"
-
-  text \<open>Predicate to model that the given list of action instances is
-    executable, and transforms an initial world model \<open>M\<close> into a final
-    model \<open>M'\<close>.
-
-    Note that this definition over the list structure is more convenient in HOL
-    than to explicitly define an indexed sequence \<open>M\<^sub>0\<dots>M\<^sub>N\<close> of intermediate world
-     models, as done in [Lif87].
-  \<close>
-  fun ground_action_path
-    :: "world_model \<Rightarrow> ground_action list \<Rightarrow> world_model \<Rightarrow> bool"
-  where
-    "ground_action_path M [] M' \<longleftrightarrow> (M = M')"
-  | "ground_action_path M (\<alpha>#\<alpha>s) M' \<longleftrightarrow> M \<^sup>c\<TTurnstile>\<^sub>= precondition \<alpha>
-    \<and> ground_action_path (execute_ground_action \<alpha> M) \<alpha>s M'"
-
-  text \<open>Function equations as presented in paper,
-    with inlined @{const execute_ground_action}.\<close>
-  lemma ground_action_path_in_paper:
-    "ground_action_path M [] M' \<longleftrightarrow> (M = M')"
-    "ground_action_path M (\<alpha>#\<alpha>s) M' \<longleftrightarrow> M \<^sup>c\<TTurnstile>\<^sub>= precondition \<alpha>
-    \<and> (ground_action_path (apply_effect (effect \<alpha>) M) \<alpha>s M')"
-    by (auto simp: execute_ground_action_def)
 
 end \<comment> \<open>Context of \<open>ast_domain\<close>\<close>
 
 
 subsection \<open>Well-Formedness of PDDL\<close>
-
-
 
 (* Well-formedness *)
 
@@ -526,18 +401,19 @@ subsection \<open>Well-Formedness of PDDL\<close>
 *)
 
 
-fun ty_term::"(variable \<Rightarrow> type option) \<Rightarrow> (object \<Rightarrow> type option) \<Rightarrow> term \<Rightarrow> type option" where
-  "ty_term varT objT (term.VAR v) = varT v"
-| "ty_term varT objT (term.CONST c) = objT c"
+fun ty_sym::"(variable \<Rightarrow> type option) \<Rightarrow> (object \<Rightarrow> type option) \<Rightarrow> symbol \<Rightarrow> type option" where
+  "ty_sym varT objT (Var v) = varT v"
+| "ty_sym varT objT (Const c) = objT c"
 
-lemma ty_term_mono: "varT \<subseteq>\<^sub>m varT' \<Longrightarrow> objT \<subseteq>\<^sub>m objT' \<Longrightarrow>
-  ty_term varT objT \<subseteq>\<^sub>m ty_term varT' objT'"
+lemma ty_sym_mono: "varT \<subseteq>\<^sub>m varT' \<Longrightarrow> objT \<subseteq>\<^sub>m objT' \<Longrightarrow>
+  ty_sym varT objT \<subseteq>\<^sub>m ty_sym varT' objT'"
   apply (rule map_leI)
   subgoal for x v
     apply (cases x)
     apply (auto dest: map_leD)
     done
   done
+
 
 subsubsection \<open>Declarations of types, constants and predicates in the domain\<close>
 
@@ -547,7 +423,13 @@ begin
   text \<open>The signature is a partial function that maps the predicates
     of the domain to lists of argument types.\<close>
   definition sig :: "predicate \<rightharpoonup> type list" where
-    "sig \<equiv> map_of (map (\<lambda>PredDecl p n \<Rightarrow> (p,n)) (predicates DD))"
+  "sig \<equiv> map_of (map (\<lambda>PredDecl p n \<Rightarrow> (p,n)) (predicates DD))"
+
+  definition obj_fluent_sig::"func \<rightharpoonup> (type list \<times> type)" where
+  "obj_fluent_sig \<equiv> map_of (map (\<lambda>ObjFluentDecl f ts t \<Rightarrow> (f, (ts, t))) (object_fluents DD))"
+  
+  definition num_fluent_sig::"func \<rightharpoonup> type list" where
+  "num_fluent_sig \<equiv> map_of (map (\<lambda>NumFluentDecl f ts \<Rightarrow> (f, ts)) (num_fluents DD))"
 
   text \<open>We use a flat subtype hierarchy, where every type is a subtype
     of object, and there are no other subtype relations.
@@ -571,6 +453,63 @@ begin
   text \<open>This checks that every primitive on the LHS is contained in or a
     subtype of a primitive on the RHS\<close>
 
+  fun of_opt_type::"type option \<Rightarrow> type \<Rightarrow> bool" where
+    "of_opt_type None T = False" |
+    "of_opt_type (Some oT) T = of_type oT T"
+
+  context 
+    fixes entT::"'ent \<rightharpoonup> type"
+      and funT::"func \<rightharpoonup> (type list \<times> type)"
+  begin
+    fun ty_term::"'ent term \<Rightarrow> type option" where
+      "ty_term (Ent e) = entT e"
+    | "ty_term (Fun f as) = (case (funT f) of 
+        Some (Ts, T) \<Rightarrow> (if (list_all2 of_opt_type (map ty_term as) Ts) 
+          then Some T else None)
+      | None \<Rightarrow> None
+      )"
+  end
+
+
+  lemma ty_term_mono': "entT \<subseteq>\<^sub>m entT' \<Longrightarrow> funT \<subseteq>\<^sub>m funT' 
+    \<Longrightarrow> ty_term entT funT x = Some t 
+    \<Longrightarrow> ty_term entT' funT' x = Some t"
+  proof (induction x arbitrary: t)
+    case (Fun f args)
+    then obtain Ts where 
+      "funT f = Some (Ts, t)" 
+      "list_all2 of_opt_type (map (ty_term entT funT) args) Ts"
+      by (auto split: option.splits if_splits)
+    hence "\<forall>i < length args. of_opt_type (ty_term entT funT (args!i)) (Ts!i)"
+      using list_all2_nthD by fastforce
+    hence "\<forall>i < length args. \<exists>t. ty_term entT funT (args!i) = Some t \<and> of_type t (Ts!i)"
+      by (metis of_opt_type.elims(2))
+    hence "\<forall>i < length args. \<exists>t. ty_term entT' funT' (args!i) = Some t \<and> of_type t (Ts!i)"
+      using Fun by auto
+    hence "\<forall>i < length args. (of_opt_type o (ty_term entT' funT')) (args!i) (Ts!i)"
+      by auto
+    from \<open>list_all2 of_opt_type (map (ty_term entT funT) args) Ts\<close>
+    have "length args = length Ts" using list_all2_lengthD by fastforce
+    with \<open>\<forall>i < length args. (of_opt_type o ty_term entT' funT') (args!i) (Ts!i)\<close>
+    have "list_all2 (of_opt_type o (ty_term entT' funT')) args Ts" 
+      using list_all2_conv_all_nth[where xs = args and ys = Ts and P = "(of_opt_type o (ty_term entT' funT'))"]
+      by blast
+    hence "list_all2 of_opt_type (map (ty_term entT' funT') args) Ts"
+      by (simp add: list_all2_conv_all_nth)
+    from \<open>funT f = Some (Ts, t)\<close>
+    have "funT' f = Some (Ts, t)" using Fun.prems(2) map_leD by fast
+    with \<open>list_all2 of_opt_type (map (ty_term entT' funT') args) Ts\<close>
+    show ?case by simp
+  next
+    case (Ent x)
+    then show ?case by (auto dest: map_leD)
+  qed
+  
+  lemma ty_term_mono: assumes "entT \<subseteq>\<^sub>m entT'" "funT \<subseteq>\<^sub>m funT'"
+    shows "ty_term entT funT \<subseteq>\<^sub>m ty_term entT' funT'"
+    using ty_term_mono'[OF assms] map_leI
+    by blast
+
   type_synonym ('ent) ty_ent = "'ent \<rightharpoonup> type"
 
   text \<open>For the next few definitions, we fix a partial function that maps
@@ -587,11 +526,35 @@ begin
           Some vT \<Rightarrow> of_type vT T
         | None \<Rightarrow> False)"
 
-    fun wf_pred_atom :: "predicate \<times> 'ent list \<Rightarrow> bool" where
-      "wf_pred_atom (p,vs) \<longleftrightarrow> (
+    fun wf_pred::"predicate \<times> 'ent list \<Rightarrow> bool" where
+      "wf_pred (p,vs) \<longleftrightarrow> (
         case sig p of
           None \<Rightarrow> False
         | Some Ts \<Rightarrow> list_all2 is_of_type vs Ts)"
+
+    fun wf_pred_atom :: "'ent pred \<Rightarrow> bool" where
+      "wf_pred_atom (Pred p vs) \<longleftrightarrow> wf_pred (p,vs)"
+    | "wf_pred_atom (Eq a b) \<longleftrightarrow> ty_ent a \<noteq> None \<and> ty_ent b \<noteq> None"
+  
+    fun wf_num_func::"func \<times> 'ent list \<Rightarrow> bool" where
+      "wf_num_func (f, as) \<longleftrightarrow> (
+        case num_fluent_sig f of
+          None \<Rightarrow> False
+        | Some Ts \<Rightarrow> list_all2 is_of_type as Ts
+      )"
+  
+    fun wf_num_fluent::"'ent num_fluent \<Rightarrow> bool" where
+      "wf_num_fluent (NFun f as) = wf_num_func (f, as)"
+    | "wf_num_fluent (Num _) = True"
+    | "wf_num_fluent (Add a b) = (wf_num_fluent a \<and> wf_num_fluent b)"
+    | "wf_num_fluent (Sub a b) = (wf_num_fluent a \<and> wf_num_fluent b)"
+    | "wf_num_fluent (Mult a b) = (wf_num_fluent a \<and> wf_num_fluent b)"
+    | "wf_num_fluent (Div a b) = (wf_num_fluent a \<and> wf_num_fluent b)"
+  
+    fun wf_num_comp :: "'ent num_comp \<Rightarrow> bool" where
+      "wf_num_comp (Num_Eq a b) = (wf_num_fluent a \<and> wf_num_fluent b)"
+    | "wf_num_comp (Lt a b) = (wf_num_fluent a \<and> wf_num_fluent b)"
+    | "wf_num_comp (Le a b) = (wf_num_fluent a \<and> wf_num_fluent b)"
 
     text \<open>Predicate-atoms are well-formed if their arguments match the
       signature, equalities are well-formed if the arguments are valid
@@ -599,8 +562,8 @@ begin
 
     \<close>
     fun wf_atom :: "'ent atom \<Rightarrow> bool" where
-      "wf_atom (predAtm p vs) \<longleftrightarrow> wf_pred_atom (p,vs)"
-    | "wf_atom (Eq a b) \<longleftrightarrow> ty_ent a \<noteq> None \<and> ty_ent b \<noteq> None"
+      "wf_atom (PredAtom p) \<longleftrightarrow> wf_pred_atom p"
+    | "wf_atom (NumComp nc) \<longleftrightarrow> wf_num_comp nc"
 
     text \<open>A formula is well-formed if it consists of valid atoms,
       and does not contain negations, except for the encoding \<open>\<^bold>\<not>\<bottom>\<close> of true.
@@ -616,24 +579,64 @@ begin
     lemma "wf_fmla \<phi> = (\<forall>a\<in>atoms \<phi>. wf_atom a)"
       by (induction \<phi>) auto
 
-    (*lemma wf_fmla_add_simps[simp]: "wf_fmla (\<^bold>\<not>\<phi>) \<longleftrightarrow> \<phi>=\<bottom>"
-      by (cases \<phi>) auto*)
+    text \<open>An update to a function on objects is well-formed if the function has 
+          been declared, the signature matches the types of the arguments and new return value, 
+          and the arguments and the term to assign the return value are well-formed.\<close>
+    fun wf_tf_upd::"(func \<times> 'ent list \<times> 'ent) \<Rightarrow> bool" where
+    "wf_tf_upd (f, as, v) = (case obj_fluent_sig f of 
+      None \<Rightarrow> False
+    | Some (Ts, T) \<Rightarrow> list_all2 is_of_type as Ts 
+        \<and> is_of_type v T \<or> v = Undef
+    )" (* is_of_type prevents usage of Undef *) (* if we used option here, this would be easy *)
+  
+    text \<open>An update to a numeric function is well-formed if the function has been declared,
+          the signature matches the types of the arguments, the arguments are well-formed,
+          and the value that is being assigned is well-formed.\<close>
+    fun wf_nf_upd::"(func \<times> upd_op \<times> 'ent list \<times> 'ent num_fluent) \<Rightarrow> bool" where
+    "wf_nf_upd (f, op, as, v) = (case num_fluent_sig f of 
+        None \<Rightarrow> False
+      | Some Ts \<Rightarrow> list_all2 is_of_type as Ts 
+          \<and> wf_num_fluent v
+    )"
 
-    text \<open>Special case for a well-formed atomic predicate formula\<close>
-    fun wf_fmla_atom where
-      "wf_fmla_atom (Atom (predAtm a vs)) \<longleftrightarrow> wf_pred_atom (a,vs)"
-    | "wf_fmla_atom _ \<longleftrightarrow> False"
+    fun wf_pred_upd where
+      "wf_pred_upd (Eq _ _) = False" |
+      "wf_pred_upd p = wf_pred_atom p"
 
-    lemma wf_fmla_atom_alt: "wf_fmla_atom \<phi> \<longleftrightarrow> is_predAtom \<phi> \<and> wf_fmla \<phi>"
-      by (cases \<phi> rule: wf_fmla_atom.cases) auto
-
-    text \<open>An effect is well-formed if the added and removed formulas
-      are atomic\<close>
+    text \<open>An effect is well-formed if its constituent parts are well-formed\<close>
     fun wf_effect where
-      "wf_effect (Effect a d) \<longleftrightarrow>
-          (\<forall>ae\<in>set a. wf_fmla_atom ae)
-        \<and> (\<forall>de\<in>set d. wf_fmla_atom de)"
+      "wf_effect (Effect a d tu nu) \<longleftrightarrow>
+          (\<forall>ae\<in>set a. wf_pred_upd ae)
+        \<and> (\<forall>de\<in>set d. wf_pred_upd de)
+        \<and> (\<forall>u \<in>set tu. wf_tf_upd u)
+        \<and> (\<forall>u \<in> set nu. wf_nf_upd u)
+        "
 
+    fun wf_cond_effect where
+      "wf_cond_effect (pre, eff) \<longleftrightarrow> wf_fmla pre \<and> wf_effect eff"
+
+    definition wf_cond_effect_list where
+      "wf_cond_effect_list effs \<equiv> \<forall>e \<in> set effs. wf_cond_effect e"
+
+
+    definition wf_tf_int''::"'ent list \<Rightarrow> 'ent \<Rightarrow> type list \<Rightarrow> type \<Rightarrow> bool" where
+      "wf_tf_int'' as v Ts T = (list_all2 is_of_type as Ts \<and> is_of_type v T)"
+    
+    definition wf_tf_int'::"func \<Rightarrow> ('ent list \<rightharpoonup> 'ent) \<Rightarrow> bool" where
+      "wf_tf_int' f ti' = (case obj_fluent_sig f of 
+        None \<Rightarrow> False 
+      | Some (Ts, T) \<Rightarrow> (\<forall>as \<in> dom ti'. wf_tf_int'' as (the (ti' as)) Ts T))"
+  
+    definition wf_tf_int::"(func \<rightharpoonup> 'ent list \<rightharpoonup> 'ent) \<Rightarrow> bool" where
+      "wf_tf_int ti \<equiv> (\<forall>f \<in> dom ti. wf_tf_int' f (the (ti f)))"
+
+    definition wf_nf_int'::"func \<Rightarrow> ('ent list \<rightharpoonup> rat) \<Rightarrow> bool" where
+      "wf_nf_int' f ti' = (case num_fluent_sig f of 
+        None \<Rightarrow> False 
+      | Some Ts \<Rightarrow> (\<forall>as \<in> dom ti'. list_all2 is_of_type as Ts))"
+  
+    definition wf_nf_int::"(func \<rightharpoonup> 'ent list \<rightharpoonup> rat) \<Rightarrow> bool" where
+      "wf_nf_int ti \<equiv> (\<forall>f \<in> dom ti. wf_nf_int' f (the (ti f)))"
   end \<comment> \<open>Context fixing \<open>ty_ent\<close>\<close>
 
   definition constT :: "object \<rightharpoonup> type" where
@@ -651,7 +654,6 @@ begin
   text \<open>The types declaration is well-formed, if all supertypes are declared types (or object)\<close>
   definition "wf_types \<equiv> snd`set (types DD) \<subseteq> insert ''object'' (fst`set (types DD))"
 
-
   text \<open>The declarations in a domain are well-formed if 
     \<^item> there are no duplicate declared predicate names,
     \<^item> all declared predicates are well-formed,
@@ -662,8 +664,9 @@ begin
       wf_types
     \<and> distinct (map (predicate_decl.pred) (predicates DD))
     \<and> (\<forall>p\<in>set (predicates DD). wf_predicate_decl p)
-    \<and> distinct (map fst (consts DD))
-    \<and> (\<forall>(n,T)\<in>set (consts DD). wf_type T)"
+    \<and> distinct (map fst (consts DD)) 
+    \<and> (\<forall>(c, T) \<in> set (consts DD). wf_type T) 
+    \<and> (\<forall>(c, T) \<in> set (consts DD). c \<noteq> Undef)"
 
 end \<comment> \<open>locale \<open>ast_domain\<close>\<close>
 
@@ -684,18 +687,14 @@ begin
 
   lemma objT_alt: "objT = map_of (consts DD @ objects PD)"
     unfolding objT_def constT_def
-    apply (clarsimp)
-    done
-
-  definition wf_fact :: "fact \<Rightarrow> bool" where
-    "wf_fact = wf_pred_atom objT"
-
+    by clarsimp
 
   definition wf_problem_decs where
     "wf_problem_decs \<equiv>
       wf_domain_decs
     \<and> distinct (map fst (objects PD) @ map fst (consts DD))
-    \<and> (\<forall>(n,T)\<in>set (objects PD). wf_type T)
+    \<and> (\<forall>(n,T) \<in> set (objects PD). wf_type T) 
+    \<and> (\<forall>(c, T) \<in> set (objects PD). c \<noteq> Undef)
     "
 
 
@@ -707,45 +706,61 @@ begin
         to be well-formed. \<close>
   (* action schemas are well-formed only in relation to the problem *)
   fun wf_action_schema :: "ast_action_schema \<Rightarrow> bool" where
-    "wf_action_schema (Action_Schema n params pre eff) \<longleftrightarrow> (
+    "wf_action_schema (Action_Schema n params pre effs) \<longleftrightarrow> (
       let
-        tyt = ty_term (map_of params) objT
+        tys = ty_sym (map_of params) objT;
+        tyt = ty_term tys obj_fluent_sig
       in
         distinct (map fst params)
       \<and> wf_fmla tyt pre
-      \<and> wf_effect tyt eff)"
+      \<and> wf_cond_effect_list tyt effs)"
+                            
+    fun wf_app_nf_upd::"(func \<times> object list \<times> rat option) \<Rightarrow> bool" where
+      "wf_app_nf_upd (f, as, v) \<longleftrightarrow> (case num_fluent_sig f of 
+        None \<Rightarrow> False 
+      | Some Ts \<Rightarrow> list_all2 (is_of_type objT) as Ts \<and> v \<noteq> None)"
+
+    fun wf_fully_instantiated_effect where
+      "wf_fully_instantiated_effect (Eff a d tu nu) \<longleftrightarrow> 
+          (\<forall>ae\<in>set a. wf_pred_upd objT ae)
+        \<and> (\<forall>de\<in>set d. wf_pred_upd objT de)
+        \<and> (\<forall>u \<in>set tu. wf_tf_upd objT u)
+        \<and> (\<forall>u \<in> set nu. wf_app_nf_upd u)"
+
+  abbreviation wf_cond_effect_inst::"(ground_formula \<times> ground_effect) \<Rightarrow> bool" where
+    "wf_cond_effect_inst \<equiv> wf_cond_effect (ty_term objT obj_fluent_sig)"
+
+  definition wf_cond_effect_inst_list where
+    "wf_cond_effect_inst_list effs \<equiv> \<forall>e \<in> set effs. wf_cond_effect_inst e" 
   
-  fun wf_effect_inst :: "object ast_effect \<Rightarrow> bool" where
-    "wf_effect_inst (Effect (a) (d))
-      \<longleftrightarrow> (\<forall>a\<in>set a \<union> set d. wf_fmla_atom objT a)"
-
-  lemma wf_effect_inst_alt: "wf_effect_inst eff = wf_effect objT eff"
-    by (cases eff) auto
-
   definition wf_goal::"schematic_formula \<Rightarrow> bool" where
-    "wf_goal = wf_fmla (ty_term (Map.empty) objT)"
+    "wf_goal = (
+      let tys = ty_sym (\<lambda>_. None) objT;
+          tyt = ty_term tys obj_fluent_sig
+      in wf_fmla tyt)"
 
 end
 
 subsubsection \<open>The entire domain\<close>
 
-text \<open>AST domain needs parts of the declarations from a problem, because 
-      we need them to use the macro that simulates the use of quantifiers
-      in formulas.\<close>
+text \<open>To fully assert the well-formedness of a domain, we need the set of objects declared
+      in a problem as well. These are necessary to implement the macros that
+      replace quantified formulas with quantifier-free ones.\<close>
 locale ast_domain = ast_problem_decs "problem_decs D"
   for D::ast_domain
 begin
-  abbreviation "PD \<equiv> problem_decs D"
-
+abbreviation "PD \<equiv> problem_decs D"
 
   text \<open>This definition is needed for well-formedness of the initial model,
     and forward-references to the concept of world model.
   \<close>
-  (* What makes a world-model well-formed? Since the initial state is essentially
-      equivalent to the effect of a non-action, it being well-formed means, that it
-      is unquantified. *)
-  definition wf_world_model::"ground_formula set \<Rightarrow> bool" where
-    "wf_world_model M = (\<forall>f\<in>M. wf_fmla_atom objT f)"
+  text \<open>The predicates are well-formed, i.e. well-typed. The interpretations of 
+        fluents are also well-formed, i.e. well-typed and only defined for those
+        functions which have been declared in the domain or problem.\<close>
+  definition wf_world_model::"world_model \<Rightarrow> bool" where
+    "wf_world_model M \<equiv> (\<forall>p \<in> preds M. wf_pred_atom objT p) 
+                      \<and> wf_tf_int objT (tf_int M)
+                      \<and> wf_nf_int objT (nf_int M)"
   
   text \<open>A domain is well-formed if in addition to the declarations being well-formed
     \<^item> there are no duplicate declared actions,
@@ -759,6 +774,121 @@ begin
     "
 end
 
+context ast_domain
+begin
+    
+  fun inst_tf_upd::"world_model 
+    \<Rightarrow> (func \<times> (object term) list \<times> object term) 
+    \<Rightarrow> (func \<times> object list \<times> object)" where
+    "inst_tf_upd M (F, as, v) = (F, map (term_val M) as, term_val M v)"
+
+  fun inst_nf_upd::"world_model
+    \<Rightarrow> (func \<times> upd_op \<times> object term list \<times> object term num_fluent)
+    \<Rightarrow> (func \<times> object list \<times> rat option)" where
+    "inst_nf_upd M (f, op, as, t) = (
+      let args = map (term_val M) as
+      in
+      (case (nf_val M (NFun f as), nf_val M t) of
+        (None, change) \<Rightarrow> (case op of 
+          Assign \<Rightarrow> (f, args, change) 
+        | _      \<Rightarrow> (f, args, None)
+        )
+      | (Some current, Some change) \<Rightarrow> (case op of
+          Assign \<Rightarrow> (f, args, Some change)
+        | ScaleUp \<Rightarrow> (f, args, Some (current * change))
+        | ScaleDown \<Rightarrow> (f, args, Some (current / change))
+        | Increase \<Rightarrow> (f, args, Some (current + change))
+        | Decrease \<Rightarrow> (f, args, Some (current - change))
+        )
+      )
+    )"
+  
+  fun inst_effect :: "world_model \<Rightarrow> ground_effect \<Rightarrow> fully_instantiated_effect" where
+    "inst_effect M (Effect a d tu nu) = (
+      Eff (map (pred_inst M) a) 
+          (map (pred_inst M) d) 
+          (map (inst_tf_upd M) tu) 
+          (map (inst_nf_upd M) nu))"
+
+  text \<open>When we apply an update that returns undefined, we can either unassign the interpretation
+        or update it to Undefined. In both cases, term_val will return Undefined\<close>
+  (* Why are we not just using option instead? *)
+  fun apply_tf_upd::"(func \<times> object list \<times> object) 
+    \<Rightarrow> (func \<rightharpoonup> object list \<rightharpoonup> object) 
+    \<Rightarrow> (func \<rightharpoonup> object list \<rightharpoonup> object)" where
+    "apply_tf_upd (f, as, v) ti = (
+      case (ti f) of
+        Some ti1 \<Rightarrow> (ti(f \<mapsto> (ti1(as \<mapsto> v))))
+      | None \<Rightarrow> (ti(f \<mapsto> [as \<mapsto> v]))
+    )"
+
+  text \<open>The return value will never be undefined, unless the update is not well-formed.\<close>
+  fun apply_nf_upd::"(func \<times> object list \<times> rat option) 
+    \<Rightarrow> (func \<rightharpoonup> object list \<rightharpoonup> rat) 
+    \<Rightarrow> (func \<rightharpoonup> object list \<rightharpoonup> rat)" where
+    "apply_nf_upd (f, as, v) ni = (
+      case (ni f) of
+        Some ni1 \<Rightarrow> (ni(f \<mapsto> (ni1(as := v))))
+      | None \<Rightarrow> (ni(f \<mapsto> (Map.empty(as := v)))))"
+
+  text \<open>It seems to be agreed upon that, in case of a contradictory effect,
+    addition overrides deletion. We model this behaviour by first executing
+    the deletions, and then the additions. Also, effects that occur later
+    in the list override those that occur earlier.\<close>
+  fun apply_effect::"fully_instantiated_effect \<Rightarrow> world_model \<Rightarrow> world_model" where
+    "apply_effect (Eff a d tu nu) (World_Model p ti ni) = (
+      World_Model 
+        ((p - set d) \<union> set a) 
+        (fold (apply_tf_upd) tu ti) 
+        (fold (apply_nf_upd) nu ni))"
+
+  fun active_effects::"ground_action \<Rightarrow> world_model \<Rightarrow> ground_effect list" where
+    "active_effects \<alpha> M = (
+      let active = filter (\<lambda>(pre, eff). valuation M \<Turnstile> pre) (effects \<alpha>)
+      in map snd active)"
+
+
+  text \<open>Execute a ground action\<close>
+  definition execute_ground_action :: "ground_action \<Rightarrow> world_model \<Rightarrow> world_model" where
+    "execute_ground_action a M = (
+      let active = map (inst_effect M) (active_effects a M)     
+      in fold apply_effect active M)"
+
+  text \<open>Predicate to model that the given list of action instances is
+    executable, and transforms an initial world model \<open>M\<close> into a final
+    model \<open>M'\<close>.
+
+    Note that this definition over the list structure is more convenient in HOL
+    than to explicitly define an indexed sequence \<open>M\<^sub>0\<dots>M\<^sub>N\<close> of intermediate world
+     models, as done in [Lif87].
+  \<close>
+
+  
+  (* fun ground_action_path
+    :: "world_model \<Rightarrow> ground_action list \<Rightarrow> world_model \<Rightarrow> bool"
+  where
+    "ground_action_path M [] M' \<longleftrightarrow> (M = M')"
+  | "ground_action_path M (\<alpha>#\<alpha>s) M' \<longleftrightarrow> M \<^sup>c\<TTurnstile>\<^sub>= precondition \<alpha>
+    \<and> wf_active_effects (fully_instantiated_effects \<alpha>) M
+    \<and> ground_action_path (execute_ground_action \<alpha> M) \<alpha>s M'" *)
+
+  fun ground_action_path
+    :: "world_model \<Rightarrow> ground_action list \<Rightarrow> world_model \<Rightarrow> bool"
+  where
+    "ground_action_path M [] M' \<longleftrightarrow> (M = M')"
+  | "ground_action_path M (\<alpha>#\<alpha>s) M' \<longleftrightarrow> valuation M \<Turnstile> precondition \<alpha>
+    \<and> ground_action_path (execute_ground_action \<alpha> M) \<alpha>s M'"
+
+  text \<open>Function equations as presented in paper,
+    with inlined @{const execute_ground_action}.\<close>
+  lemma ground_action_path_in_paper:
+    "ground_action_path M [] M' \<longleftrightarrow> (M = M')"
+    "ground_action_path M (\<alpha>#\<alpha>s) M' \<longleftrightarrow> valuation M \<Turnstile> precondition \<alpha>
+    \<and> ground_action_path (fold apply_effect (map (inst_effect M) (active_effects \<alpha> M)) M) \<alpha>s M'"
+    by (auto simp: execute_ground_action_def)
+
+end
+
 subsubsection \<open>The problem\<close>
 
 locale ast_problem = ast_domain "domain P"
@@ -769,8 +899,7 @@ begin
   definition wf_problem where
     "wf_problem \<equiv>
       wf_domain
-    \<and> distinct (init P)
-    \<and> wf_world_model (set (init P))
+    \<and> wf_world_model (init P)
     \<and> wf_goal (goal P)
     "
 end
@@ -896,7 +1025,7 @@ begin
     unfolding restrict_map_def
     by (auto split: if_splits)
 
-  lemma var_in_fmla_vars: "(term.VAR x) \<in> \<Union> (ent ` atoms \<phi>) \<Longrightarrow> x \<in> fvars \<phi>" 
+  lemma var_in_fmla_vars: "(term.VAR x) \<in> \<Union> (ent ` atoms \<phi>) \<Longrightarrow> x \<in> f_vars \<phi>" 
     apply (induction \<phi>)
     using tav_alt by fastforce auto
   
@@ -907,11 +1036,11 @@ begin
     .
 
   lemma fmla_vars_restr_same_type: "\<forall>e \<in> \<Union> (ent ` atoms \<phi>). (ty_term Q cT) e 
-    = (ty_term (Q |` (fvars \<phi>)) cT) e"
+    = (ty_term (Q |` (f_vars \<phi>)) cT) e"
   proof (induction \<phi>)
     case (Atom x)
     moreover have "\<Union> (ent ` atoms (Atom x)) = ent x" by simp
-    moreover have "fvars (Atom x) = term_atom_vars x" by simp
+    moreover have "f_vars (Atom x) = term_atom_vars x" by simp
     ultimately show ?case 
       using term_vars_restr_same_type
       by presburger
@@ -964,12 +1093,12 @@ begin
   qed
 
   text \<open>The type environment must contain a type for all free variables in a formula.\<close>
-  lemma wf_fmla_vars: "wf_fmla (ty_term Q cT) \<phi> \<Longrightarrow> fvars \<phi> \<subseteq> dom Q"
+  lemma wf_fmla_vars: "wf_fmla (ty_term Q cT) \<phi> \<Longrightarrow> f_vars \<phi> \<subseteq> dom Q"
     using wf_schematic_atom_vars
     by (induction \<phi>) auto
   
   lemma wf_fmla_restr': "wf_fmla (ty_term Q cT) \<phi> 
-    \<Longrightarrow> wf_fmla (ty_term (Q |` (fvars \<phi>)) cT) \<phi>"
+    \<Longrightarrow> wf_fmla (ty_term (Q |` (f_vars \<phi>)) cT) \<phi>"
     using same_type_imp_wf_fmla_eq[OF fmla_vars_restr_same_type]
     by blast
 
@@ -981,17 +1110,17 @@ begin
     .
 
   lemma wf_fmla_restr: "wf_fmla (ty_term Q cT) \<phi> 
-    \<longleftrightarrow> wf_fmla (ty_term (Q |` (fvars \<phi>)) cT) \<phi>"
+    \<longleftrightarrow> wf_fmla (ty_term (Q |` (f_vars \<phi>)) cT) \<phi>"
     using wf_fmla_restr' wf_fmla_mono' map_restrict_less
     by blast
   
-  lemma wf_fmla_bw: "Q \<subseteq>\<^sub>m R \<Longrightarrow> fvars \<phi> \<subseteq> dom Q
+  lemma wf_fmla_bw: "Q \<subseteq>\<^sub>m R \<Longrightarrow> f_vars \<phi> \<subseteq> dom Q
     \<Longrightarrow> wf_fmla (ty_term R cT) \<phi> \<longleftrightarrow> wf_fmla (ty_term Q cT) \<phi>"
     using wf_fmla_restr[of R] sym[OF wf_fmla_restr[of Q]] map_le_restr
     by metis
   
   lemma wf_fmla_alt_lemma: "Q \<subseteq>\<^sub>m R 
-    \<Longrightarrow> wf_fmla (ty_term Q cT) \<phi> \<longleftrightarrow> wf_fmla (ty_term R cT) \<phi> \<and> fvars \<phi> \<subseteq> dom Q"
+    \<Longrightarrow> wf_fmla (ty_term Q cT) \<phi> \<longleftrightarrow> wf_fmla (ty_term R cT) \<phi> \<and> f_vars \<phi> \<subseteq> dom Q"
     using wf_fmla_mono wf_fmla_vars wf_fmla_bw 
     by blast
 
@@ -1063,7 +1192,7 @@ begin
 
   text \<open>A well-formed goal is a well-formed formula without any free variables\<close>
   
-  theorem wf_goal_alt: "wf_goal \<phi> \<longleftrightarrow> wf_fmla (ty_term Q objT) \<phi> \<and> fvars \<phi> = {}"
+  theorem wf_goal_alt: "wf_goal \<phi> \<longleftrightarrow> wf_fmla (ty_term Q objT) \<phi> \<and> f_vars \<phi> = {}"
     unfolding wf_goal_def
     using wf_fmla_alt_lemma[of "(\<lambda>_. None)"]
     by simp
@@ -1078,11 +1207,13 @@ begin
   "t_dom typ \<equiv> map fst (filter (\<lambda>(c, t). of_type t typ) (consts DD @ objects PD))"
 
   definition all::"variable \<Rightarrow> type \<Rightarrow> schematic_formula \<Rightarrow> schematic_formula" ("\<^bold>\<forall>_ - _._") where
-    "all v t \<phi> \<equiv> (if (v \<notin> fvars \<phi> \<and> (t_dom t \<noteq> [])) then \<phi> else  \<^bold>\<And>(map (\<lambda>c. (map_formula (term_atom_subst v c)) \<phi>) (t_dom t)))"
+    "all v t \<phi> \<equiv> (if (v \<notin> f_vars \<phi> \<and> (t_dom t \<noteq> [])) then \<phi> else \<^bold>\<And>(map (\<lambda>c. f_subst v c \<phi>) (t_dom t)))"
 
   definition exists::"variable \<Rightarrow> type \<Rightarrow> schematic_formula \<Rightarrow> schematic_formula" ("\<^bold>\<exists>_ - _._") where
-    "exists v t \<phi> \<equiv> (if (v \<notin> fvars \<phi> \<and> (t_dom t \<noteq> [])) then \<phi> else \<^bold>\<Or>(map (\<lambda>c. (map_formula (term_atom_subst v c)) \<phi>) (t_dom t)))"
+    "exists v t \<phi> \<equiv> (if (v \<notin> f_vars \<phi> \<and> (t_dom t \<noteq> [])) then \<phi> else \<^bold>\<Or>(map (\<lambda>c. f_subst v c \<phi>) (t_dom t)))"
 
+  fun univ_effect::"variable \<Rightarrow> type \<Rightarrow> (schematic_formula \<times> schematic_effect) \<Rightarrow> (schematic_formula \<times> schematic_effect) list" where
+    "univ_effect v t (pre, eff) = (map (\<lambda>c.((map_formula (sym_term_atom_subst v c) pre), (schematic_effect_subst v c eff))) (t_dom t))"
   
   text \<open>PDDL quantifiers act on typed lists of variables\<close>
   text \<open>This function removes duplicate parameters, keeping the last occurrence\<close>
@@ -1237,7 +1368,7 @@ begin
     by (subst sym[OF Ball_set], simp)
     
   lemma wf_fmla_upd: 
-    assumes "v \<notin> fvars \<phi>"
+    assumes "v \<notin> f_vars \<phi>"
       shows "wf_fmla (ty_term (Q(v \<mapsto> ty)) objT) \<phi> \<longleftrightarrow> wf_fmla (ty_term (Q(v := None)) objT) \<phi>"
     using wf_fmla_restr[of "Q(v \<mapsto> ty)"] wf_fmla_restr[of "Q(v := None)"] assms
     by simp
@@ -1286,7 +1417,7 @@ begin
 
   lemma wf_ex_goal_alt:
     assumes "wf_fmla (ty_term (Q(v \<mapsto> ty)) objT) \<phi>"
-        and "fvars \<phi> \<subseteq> {v}"
+        and "f_vars \<phi> \<subseteq> {v}"
       shows "wf_goal \<^bold>\<exists>v - ty. \<phi>"
     using assms wf_fmla_alt_lemma[of "Map.empty(v \<mapsto> ty)" "(Q(v \<mapsto> ty))"] wf_ex_goal by simp
     
@@ -1308,7 +1439,7 @@ begin
 
    lemma wf_univ_goal_alt:
     assumes "wf_fmla (ty_term (Q(v \<mapsto> ty)) objT) \<phi>"
-        and "fvars \<phi> \<subseteq> {v}"
+        and "f_vars \<phi> \<subseteq> {v}"
       shows "wf_goal \<^bold>\<forall>v - ty. \<phi>"
     using assms wf_fmla_alt_lemma[of "Map.empty(v \<mapsto> ty)" "(Q(v \<mapsto> ty))"] wf_univ_goal by simp
 
@@ -1323,9 +1454,9 @@ context ast_domain begin
   definition resolve_action_schema :: "name \<rightharpoonup> ast_action_schema" where
     "resolve_action_schema n = index_by ast_action_schema.name (actions D) n"
 
-  fun subst_term where
-    "subst_term psubst (term.VAR x) = psubst x"
-  | "subst_term psubst (term.CONST c) = c"
+  fun subst_sym where
+    "subst_sym psubst (Var x) = psubst x"
+  | "subst_sym psubst (Const c) = c"
 
  text \<open>To instantiate an action schema, we first compute a substitution from
     parameters to objects, and then apply this substitution to the
@@ -1333,19 +1464,22 @@ context ast_domain begin
     functions generated by the datatype package.
     \<close>
 
+  fun ssubst where
+  "ssubst params as = subst_sym (the o (map_of (zip (map fst params) as)))"
+
   fun tsubst where
-  "tsubst params args = subst_term (the o (map_of (zip (map fst params) args)))"
+  "tsubst params as = map_term (ssubst params as)"
 
   fun inst_pre where
-  "inst_pre t pre = (map_formula o map_atom) t pre" 
-  
+  "inst_pre t pre = (map_formula (map_atom t)) pre" 
+
   fun instantiate_action_schema
     :: "ast_action_schema \<Rightarrow> object list \<Rightarrow> ground_action"
   where
-    "instantiate_action_schema (Action_Schema n params pre eff) args = (let
-        tsubst = tsubst params args;
+    "instantiate_action_schema (Action_Schema n params pre eff) as = (let
+        tsubst = tsubst params as;
         pre_inst = inst_pre tsubst pre;
-        eff_inst = (map_ast_effect) tsubst eff
+        eff_inst = map (\<lambda>(p, e).((map_formula (map_atom tsubst)) p, map_ast_effect tsubst e)) eff
       in
         Ground_Action pre_inst eff_inst
       )"
@@ -1358,14 +1492,14 @@ context ast_problem begin
 
   text \<open>Initial model\<close>
   definition I :: "world_model" where
-    "I \<equiv> set (init P)"
+    "I \<equiv> init P"
 
   text \<open>Resolve a plan action and instantiate the referenced action schema.\<close>
   fun resolve_instantiate :: "plan_action \<Rightarrow> ground_action" where
-    "resolve_instantiate (PAction n args) =
+    "resolve_instantiate (PAction n as) =
       instantiate_action_schema
         (the (resolve_action_schema n))
-        args"
+        as"
 
   text \<open>Check whether object has specified type\<close>
   definition "is_obj_of_type n T \<equiv> case objT n of
@@ -1386,8 +1520,8 @@ context ast_problem begin
     length, and each matching pair of argument and type
     satisfies the predicate @{const is_obj_of_type}.
   \<close>
-  definition "action_params_match a args
-    \<equiv> list_all2 is_obj_of_type args (map snd (parameters a))"
+  definition "action_params_match a as
+    \<equiv> list_all2 is_obj_of_type as (map snd (parameters a))"
 
   text \<open>At this point, we can define well-formedness of a plan action:
     The action must refer to a declared action schema, the arguments must
@@ -1395,17 +1529,13 @@ context ast_problem begin
   \<close>
  (* Objects are valid and match parameter types *)
   fun wf_plan_action :: "plan_action \<Rightarrow> bool" where
-    "wf_plan_action (PAction n args) = (
+    "wf_plan_action (PAction n as) = (
       case resolve_action_schema n of
         None \<Rightarrow> False
       | Some a \<Rightarrow>
-          action_params_match a args
-        \<and> wf_effect_inst (effect (instantiate_action_schema a args))
+          action_params_match a as
+        \<and> wf_cond_effect_inst_list (effects (instantiate_action_schema a as))
         )"
-  text \<open>
-    TODO: The second conjunct is redundant, as instantiating a well formed
-      action with valid objects yield a valid effect.
-  \<close>
 
   text \<open>A sequence of plan actions form a path, if they are well-formed and
     their instantiations form a path.\<close>
@@ -1418,13 +1548,13 @@ context ast_problem begin
 
   text \<open>Instantiation of a goal. No variables are instantiated\<close>
   fun inst_goal::"schematic_formula \<Rightarrow> ground_formula" where
-  "inst_goal \<phi> = (let tsubst = subst_term (the o (Map.empty))
+  "inst_goal \<phi> = (let tsubst = map_term (subst_sym (the o (Map.empty)))
         in (map_formula o map_atom) tsubst \<phi>)"
   
   text \<open>A plan is valid wrt.\ a given initial model, if it forms a path to a
     goal model \<close>
   definition valid_plan_from :: "world_model \<Rightarrow> plan \<Rightarrow> bool" where
-    "valid_plan_from M \<pi>s = (\<exists>M'. plan_action_path M \<pi>s M' \<and> M' \<^sup>c\<TTurnstile>\<^sub>= inst_goal (goal P))"
+    "valid_plan_from M \<pi>s = (\<exists>M'. plan_action_path M \<pi>s M' \<and> valuation M' \<Turnstile> inst_goal (goal P))"
   
   (* Implementation note: resolve and instantiate already done inside
       enabledness check, redundancy! *)
@@ -1435,7 +1565,7 @@ context ast_problem begin
     where "valid_plan \<equiv> valid_plan_from I"
 
   text \<open>Concise definition used in paper:\<close>
-  lemma "valid_plan \<pi>s \<equiv> \<exists>M'. plan_action_path I \<pi>s M' \<and> M' \<^sup>c\<TTurnstile>\<^sub>= inst_goal (goal P)"
+  lemma "valid_plan \<pi>s \<equiv> \<exists>M'. plan_action_path I \<pi>s M' \<and> valuation M' \<Turnstile> inst_goal (goal P)"
     unfolding valid_plan_def valid_plan_from_def by auto
 
 
@@ -1457,8 +1587,8 @@ context ast_problem begin
 
   fun wf_ground_action :: "ground_action \<Rightarrow> bool" where
     "wf_ground_action (Ground_Action pre eff) \<longleftrightarrow> (
-        wf_fmla objT pre
-      \<and> wf_effect objT eff
+        wf_fmla (ty_term objT obj_fluent_sig) pre
+      \<and> wf_cond_effect_list (ty_term objT obj_fluent_sig) eff
       )
     "
 
@@ -1565,17 +1695,20 @@ subsubsection \<open>Preservation\<close>
 
 context ast_problem
 begin
+
+  definition wf_active_effect :: "fully_instantiated_effect \<Rightarrow> bool" where
+
   text \<open>Shorthand for enabled plan action: It is well-formed, and the
     precondition holds for its instance.\<close>
   definition plan_action_enabled :: "plan_action \<Rightarrow> world_model \<Rightarrow> bool" where
     "plan_action_enabled \<pi> M
-      \<longleftrightarrow> wf_plan_action \<pi> \<and> M \<^sup>c\<TTurnstile>\<^sub>= precondition (resolve_instantiate \<pi>)"
+      \<longleftrightarrow> wf_plan_action \<pi> \<and> valuation M \<Turnstile> precondition (resolve_instantiate \<pi>)"
 
   text \<open>Shorthand for executing a plan action: Resolve, instantiate, and
     apply effect\<close>
   definition execute_plan_action :: "plan_action \<Rightarrow> world_model \<Rightarrow> world_model"
     where "execute_plan_action \<pi> M
-      = (apply_effect (effect (resolve_instantiate \<pi>)) M)"
+      = (apply_effects (effects (resolve_instantiate \<pi>)) M)"
 
   text \<open>The @{const plan_action_path} predicate can be decomposed naturally
     using these shorthands: \<close>
@@ -1618,8 +1751,7 @@ begin
   lemma wf_I: "wf_world_model I"
     using wf_problem
     unfolding I_def wf_world_model_def wf_problem_def wf_problem_decs_def wf_domain_def wf_domain_decs_def
-    apply(safe) subgoal for f by (induction f) auto
-    done
+    by safe
 
   text \<open>Application of a well-formed effect preserves well-formedness
     of the model\<close>
@@ -1719,7 +1851,7 @@ context ast_problem begin
     lemma all_inst: "\<A> \<Turnstile> (f \<^bold>\<forall>v - ty. \<phi>) \<longleftrightarrow>
       (\<forall>c \<in> set (t_dom ty). \<A> \<Turnstile> f (map_formula (term_atom_subst v c) \<phi>))"
     proof cases
-      assume a: "v \<notin> fvars \<phi> \<and> t_dom ty \<noteq> []"
+      assume a: "v \<notin> f_vars \<phi> \<and> t_dom ty \<noteq> []"
       hence "\<^bold>\<forall>v - ty. \<phi> = \<phi>" unfolding all_def by auto
       hence "\<A> \<Turnstile> (f \<^bold>\<forall>v - ty. \<phi>) \<longleftrightarrow> \<A> \<Turnstile> f \<phi>" by presburger
       moreover from a
@@ -1727,7 +1859,7 @@ context ast_problem begin
       hence "(\<forall>c\<in>set (t_dom ty). \<A> \<Turnstile> f \<phi>) \<longleftrightarrow> (\<forall>c\<in>set (t_dom ty). \<A> \<Turnstile> f (map_formula (term_atom_subst v c) \<phi>))" by simp
       ultimately show ?thesis unfolding all_def using a by blast
     next
-      assume "\<not>(v \<notin> fvars \<phi> \<and> t_dom ty \<noteq> [])"
+      assume "\<not>(v \<notin> f_vars \<phi> \<and> t_dom ty \<noteq> [])"
       hence "\<A> \<Turnstile> (f \<^bold>\<forall>v - ty. \<phi>) \<longleftrightarrow> \<A> \<Turnstile> (f \<^bold>\<And>(map (\<lambda>c. map_formula (term_atom_subst v c) \<phi>) (t_dom ty)))" unfolding all_def by force
       also have "... \<longleftrightarrow> (\<forall>\<phi> \<in> set (map (\<lambda>c. map_formula (term_atom_subst v c) \<phi>) (t_dom ty)). \<A> \<Turnstile> f \<phi>)" using Big_And_sem by blast
       also have "... \<longleftrightarrow> (\<forall>c \<in> set (t_dom ty). \<A> \<Turnstile> f (map_formula (term_atom_subst v c) \<phi>))" by auto
@@ -1737,14 +1869,14 @@ context ast_problem begin
     lemma ex_inst: "\<A> \<Turnstile> (f \<^bold>\<exists>v - ty. \<phi>) \<longleftrightarrow>
       (\<exists>c \<in> set (t_dom ty). \<A> \<Turnstile> f (map_formula (term_atom_subst v c) \<phi>))"
     proof cases
-      assume a: "v \<notin> fvars \<phi> \<and> t_dom ty \<noteq> []"
+      assume a: "v \<notin> f_vars \<phi> \<and> t_dom ty \<noteq> []"
       hence "\<A> \<Turnstile> (f \<^bold>\<exists>v - ty. \<phi>) \<longleftrightarrow> \<A> \<Turnstile> f \<phi>" unfolding exists_def by auto
       moreover from a
       have "\<forall>c. map_formula (term_atom_subst v c) \<phi> = \<phi>" using subst_idem by (induction \<phi>) auto
       hence "(\<exists>c\<in>set (t_dom ty). \<A> \<Turnstile> f \<phi>) \<longleftrightarrow> (\<exists>c\<in>set (t_dom ty). \<A> \<Turnstile> f (map_formula (term_atom_subst v c) \<phi>))" by simp
       ultimately show ?thesis using a by blast
     next
-      assume "\<not>(v \<notin> fvars \<phi> \<and> t_dom ty \<noteq> [])"
+      assume "\<not>(v \<notin> f_vars \<phi> \<and> t_dom ty \<noteq> [])"
       hence "\<A> \<Turnstile> (f \<^bold>\<exists>v - ty. \<phi>) \<longleftrightarrow> \<A> \<Turnstile> (f \<^bold>\<Or>(map (\<lambda>c. map_formula (term_atom_subst v c) \<phi>) (t_dom ty)))" unfolding exists_def by force
       also have "... \<longleftrightarrow> (\<exists>\<phi> \<in> set (map (\<lambda>c. map_formula (term_atom_subst v c) \<phi>) (t_dom ty)). \<A> \<Turnstile> f \<phi>)" using Big_Or_sem by blast
       also have "... \<longleftrightarrow> (\<exists>c \<in> set (t_dom ty). \<A> \<Turnstile> f (map_formula (term_atom_subst v c) \<phi>))" by auto
