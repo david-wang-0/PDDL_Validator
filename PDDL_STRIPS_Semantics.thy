@@ -133,10 +133,10 @@ type_synonym ground_formula = "object term atom formula"
 type_synonym ground_effect = "object term ast_effect"
 
 datatype fully_instantiated_effect =
-  Eff (adds: "(object pred) list")
-      (dels: "(object pred) list")
-      (tf_upds: "(func \<times> object list \<times> object) list")
-      (nf_upds: "(func \<times> object list \<times> rat option) list")
+  Eff (adds: "(object pred option) list")
+      (dels: "(object pred option) list")
+      (tf_upds: "(func \<times> object option list \<times> object option) list")
+      (nf_upds: "(func \<times> object option list \<times> rat option) list")
 
 
 subsubsection \<open>Domains\<close>
@@ -286,14 +286,14 @@ abbreviation sym_term_atom_subst::"variable \<Rightarrow> object \<Rightarrow> s
   "sym_term_atom_subst v c \<equiv> map_atom (map_term (sym_subst v c))"
 
 
-fun tf_upd_subst::"variable \<Rightarrow> object \<Rightarrow> (func \<times> symbol term list \<times> symbol term) 
-  \<Rightarrow> (func \<times> symbol term list \<times> symbol term)" where
-  "tf_upd_subst v c (f, as, r) = (f, map (sym_term_subst v c) as, sym_term_subst v c r)"
+fun tf_upd_subst::"variable \<Rightarrow> object \<Rightarrow> (func \<times> symbol term option list \<times> symbol term option) 
+  \<Rightarrow> (func \<times> symbol term option list \<times> symbol term option)" where
+  "tf_upd_subst v c (f, as, r) = (f, (map o map_option) (sym_term_subst v c) as, map_option (sym_term_subst v c) r)"
 
-fun nf_upd_subst::"variable \<Rightarrow> object \<Rightarrow> (func \<times> upd_op \<times> symbol term list \<times> symbol term num_fluent)
-  \<Rightarrow> (func \<times> upd_op \<times> symbol term list \<times> symbol term num_fluent)" where
+fun nf_upd_subst::"variable \<Rightarrow> object \<Rightarrow> (func \<times> upd_op \<times> symbol term option list \<times> symbol term num_fluent)
+  \<Rightarrow> (func \<times> upd_op \<times> symbol term option list \<times> symbol term num_fluent)" where
   "nf_upd_subst v c (f, op, as, r) = 
-    (f, op, map (sym_term_subst v c) as, sym_term_nf_subst v c r)"
+    (f, op, (map o map_option) (sym_term_subst v c) as, sym_term_nf_subst v c r)"
 
 fun schematic_effect_subst::"variable \<Rightarrow> object \<Rightarrow> schematic_effect 
   \<Rightarrow> schematic_effect" where
@@ -314,63 +314,72 @@ definition f_subst where
   "f_subst v c \<equiv> map_formula (sym_term_atom_subst v c)"
 
 subsection \<open>Semantics of terms\<close>
-  text \<open>Using None rather than Undef to represent undefined values would 
-        make this function much more involved. We would have to check that
-        all terms are defined and otherwise return None. Right now, we just
-        make the fact that no functions are defined for arguments including 
-        Undef a condition for well-formedness.\<close>
-  fun term_val::"world_model \<Rightarrow> object term \<Rightarrow> object" where
+  text \<open>Although using option.None instead of a distinguished member 
+        object.Undef makes this function a bit more difficult to 
+        reason about, it is worth it. The well-formedness checks for 
+        updates to fluents can be implemented generically rather than
+        requiring into the underlying type. The return value has a different
+        notion of well-formedness compared to the arguments, since it permits
+        the usage of None/Undefined. If we did not use option, we would have
+        to make the wf checks much more involved. We would have to define
+        wf_return_type.
+
+        The well-formedness of the world model would also require it not to
+        assign any value to undefined parameters for functions. Additionally,
+        it becomes messy when a return value is explicitly assigned Undefined.
+        
+        Moreover, this specific function is used for the full instantiation
+        of ground effects into applicable effects. \<close>
+  (* fun term_val::"world_model \<Rightarrow> object term \<Rightarrow> object" where
     "term_val M (Ent obj) = obj"
   | "term_val M (Fun fun as) = (case (tf_int M fun) of 
       Some f \<Rightarrow> (case (f (map (\<lambda>t. term_val M t) as)) of 
         Some obj \<Rightarrow> obj
       | None \<Rightarrow> Undef)
-    | None \<Rightarrow> Undef)"
+    | None \<Rightarrow> Undef)" *)
 
-  fun term_val'::"world_model \<Rightarrow> object term \<Rightarrow> object option" where
-    "term_val' M (Ent obj) = Some obj"
-  | "term_val' M (Fun fun as) = (case (tf_int M fun) of
-      Some f \<Rightarrow> (let arg_ints = map (\<lambda>t. term_val' M t) as
-        in (if (list_all (\<lambda>x. x \<noteq> None) arg_ints) 
-            then f (map the arg_ints) 
-            else None))
+  fun term_val::"world_model \<Rightarrow> object term \<Rightarrow> object option" where
+    "term_val M (Ent obj) = Some obj"
+  | "term_val M (Fun fun as) = (case (tf_int M fun) of
+      Some f \<Rightarrow> (let arg_vals = map (\<lambda>t. term_val M t) as
+        in (if (list_all (\<lambda>x. x \<noteq> None) arg_vals) 
+            then f (map the arg_vals) else None))
     | None \<Rightarrow> None)"
   
   fun nf_val::"world_model \<Rightarrow> (object term) num_fluent \<Rightarrow> rat option" where
     "nf_val M (NFun fun as) = (case (nf_int M fun) of 
-      Some f \<Rightarrow> f (map (\<lambda>t. term_val M t) as) |
-      None \<Rightarrow> None)"
+      Some f  \<Rightarrow> (let arg_vals = map (\<lambda>t. term_val M t) as
+        in (if (list_all (\<lambda>x. x \<noteq> None) arg_vals) 
+            then f (map the arg_vals) else None)) 
+    | None    \<Rightarrow> None)"
   | "nf_val M (Num n) = Some n"
-  | "nf_val M (Add x y) = (case (nf_val M x, nf_val M y) of 
-      (Some x, Some y) \<Rightarrow> Some (x + y) |
-      _ \<Rightarrow> None)"
-  | "nf_val M (Sub x y) = (case (nf_val M x, nf_val M y) of 
-      (Some x, Some y) \<Rightarrow> Some (x - y) |
-      _ \<Rightarrow> None)"
-  | "nf_val M (Mult x y) = (case (nf_val M x, nf_val M y) of 
-      (Some x, Some y) \<Rightarrow> Some (x * y) |
-      _ \<Rightarrow> None)"
-  | "nf_val M (Div x y) = (case (nf_val M x, nf_val M y) of 
-      (Some x, Some y) \<Rightarrow> Some (x / y) |
-      _ \<Rightarrow> None)"
+  | "nf_val M (Add x y) = (combine_options plus (nf_val M x) (nf_val M y))"
+  | "nf_val M (Sub x y) = (combine_options minus (nf_val M x) (nf_val M y))"
+  | "nf_val M (Mult x y) = (combine_options times (nf_val M x) (nf_val M y))"
+  | "nf_val M (Div x y) = (combine_options inverse_divide (nf_val M x) (nf_val M y))"
   
   fun nc_val::"world_model \<Rightarrow> (object term) num_comp \<Rightarrow> bool" where
     "nc_val M (Num_Eq x y) = (case (nf_val M x, nf_val M y) of
-      (Some x, Some y) \<Rightarrow> x = y |
-      _ \<Rightarrow> False)"
+      (Some x, Some y)  \<Rightarrow> x = y | _ \<Rightarrow> False)"
   | "nc_val M (Le x y) = (case (nf_val M x, nf_val M y) of
-      (Some x, Some y) \<Rightarrow> x \<le> y |
-      _ \<Rightarrow> False)"
+      (Some x, Some y)  \<Rightarrow> x \<le> y | _ \<Rightarrow> False)"
   | "nc_val M (Lt x y) = (case (nf_val M x, nf_val M y) of
-      (Some x, Some y) \<Rightarrow> x < y |
-      _ \<Rightarrow> False)"
+      (Some x, Some y)  \<Rightarrow> x < y | _ \<Rightarrow> False)"
   
-  fun pred_inst::"world_model \<Rightarrow> (object term) pred \<Rightarrow> object pred" where
-    "pred_inst M (Pred p as ) = Pred p (map (\<lambda>t. term_val M t) as)"
-  | "pred_inst M (Eq t1 t2) = Eq (term_val M t1) (term_val M t2)"
+  fun pred_inst::"world_model \<Rightarrow> (object term) pred \<Rightarrow> object pred option" where
+    "pred_inst M (Pred p as) = (let arg_vals = map (\<lambda>t. term_val M t) as
+        in (if (list_all (\<lambda>x. x \<noteq> None) arg_vals) 
+            then Some (Pred p (map the arg_vals)) 
+            else None))"
+  | "pred_inst M (Eq t1 t2) = (case (term_val M t1, term_val M t2) of
+      (Some x, Some y) \<Rightarrow> Some (Eq x y)
+    | _                \<Rightarrow> None)"
   
   fun pred_val::"world_model \<Rightarrow> (object term) pred \<Rightarrow> bool" where
-    "pred_val M p = (pred_inst M p \<in> preds M)"
+    "pred_val M p = (case pred_inst M p of 
+      Some (Pred p as)  \<Rightarrow> (Pred p as) \<in> preds M
+    | Some (Eq x y)     \<Rightarrow> x = y
+    | None              \<Rightarrow> False)"
   
   
   text \<open>A valuation according to more or less standard FOL\<close>
@@ -578,25 +587,36 @@ begin
 
     lemma "wf_fmla \<phi> = (\<forall>a\<in>atoms \<phi>. wf_atom a)"
       by (induction \<phi>) auto
-
+    
+    fun is_some where
+      "is_some (Some x) = True"
+    | "is_some None = False"
+    
     text \<open>An update to a function on objects is well-formed if the function has 
           been declared, the signature matches the types of the arguments and new return value, 
           and the arguments and the term to assign the return value are well-formed.\<close>
-    fun wf_tf_upd::"(func \<times> 'ent list \<times> 'ent) \<Rightarrow> bool" where
+    fun wf_tf_upd::"(func \<times> 'ent option list \<times> 'ent option) \<Rightarrow> bool" where
     "wf_tf_upd (f, as, v) = (case obj_fluent_sig f of 
       None \<Rightarrow> False
-    | Some (Ts, T) \<Rightarrow> list_all2 is_of_type as Ts 
-        \<and> is_of_type v T \<or> v = Undef
-    )" (* is_of_type prevents usage of Undef *) (* if we used option here, this would be easy *)
+    | Some (Ts, T) \<Rightarrow> 
+          list_all is_some as
+        \<and> list_all2 (is_of_type o the) as Ts 
+        \<and> (v = None \<or> is_of_type (the v) T)
+    )" (* is_of_type prevents usage of Undef for the 
+          return value, unless we define another notion of 
+          well-formedness.
+        - By using option for the update, we have to use the every time. *)
   
     text \<open>An update to a numeric function is well-formed if the function has been declared,
           the signature matches the types of the arguments, the arguments are well-formed,
           and the value that is being assigned is well-formed.\<close>
-    fun wf_nf_upd::"(func \<times> upd_op \<times> 'ent list \<times> 'ent num_fluent) \<Rightarrow> bool" where
+    fun wf_nf_upd::"(func \<times> upd_op \<times> 'ent option list \<times> 'ent num_fluent) \<Rightarrow> bool" where
     "wf_nf_upd (f, op, as, v) = (case num_fluent_sig f of 
         None \<Rightarrow> False
-      | Some Ts \<Rightarrow> list_all2 is_of_type as Ts 
-          \<and> wf_num_fluent v
+      | Some Ts \<Rightarrow> 
+          list_all is_some as
+        \<and> list_all2 (is_of_type o the) as Ts 
+        \<and> wf_num_fluent v
     )"
 
     fun wf_pred_upd where
@@ -665,8 +685,7 @@ begin
     \<and> distinct (map (predicate_decl.pred) (predicates DD))
     \<and> (\<forall>p\<in>set (predicates DD). wf_predicate_decl p)
     \<and> distinct (map fst (consts DD)) 
-    \<and> (\<forall>(c, T) \<in> set (consts DD). wf_type T) 
-    \<and> (\<forall>(c, T) \<in> set (consts DD). c \<noteq> Undef)"
+    \<and> (\<forall>(c, T) \<in> set (consts DD). wf_type T)"
 
 end \<comment> \<open>locale \<open>ast_domain\<close>\<close>
 
@@ -693,9 +712,7 @@ begin
     "wf_problem_decs \<equiv>
       wf_domain_decs
     \<and> distinct (map fst (objects PD) @ map fst (consts DD))
-    \<and> (\<forall>(n,T) \<in> set (objects PD). wf_type T) 
-    \<and> (\<forall>(c, T) \<in> set (objects PD). c \<noteq> Undef)
-    "
+    \<and> (\<forall>(n,T) \<in> set (objects PD). wf_type T)"
 
 
   text \<open>An action schema is well-formed if the parameter names are distinct,
@@ -714,18 +731,6 @@ begin
         distinct (map fst params)
       \<and> wf_fmla tyt pre
       \<and> wf_cond_effect_list tyt effs)"
-                            
-    fun wf_app_nf_upd::"(func \<times> object list \<times> rat option) \<Rightarrow> bool" where
-      "wf_app_nf_upd (f, as, v) \<longleftrightarrow> (case num_fluent_sig f of 
-        None \<Rightarrow> False 
-      | Some Ts \<Rightarrow> list_all2 (is_of_type objT) as Ts \<and> v \<noteq> None)"
-
-    fun wf_fully_instantiated_effect where
-      "wf_fully_instantiated_effect (Eff a d tu nu) \<longleftrightarrow> 
-          (\<forall>ae\<in>set a. wf_pred_upd objT ae)
-        \<and> (\<forall>de\<in>set d. wf_pred_upd objT de)
-        \<and> (\<forall>u \<in>set tu. wf_tf_upd objT u)
-        \<and> (\<forall>u \<in> set nu. wf_app_nf_upd u)"
 
   abbreviation wf_cond_effect_inst::"(ground_formula \<times> ground_effect) \<Rightarrow> bool" where
     "wf_cond_effect_inst \<equiv> wf_cond_effect (ty_term objT obj_fluent_sig)"
@@ -778,17 +783,17 @@ context ast_domain
 begin
     
   fun inst_tf_upd::"world_model 
-    \<Rightarrow> (func \<times> (object term) list \<times> object term) 
-    \<Rightarrow> (func \<times> object list \<times> object)" where
-    "inst_tf_upd M (F, as, v) = (F, map (term_val M) as, term_val M v)"
+    \<Rightarrow> (func \<times> object term option list \<times> object term option) 
+    \<Rightarrow> (func \<times> object option list \<times> object option)" where
+    "inst_tf_upd M (F, as, v) = (F, map ((term_val M) o the) as, term_val M (the v))"
 
   fun inst_nf_upd::"world_model
-    \<Rightarrow> (func \<times> upd_op \<times> object term list \<times> object term num_fluent)
-    \<Rightarrow> (func \<times> object list \<times> rat option)" where
+    \<Rightarrow> (func \<times> upd_op \<times> object term option list \<times> object term num_fluent)
+    \<Rightarrow> (func \<times> object option list \<times> rat option)" where
     "inst_nf_upd M (f, op, as, t) = (
-      let args = map (term_val M) as
+      let args = map ((term_val M) o the) as
       in
-      (case (nf_val M (NFun f as), nf_val M t) of
+      (case (nf_val M (NFun f (map the as)), nf_val M t) of
         (None, change) \<Rightarrow> (case op of 
           Assign \<Rightarrow> (f, args, change) 
         | _      \<Rightarrow> (f, args, None)
@@ -811,25 +816,25 @@ begin
           (map (inst_nf_upd M) nu))"
 
   text \<open>When we apply an update that returns undefined, we can either unassign the interpretation
-        or update it to Undefined. In both cases, term_val will return Undefined\<close>
-  (* Why are we not just using option instead? *)
-  fun apply_tf_upd::"(func \<times> object list \<times> object) 
+        or update it to Undefined. In both cases, term_val will return Undefined.
+        We have removed Undefined for now.\<close>
+  fun apply_tf_upd::"(func \<times> object option list \<times> object option) 
     \<Rightarrow> (func \<rightharpoonup> object list \<rightharpoonup> object) 
     \<Rightarrow> (func \<rightharpoonup> object list \<rightharpoonup> object)" where
     "apply_tf_upd (f, as, v) ti = (
       case (ti f) of
-        Some ti1 \<Rightarrow> (ti(f \<mapsto> (ti1(as \<mapsto> v))))
-      | None \<Rightarrow> (ti(f \<mapsto> [as \<mapsto> v]))
+        Some ti1 \<Rightarrow> (ti(f \<mapsto> (ti1((map the as) := v))))
+      | None \<Rightarrow> (ti(f \<mapsto> (Map.empty((map the as) := v))))
     )"
 
   text \<open>The return value will never be undefined, unless the update is not well-formed.\<close>
-  fun apply_nf_upd::"(func \<times> object list \<times> rat option) 
+  fun apply_nf_upd::"(func \<times> object option list \<times> rat option) 
     \<Rightarrow> (func \<rightharpoonup> object list \<rightharpoonup> rat) 
     \<Rightarrow> (func \<rightharpoonup> object list \<rightharpoonup> rat)" where
     "apply_nf_upd (f, as, v) ni = (
       case (ni f) of
-        Some ni1 \<Rightarrow> (ni(f \<mapsto> (ni1(as := v))))
-      | None \<Rightarrow> (ni(f \<mapsto> (Map.empty(as := v)))))"
+        Some ni1 \<Rightarrow> (ni(f \<mapsto> (ni1((map the as) := v))))
+      | None \<Rightarrow> (ni(f \<mapsto> (Map.empty((map the as) := v)))))"
 
   text \<open>It seems to be agreed upon that, in case of a contradictory effect,
     addition overrides deletion. We model this behaviour by first executing
@@ -838,20 +843,20 @@ begin
   fun apply_effect::"fully_instantiated_effect \<Rightarrow> world_model \<Rightarrow> world_model" where
     "apply_effect (Eff a d tu nu) (World_Model p ti ni) = (
       World_Model 
-        ((p - set d) \<union> set a) 
+        ((p - set (map the d)) \<union> set (map the a)) 
         (fold (apply_tf_upd) tu ti) 
         (fold (apply_nf_upd) nu ni))"
 
-  fun active_effects::"ground_action \<Rightarrow> world_model \<Rightarrow> ground_effect list" where
-    "active_effects \<alpha> M = (
-      let active = filter (\<lambda>(pre, eff). valuation M \<Turnstile> pre) (effects \<alpha>)
+  definition active_effects::"world_model \<Rightarrow> (ground_formula \<times> ground_effect) list \<Rightarrow> ground_effect list" where
+    "active_effects M e = (
+      let active = filter (\<lambda>(pre, eff). valuation M \<Turnstile> pre) e
       in map snd active)"
 
 
   text \<open>Execute a ground action\<close>
   definition execute_ground_action :: "ground_action \<Rightarrow> world_model \<Rightarrow> world_model" where
     "execute_ground_action a M = (
-      let active = map (inst_effect M) (active_effects a M)     
+      let active = map (inst_effect M) (active_effects M (effects a))     
       in fold apply_effect active M)"
 
   text \<open>Predicate to model that the given list of action instances is
@@ -863,6 +868,37 @@ begin
      models, as done in [Lif87].
   \<close>
 
+    fun wf_app_pred_upd where
+      "wf_app_pred_upd None = False"
+    | "wf_app_pred_upd (Some (Eq _ _)) = False"
+    | "wf_app_pred_upd (Some (Pred p as)) = wf_pred_atom objT (Pred p as)"
+                            
+    fun wf_ret_val::"'a option \<Rightarrow> 'b option \<Rightarrow> bool" where
+      "wf_ret_val None None = True"
+    | "wf_ret_val (Some r) (Some r') = True"
+    | "wf_ret_val _ _ = False"
+
+    fun wf_app_tf_upd::"(func \<times> object term option list \<times> object term option) 
+      \<Rightarrow> (func \<times> object option list \<times> object option) \<Rightarrow> bool" where
+      "wf_app_tf_upd (f, as, v) (f', as', v') = (
+          wf_ret_val v v' 
+        \<and> wf_tf_upd objT (f', as', v'))"
+  
+    fun wf_app_nf_upd::"(func \<times> object option list \<times> rat option) \<Rightarrow> bool" where
+      "wf_app_nf_upd (f, as, v) = (case (num_fluent_sig f) of 
+        None \<Rightarrow> False
+      | Some Ts \<Rightarrow> 
+          list_all is_some as
+        \<and> list_all2 ((is_of_type objT) o the) as Ts 
+        \<and> is_some v)"
+
+    
+    fun wf_fully_instantiated_effect where
+      "wf_fully_instantiated_effect (Effect a d tu nu) (Eff a' d' tu' nu') \<longleftrightarrow> 
+          (\<forall>ae\<in>set a'. wf_app_pred_upd ae)
+        \<and> (\<forall>de\<in>set d'. wf_app_pred_upd de)
+        \<and> (\<forall>(u, u') \<in> set (zip tu tu'). wf_app_tf_upd u u')
+        \<and> (\<forall>u' \<in> set nu'. wf_app_nf_upd u')"
   
   (* fun ground_action_path
     :: "world_model \<Rightarrow> ground_action list \<Rightarrow> world_model \<Rightarrow> bool"
@@ -871,21 +907,25 @@ begin
   | "ground_action_path M (\<alpha>#\<alpha>s) M' \<longleftrightarrow> M \<^sup>c\<TTurnstile>\<^sub>= precondition \<alpha>
     \<and> wf_active_effects (fully_instantiated_effects \<alpha>) M
     \<and> ground_action_path (execute_ground_action \<alpha> M) \<alpha>s M'" *)
-
+  
+  definition wf_active_effects::"world_model \<Rightarrow> (ground_formula \<times> ground_effect) list \<Rightarrow> bool" where
+    "wf_active_effects M e = (\<forall>e \<in> set (active_effects M e). wf_fully_instantiated_effect e (inst_effect M e))"
+  
   fun ground_action_path
     :: "world_model \<Rightarrow> ground_action list \<Rightarrow> world_model \<Rightarrow> bool"
   where
     "ground_action_path M [] M' \<longleftrightarrow> (M = M')"
   | "ground_action_path M (\<alpha>#\<alpha>s) M' \<longleftrightarrow> valuation M \<Turnstile> precondition \<alpha>
+    \<and> wf_active_effects M (effects \<alpha>)
     \<and> ground_action_path (execute_ground_action \<alpha> M) \<alpha>s M'"
 
-  text \<open>Function equations as presented in paper,
-    with inlined @{const execute_ground_action}.\<close>
+  text \<open>Unfolded definition of ground_action_path.\<close>
   lemma ground_action_path_in_paper:
     "ground_action_path M [] M' \<longleftrightarrow> (M = M')"
     "ground_action_path M (\<alpha>#\<alpha>s) M' \<longleftrightarrow> valuation M \<Turnstile> precondition \<alpha>
-    \<and> ground_action_path (fold apply_effect (map (inst_effect M) (active_effects \<alpha> M)) M) \<alpha>s M'"
-    by (auto simp: execute_ground_action_def)
+    \<and> (\<forall>e \<in> set (active_effects M (effects \<alpha>)). wf_fully_instantiated_effect e (inst_effect M e))
+    \<and> ground_action_path (fold apply_effect (map (inst_effect M) (active_effects M (effects \<alpha>))) M) \<alpha>s M'"
+    by (auto simp: execute_ground_action_def wf_active_effects_def)
 
 end
 
