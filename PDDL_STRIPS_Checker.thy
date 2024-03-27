@@ -171,7 +171,6 @@ subsubsection \<open>Of-Type\<close>
 
 definition "of_type_impl G oT T \<equiv> (\<forall>pt\<in>set (primitives oT). dfs_reachable G ((=) pt) (primitives T))"
 
-
 fun ty_term' where
   "ty_term' varT objT (term.VAR v) = varT v"
 | "ty_term' varT objT (term.CONST c) = Mapping.lookup objT c"
