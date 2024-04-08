@@ -238,10 +238,10 @@ definition sym_term_nc_vars::"symbol term num_comp \<Rightarrow> variable set" w
   "sym_term_nc_vars nc \<equiv> \<Union> (sym_term_vars ` num_comp.ent nc)"
 
 definition sym_term_pred_vars where
-  "sym_term_pred_vars \<equiv> \<Union> o pred.ent o (map_pred sym_term_vars)"
+  "sym_term_pred_vars p \<equiv> \<Union> (sym_term_vars ` pred.ent p)"
 
 definition sym_term_atom_vars::"symbol term atom \<Rightarrow> variable set" where
-  "sym_term_atom_vars \<phi> \<equiv> \<Union> (sym_term_vars ` ent \<phi>)"
+  "sym_term_atom_vars a \<equiv> \<Union> (sym_term_vars ` ent a)"
 
 fun sym_tf_upd_vars::"(func \<times> symbol term list \<times> symbol term option) \<Rightarrow> variable set" where
   "sym_tf_upd_vars (f, as, Some v) = (\<Union> (set (map sym_term_vars as))) \<union> sym_term_vars v"
@@ -264,7 +264,7 @@ definition sym_term_nc_objs::"symbol term num_comp \<Rightarrow> object set" whe
   "sym_term_nc_objs nc \<equiv> \<Union> (sym_term_objs ` num_comp.ent nc)"
 
 definition sym_term_pred_objs where
-  "sym_term_pred_objs \<equiv> \<Union> o pred.ent o (map_pred sym_term_objs)"
+  "sym_term_pred_objs p \<equiv> \<Union> (sym_term_objs ` p)"
 
 definition sym_term_atom_objs::"symbol term atom \<Rightarrow> object set" where
   "sym_term_atom_objs \<phi> \<equiv> \<Union> (sym_term_objs ` ent \<phi>)"
@@ -308,6 +308,12 @@ fun schematic_effect_subst::"variable \<Rightarrow> object \<Rightarrow> schemat
 
 definition f_ent::"'ent atom formula \<Rightarrow> 'ent set" where
   "f_ent \<phi> = \<Union> (atom.ent ` atoms \<phi>)"
+
+definition atom_syms::"'ent term atom \<Rightarrow> 'ent set" where
+  "atom_syms a = \<Union> (term.ent ` atom.ent a)"
+
+definition f_syms::"'ent term atom formula \<Rightarrow> 'ent set" where
+  "f_syms \<phi> = \<Union> (atom_syms ` atoms \<phi>)"
 
 definition f_vars::"schematic_formula \<Rightarrow> variable set" where
   "f_vars \<phi> = \<Union> (sym_term_atom_vars ` atoms \<phi>)" 
@@ -1507,6 +1513,67 @@ begin
     have "ty_term (ty_sym (Q |` f_vars \<phi>) R) \<subseteq>\<^sub>m ty_term (ty_sym Q R)" .
     from wf_fmla_dom[OF this] ty_term_ent_restr_vars[OF \<open>f_ent \<phi> \<subseteq> dom (ty_term (ty_sym Q R))\<close>] assms
     show "wf_fmla (ty_term (ty_sym (Q |` (f_vars \<phi>)) R)) \<phi>" by simp
+  qed
+
+lemma "f_vars \<phi> = \<Union> (sym_vars ` f_syms \<phi>)"
+  unfolding f_vars_def f_syms_def sym_term_atom_vars_def sym_term_vars_def
+
+lemma 
+  assumes "x \<notin> f_syms \<phi>"
+    shows "ty_sym (Q |` (f_vars \<phi>)) (R |` (f_objs \<phi>)) x = None"
+proof (cases x)
+  case [simp]: (Var v)
+  from assms 
+  have "v \<notin> f_vars \<phi>" 
+    unfolding f_syms_def f_vars_def atom_syms_def sym_term_atom_vars_def sym_term_vars_def
+    
+  then show ?thesis sorry
+next
+  case (Const c)
+  then show ?thesis sorry
+qed
+
+lemma "((ty_sym Q R) |` (f_syms \<phi>)) x = ty_sym (Q |` (f_vars \<phi>)) (R |` (f_objs \<phi>)) x"
+proof (cases x)
+  case (Var v)
+  then show ?thesis 
+  proof (cases "x \<in> f_syms \<phi>")
+    case True
+    then show ?thesis sorry
+  next
+    case False
+    then show ?thesis sorry
+  qed
+next
+  case (Const c)
+  then show ?thesis sorry
+qed
+    
+
+lemma "((ty_term Q) |` f_ent \<phi>) x = ty_term (Q |` (f_syms \<phi>)) x"
+proof (induction x)
+  case (Fun f args)
+  then show ?case sorry
+next
+  case (Ent x)
+  then show ?case sorry
+qed
+    
+
+lemma "(ty_term (ty_sym Q R)) |` f_ent \<phi> \<subseteq>\<^sub>m ty_term (ty_sym (Q |` (f_vars \<phi>)) R)"
+  sorry
+
+
+  lemma "wf_fmla Q \<phi> \<longleftrightarrow> wf_fmla (Q|`(f_ent \<phi>)) \<phi>"
+  proof
+    assume a: "wf_fmla Q \<phi>"
+    have "\<forall>e \<in> (f_ent \<phi>). \<forall>T. is_of_type Q e T \<longrightarrow> is_of_type (Q |` (f_ent \<phi>)) e T" unfolding is_of_type_def by force
+    from ent_type_imp_wf_fmla'[OF this a]
+    show "wf_fmla (Q|`(f_ent \<phi>)) \<phi>" .
+  next
+    assume "wf_fmla (Q|`(f_ent \<phi>)) \<phi>"
+    from wf_fmla_mono[OF map_restrict_less[of Q "f_ent \<phi>"] this]
+    show "wf_fmla Q \<phi>" .
   qed
 
   lemma wf_fmla_restr_vars: (* this can be cleaned up *)
