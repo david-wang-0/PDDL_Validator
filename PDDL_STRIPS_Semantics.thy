@@ -250,15 +250,15 @@ fun sym_tf_upd_vars::"(func \<times> symbol term list \<times> symbol term optio
 fun sym_nf_upd_vars::"(func \<times> upd_op \<times> symbol term list \<times> symbol term num_fluent) \<Rightarrow> variable set" where
   "sym_nf_upd_vars (f, op, as, v) = (\<Union> (set (map sym_term_vars as))) \<union> sym_term_nf_vars v"
 
-fun sym_objs where
-  "sym_objs (Var x) = {}"
-| "sym_objs (Const obj) = {obj}"
+fun sym_consts where
+  "sym_consts (Var x) = {}"
+| "sym_consts (Const obj) = {obj}"
 
-abbreviation sym_term_objs::"symbol term \<Rightarrow> object set" where
-  "sym_term_objs t \<equiv> \<Union> (sym_objs ` term.ent t)"
+definition sym_term_objs::"symbol term \<Rightarrow> object set" where
+  "sym_term_objs t \<equiv> \<Union> (sym_consts ` term.ent t)"
 
-definition sym_term_nf_objs where
-  "sym_term_nf_objs nf \<equiv> \<Union> (sym_term_objs ` num_fluent.ent nf)"
+definition sym_term_nf_consts where
+  "sym_term_nf_consts nf \<equiv> \<Union> (sym_term_objs ` num_fluent.ent nf)"
 
 definition sym_term_nc_objs::"symbol term num_comp \<Rightarrow> object set" where
   "sym_term_nc_objs nc \<equiv> \<Union> (sym_term_objs ` num_comp.ent nc)"
@@ -318,8 +318,8 @@ definition f_syms::"'ent term atom formula \<Rightarrow> 'ent set" where
 definition f_vars::"schematic_formula \<Rightarrow> variable set" where
   "f_vars \<phi> = \<Union> (sym_term_atom_vars ` atoms \<phi>)" 
 
-definition f_objs::"schematic_formula \<Rightarrow> object set" where
-  "f_objs \<phi> = \<Union> (sym_term_atom_objs ` atoms \<phi>)" 
+definition f_consts::"schematic_formula \<Rightarrow> object set" where
+  "f_consts \<phi> = \<Union> (sym_term_atom_objs ` atoms \<phi>)" 
 
 definition f_subst where 
   "f_subst v c \<equiv> map_formula (sym_term_atom_subst v c)"
@@ -1515,48 +1515,98 @@ begin
     show "wf_fmla (ty_term (ty_sym (Q |` (f_vars \<phi>)) R)) \<phi>" by simp
   qed
 
-lemma "f_vars \<phi> = \<Union> (sym_vars ` f_syms \<phi>)"
-  unfolding f_vars_def f_syms_def sym_term_atom_vars_def sym_term_vars_def
 
-lemma 
-  assumes "x \<notin> f_syms \<phi>"
-    shows "ty_sym (Q |` (f_vars \<phi>)) (R |` (f_objs \<phi>)) x = None"
-proof (cases x)
-  case [simp]: (Var v)
-  from assms 
-  have "v \<notin> f_vars \<phi>" 
-    unfolding f_syms_def f_vars_def atom_syms_def sym_term_atom_vars_def sym_term_vars_def
-    
-  then show ?thesis sorry
-next
-  case (Const c)
-  then show ?thesis sorry
-qed
+lemma stav_alt: "sym_term_atom_vars a = \<Union> (sym_vars ` atom_syms a)"
+  unfolding sym_term_atom_vars_def atom_syms_def sym_term_vars_def
+  by blast
 
-lemma "((ty_sym Q R) |` (f_syms \<phi>)) x = ty_sym (Q |` (f_vars \<phi>)) (R |` (f_objs \<phi>)) x"
+lemma stao_alt: "sym_term_atom_objs a = \<Union> (sym_consts ` atom_syms a)"
+  unfolding sym_term_atom_objs_def atom_syms_def sym_term_objs_def
+  by blast
+
+lemma f_vars_alt: "f_vars \<phi> = \<Union> (sym_vars ` f_syms \<phi>)"
+  unfolding f_vars_def f_syms_def stav_alt
+  by force
+
+lemma f_consts_alt: "f_consts \<phi> = \<Union> (sym_consts ` f_syms \<phi>)"
+  unfolding f_consts_def f_syms_def stao_alt
+  by force
+                                       
+lemma 4321: "v \<in> \<Union> (sym_vars ` S) \<longleftrightarrow> Var v \<in> S"
+  apply (rule iffI)
+  apply clarify
+   apply (metis empty_iff singleton_iff sym_vars.elims)
+  by force
+
+lemma 1234: "obj \<in> \<Union> (sym_consts ` S) \<longleftrightarrow> Const obj \<in> S"
+  apply (rule iffI)
+  apply clarify
+   apply (metis empty_iff singleton_iff sym_consts.elims)
+  by force
+
+
+
+lemma ty_sym_f_syms_distrib: "((ty_sym Q R) |` (f_syms \<phi>)) x = ty_sym (Q |` (f_vars \<phi>)) (R |` (f_consts \<phi>)) x"
 proof (cases x)
   case (Var v)
-  then show ?thesis 
+  show ?thesis 
   proof (cases "x \<in> f_syms \<phi>")
-    case True
-    then show ?thesis sorry
+    case True 
+    with Var 
+    have "v \<in> f_vars \<phi>" using f_vars_alt by fastforce
+    with Var True
+    show ?thesis by force
   next
     case False
-    then show ?thesis sorry
+    with Var
+    have "v \<notin> f_vars \<phi>" using f_vars_alt 4321 by fastforce 
+    with Var False
+    show ?thesis by simp
   qed
 next
   case (Const c)
-  then show ?thesis sorry
+  show ?thesis
+  proof (cases "x \<in> f_syms \<phi>")
+    case True 
+    with Const 
+    have "c \<in> f_consts \<phi>" using f_consts_alt by fastforce
+    with Const True
+    show ?thesis by force
+  next
+    case False
+    with Const
+    have "c \<notin> f_consts \<phi>" using f_consts_alt 1234 by fastforce 
+    with Const False
+    show ?thesis by simp
+  qed
 qed
-    
 
-lemma "((ty_term Q) |` f_ent \<phi>) x = ty_term (Q |` (f_syms \<phi>)) x"
-proof (induction x)
+lemma f_syms_alt: "f_syms \<phi> = \<Union> (term.ent ` f_ent \<phi>)"
+  unfolding f_syms_def f_ent_def atom_syms_def
+  by blast
+
+lemma ty_term_f_ent_distrib: 
+  assumes "((ty_term Q) |` f_ent \<phi>) x = Some T" 
+  shows "ty_term (Q |` (f_syms \<phi>)) x = Some T"
+  using assms
+proof (induction x arbitrary: T)
   case (Fun f args)
+  then have 
+    "ty_term Q (Fun f args) = Some T"
+    "Fun f args \<in> f_ent \<phi>"
+    by (simp add: restrict_map_eq(2))+
   then show ?case sorry
 next
-  case (Ent x)
-  then show ?case sorry
+  case (Ent e)
+  then have 
+    1: "Ent e \<in> f_ent \<phi>" 
+    "ty_term Q (Ent e) = Some T" 
+    "Q e = Some T"
+    by (simp add: restrict_map_eq(2))+
+  from this(1)
+  have "e \<in> f_syms \<phi>" using f_syms_alt by fastforce
+  with 1
+  show ?case by simp
 qed
     
 
