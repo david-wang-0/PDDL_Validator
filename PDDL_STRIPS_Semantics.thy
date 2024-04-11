@@ -121,11 +121,15 @@ datatype upd_op =
 
 text \<open>An effect contains a list of values to be added, and a list of values
   to be removed.\<close>
-datatype 'ent ast_effect = 
+
+datatype (ent: 'ent) tf_upd = TF_Upd func "'ent list" "'ent option"
+datatype (ent: 'ent) nf_upd = NF_Upd func upd_op "'ent list" "'ent num_fluent"
+
+datatype (ent: 'ent) ast_effect = 
   Effect  (adds: "('ent pred) list") 
           (dels: "('ent pred) list")
-          (tf_upds: "(func \<times> 'ent list \<times> 'ent option) list")
-          (nf_upds: "(func \<times> upd_op \<times> 'ent list \<times> 'ent num_fluent) list")
+          (tf_upds: "('ent tf_upd) list")
+          (nf_upds: "('ent nf_upd) list")
 
 type_synonym schematic_formula = "symbol term atom formula"
 type_synonym schematic_effect = "symbol term ast_effect"
@@ -133,11 +137,14 @@ type_synonym schematic_effect = "symbol term ast_effect"
 type_synonym ground_formula = "object term atom formula"
 type_synonym ground_effect = "object term ast_effect"
 
+datatype instantiated_tf_upd = TU func "object option list" "object option"
+datatype instantiated_nf_upd = NU func "object option list" "rat option"
+
 datatype fully_instantiated_effect =
   Eff (adds: "(object pred option) list")
       (dels: "(object pred option) list")
-      (tf_upds: "(func \<times> object option list \<times> object option) list")
-      (nf_upds: "(func \<times> object option list \<times> rat option) list")
+      (tf_upds: "instantiated_tf_upd list")
+      (nf_upds: "instantiated_nf_upd list")
 
 
 subsubsection \<open>Domains\<close>
@@ -228,6 +235,7 @@ fun sym_vars where
   "sym_vars (Var x) = {x}" 
 | "sym_vars (Const c) = {}"
 
+
 definition sym_term_vars::"symbol term \<Rightarrow> variable set" where
   "sym_term_vars t \<equiv> \<Union> (sym_vars ` term.ent t)"
 
@@ -241,7 +249,7 @@ definition sym_term_pred_vars where
   "sym_term_pred_vars p \<equiv> \<Union> (sym_term_vars ` pred.ent p)"
 
 definition sym_term_atom_vars::"symbol term atom \<Rightarrow> variable set" where
-  "sym_term_atom_vars a \<equiv> \<Union> (sym_term_vars ` ent a)"
+  "sym_term_atom_vars a \<equiv> \<Union> (sym_term_vars ` atom.ent a)"
 
 fun sym_tf_upd_vars::"(func \<times> symbol term list \<times> symbol term option) \<Rightarrow> variable set" where
   "sym_tf_upd_vars (f, as, Some v) = (\<Union> (set (map sym_term_vars as))) \<union> sym_term_vars v"
@@ -267,7 +275,7 @@ definition sym_term_pred_objs where
   "sym_term_pred_objs p \<equiv> \<Union> (sym_term_objs ` p)"
 
 definition sym_term_atom_objs::"symbol term atom \<Rightarrow> object set" where
-  "sym_term_atom_objs \<phi> \<equiv> \<Union> (sym_term_objs ` ent \<phi>)"
+  "sym_term_atom_objs a \<equiv> \<Union> (sym_term_objs ` atom.ent a)"
 
 fun sym_subst::"variable \<Rightarrow> object \<Rightarrow> symbol \<Rightarrow> symbol" where
   "sym_subst v obj (Var x) = (if (x = v) then (Const obj) else Var x)" 
@@ -288,23 +296,14 @@ definition sym_term_pred_subst where
 definition sym_term_atom_subst::"variable \<Rightarrow> object \<Rightarrow> symbol term atom \<Rightarrow> symbol term atom" where
   "sym_term_atom_subst v c \<equiv> map_atom (map_term (sym_subst v c))"
 
-fun tf_upd_subst::"variable \<Rightarrow> object \<Rightarrow> (func \<times> symbol term list \<times> symbol term option) 
-  \<Rightarrow> (func \<times> symbol term list \<times> symbol term option)" where
-  "tf_upd_subst v c (f, as, r) = (f, map(sym_term_subst v c) as, map_option (sym_term_subst v c) r)"
+definition ast_effect_subst where
+"ast_effect_subst v c = map_ast_effect (sym_term_subst v c)"
 
-fun nf_upd_subst::"variable \<Rightarrow> object \<Rightarrow> (func \<times> upd_op \<times> symbol term list \<times> symbol term num_fluent)
-  \<Rightarrow> (func \<times> upd_op \<times> symbol term list \<times> symbol term num_fluent)" where
-  "nf_upd_subst v c (f, op, as, r) = 
-    (f, op, map (sym_term_subst v c) as, sym_term_nf_subst v c r)"
+fun tf_upd_ent::"func \<times> 'ent list \<times> 'ent option \<Rightarrow> 'ent set" where
+"tf_upd_ent (f, args, r) = set args \<union> (case r of Some r \<Rightarrow> {r} | None \<Rightarrow> {})"
 
-fun schematic_effect_subst::"variable \<Rightarrow> object \<Rightarrow> schematic_effect 
-  \<Rightarrow> schematic_effect" where
-  "schematic_effect_subst v c (Effect a d tu nu) =
-    (Effect 
-      (map (sym_term_pred_subst v c) a) 
-      (map (sym_term_pred_subst v c) d) 
-      (map (tf_upd_subst v c) tu)
-      (map (nf_upd_subst v c) nu))"
+fun nf_upd_ent::"func \<times> upd_op \<times> 'ent list \<times> 'ent num_fluent \<Rightarrow> 'ent set" where
+"nf_upd_ent (f, op, args, r) = set args \<union> num_fluent.ent r"
 
 definition f_ent::"'ent atom formula \<Rightarrow> 'ent set" where
   "f_ent \<phi> = \<Union> (atom.ent ` atoms \<phi>)"
@@ -346,7 +345,6 @@ lemma sym_subst_idem:
   shows "sym_subst v c s = s"
   using assms by (cases s; auto)
 
-
 lemma sym_term_subst_idem:
   assumes "v \<notin> sym_term_vars t"
   shows "sym_term_subst v c t = t"
@@ -364,7 +362,32 @@ lemma f_subst_idem:
   shows "f_subst v c \<phi> = \<phi>"
   using assms 
   by (simp add: f_subst_def f_vars_def formula.map_ident_strong sym_term_atom_subst_idem)
-  
+
+
+lemma stav_as_atom_syms: "sym_term_atom_vars a = \<Union> (sym_vars ` atom_syms a)"
+  unfolding sym_term_atom_vars_def atom_syms_def sym_term_vars_def
+  by blast
+
+lemma stao_as_atom_syms: "sym_term_atom_objs a = \<Union> (sym_consts ` atom_syms a)"
+  unfolding sym_term_atom_objs_def atom_syms_def sym_term_objs_def
+  by blast
+
+lemma f_vars_as_f_syms: "f_vars \<phi> = \<Union> (sym_vars ` f_syms \<phi>)"
+  unfolding f_vars_def f_syms_def stav_as_atom_syms
+  by blast
+
+lemma f_consts_as_f_syms: "f_consts \<phi> = \<Union> (sym_consts ` f_syms \<phi>)"
+  unfolding f_consts_def f_syms_def stao_as_atom_syms
+  by blast
+
+lemma f_syms_as_f_ent: "f_syms \<phi> = \<Union> (term.ent ` f_ent \<phi>)"
+  unfolding f_ent_def f_syms_def atom_syms_def 
+  by blast
+
+lemma f_vars_as_f_ent: "f_vars \<phi> = \<Union> (sym_term_vars ` f_ent \<phi>)"
+  unfolding f_syms_as_f_ent f_vars_as_f_syms f_vars_def sym_term_vars_def 
+  by blast
+
 
 subsection \<open>Semantics of terms\<close>
   text \<open>Although using option.None instead of a distinguished member 
@@ -711,7 +734,7 @@ begin
       "wf_cond_effect (pre, eff) \<longleftrightarrow> wf_fmla pre \<and> wf_effect eff"
 
     definition wf_cond_effect_list where
-      "wf_cond_effect_list effs \<equiv> \<forall>e \<in> set effs. wf_cond_effect e"
+      "wf_cond_effect_list \<equiv> list_all wf_cond_effect"
 
     abbreviation wf_tf_int'::"func \<Rightarrow> ('ent list \<rightharpoonup> 'ent) \<Rightarrow> bool" where
       "wf_tf_int' f f' \<equiv> (case obj_fluent_sig f of 
@@ -1205,12 +1228,74 @@ begin
     using assms
     by (induction \<phi>; auto simp: f_ent_def intro: ent_type_imp_wf_atom)
 
+  lemma ent_type_imp_wf_pred_upd:
+    assumes "\<forall>e \<in> pred.ent upd. \<forall>T. is_of_type Q e T \<longrightarrow> is_of_type R (f e) T"
+        and "wf_pred_upd Q upd"
+      shows "wf_pred_upd R (map_pred f upd)"
+      using assms 
+      by (induction upd; auto split: option.splits simp: list_all2_is_of_type)
+
+lemma ent_type_imp_wf_tf_upd:
+  assumes "\<And>e T. e \<in> tf_upd_ent tu \<Longrightarrow> is_of_type Q e T \<Longrightarrow> is_of_type R (f e) T"
+and "wf_tf_upd Q tu"
+shows "wf_tf_upd R 
+
+lemma ent_type_imp_wf_effect:
+  assumes "\<And>e T. e \<in> ast_effect.ent eff \<Longrightarrow> is_of_type Q e T \<Longrightarrow> is_of_type R (f e) T"
+    and "wf_effect Q eff"
+  shows "wf_effect R (map_ast_effect f eff)"
+  using assms
+
+  text \<open>lifting type preservation from entities to terms\<close>
+
+  lemma ty_term_is_of_type_lift':
+  assumes f_ent: "\<And>e T. e \<in> term.ent t \<Longrightarrow> is_of_type Q e T \<Longrightarrow> is_of_type R (f e) T"
+            and "is_term_of_type Q t T"
+          shows "is_term_of_type R (map_term f t) T"
+    using assms
+  proof (induction t arbitrary: T)
+    case (Fun fn ts)
+    from \<open>is_term_of_type Q (Fun fn ts) T\<close> 
+    obtain T' Ts where
+      "ty_term Q (Fun fn ts) = Some T'"
+      "of_type T' T"
+      "obj_fluent_sig fn = Some (Ts, T')"
+      "list_all2 (is_term_of_type Q) ts Ts"
+      unfolding is_of_type_def
+      by (auto split: option.splits prod.splits if_splits)
+    from this(4) Fun.IH Fun.prems(1)
+    have "list_all2 (is_term_of_type R) (map (map_term f) ts) Ts"
+      by (induction rule: list_all2_induct) auto
+    with \<open>obj_fluent_sig fn = Some (Ts, T')\<close> \<open>of_type T' T\<close>
+    show ?case by fastforce
+  next
+    case (Ent x)
+    then show ?case using f_ent unfolding is_of_type_def by simp
+  qed
+
+  lemma ty_term_is_of_type_lift:
+    assumes f_ent: "\<And>e T. e \<in> term.ent t \<Longrightarrow> is_of_type Q e T \<Longrightarrow> is_of_type R (f e) T"
+            and "is_of_type (ty_term Q) t T"
+          shows "is_of_type (ty_term R) (map_term f t) T"
+  using assms ty_term_is_of_type_lift'
+  unfolding is_term_of_type.simps(1) is_of_type_def
+  by fast
+
+  lemma ty_term_is_of_type_lift_weak:
+    assumes f_ent: "\<And>e T. e \<in> term.ent t \<Longrightarrow> is_of_type Q e T \<Longrightarrow> is_of_type R e T"
+            and "is_of_type (ty_term Q) t T"
+          shows "is_of_type (ty_term R) t T"
+  using assms ty_term_is_of_type_lift[where f = id, simplified term.map_id0]
+  by force
+
+  text \<open>weaker variations of the above\<close>
+
   lemma map_formula_map_atom_id: "map_formula (map_atom id) \<phi> = \<phi>"
     apply (subst atom.map_id0)
     by (rule formula.map_id)
     
-  lemma ent_type_imp_wf_fmla':
-      assumes "\<forall>e \<in> f_ent \<phi>. \<forall>T. is_of_type Q e T \<longrightarrow> is_of_type R e T"
+  lemma ent_type_imp_wf_fmla_weak:
+      assumes "\<And>e T. e \<in> f_ent \<phi> \<Longrightarrow> is_of_type Q e T \<Longrightarrow> is_of_type R e T"
           and "wf_fmla Q \<phi>"
         shows "wf_fmla R \<phi>"
     using ent_type_imp_wf_fmla[where f = id,
@@ -1229,13 +1314,24 @@ begin
     assumes "Q \<subseteq>\<^sub>m R"
         and "wf_fmla Q \<phi>"
       shows "wf_fmla R \<phi>"
-    using is_of_type_mono[OF assms(1)] ent_type_imp_wf_fmla'[OF _ assms(2)]
+    using is_of_type_mono[OF assms(1)] ent_type_imp_wf_fmla_weak[OF _ assms(2)]
     by blast
+
+lemma wf_effect_mono:
+    assumes "Q \<subseteq>\<^sub>m R"
+        and "wf_effect Q eff"
+      shows "wf_effect R eff"
+
+lemma wf_cond_effect_mono:
+  assumes "Q \<subseteq>\<^sub>m R"
+and "wf_cond_effect Q ce"
+shows "wf_cond_effect R ce"
+
   
   lemma map_le_dom_type:
     assumes "Q \<subseteq>\<^sub>m R"
             "a \<subseteq> dom Q" 
-      shows "\<forall>x \<in> a. \<forall>T. is_of_type R x T \<longrightarrow> is_of_type Q x T"
+      shows "\<And>x T. x \<in> a \<Longrightarrow> is_of_type R x T \<Longrightarrow> is_of_type Q x T"
     using assms
     by (simp add: in_mono is_of_type_def map_le_def)
   
@@ -1244,7 +1340,7 @@ begin
             "f_ent \<phi> \<subseteq> dom Q" 
             "wf_fmla R \<phi>" 
       shows "wf_fmla Q \<phi>"
-    using map_le_dom_type[OF assms(1, 2), THEN ent_type_imp_wf_fmla', OF assms(3)] .
+    using map_le_dom_type[OF assms(1, 2)] ent_type_imp_wf_fmla_weak assms(3) by blast
 
   context
     fixes Q::"'a \<rightharpoonup> type" and R::"'b \<rightharpoonup> type" and f :: "'a \<Rightarrow> 'b"
@@ -1323,36 +1419,10 @@ begin
     fixes Q::"'a \<rightharpoonup> type" and R::"'b \<rightharpoonup> type" and f :: "'a \<Rightarrow> 'b"
     assumes INST_ent: "is_of_type Q x T \<Longrightarrow> is_of_type R (f x) T"
   begin
-    lemma INST_ent_term':
-    assumes "is_term_of_type Q t T"
-      shows "is_term_of_type R (map_term f t) T"
-      using assms
-    proof (induction t arbitrary: T)
-      case (Fun fn ts)
-      from \<open>is_term_of_type Q (Fun fn ts) T\<close> 
-      obtain T' Ts where
-        "ty_term Q (Fun fn ts) = Some T'"
-        "of_type T' T"
-        "obj_fluent_sig fn = Some (Ts, T')"
-        "list_all2 (is_term_of_type Q) ts Ts"
-        unfolding is_of_type_def
-        by (auto split: option.splits prod.splits if_splits)
-      from this(4) Fun.IH
-      have "list_all2 (is_term_of_type R) (map (map_term f) ts) Ts"
-        by (induction rule: list_all2_induct) auto
-      with \<open>obj_fluent_sig fn = Some (Ts, T')\<close> \<open>of_type T' T\<close>
-      show ?case by fastforce
-    next
-      case (Ent x)
-      then show ?case using INST_ent unfolding is_of_type_def by simp
-    qed
-
     lemma INST_ent_term:
       assumes "is_of_type (ty_term Q) t T"
       shows "is_of_type (ty_term R) (map_term f t) T"
-      using assms INST_ent_term'
-      unfolding is_term_of_type.simps(1) is_of_type_def
-      by auto
+      by (rule ty_term_is_of_type_lift[OF INST_ent assms])
   end
 
   fun subst_sym_with_obj where
@@ -1368,6 +1438,7 @@ begin
   abbreviation map_pre where
   "map_pre t pre \<equiv> (map_formula (map_atom t)) pre" 
 
+  
   context fixes Q::"variable \<rightharpoonup> type" and R::"object \<rightharpoonup> type" and f::"variable \<Rightarrow> object"
     assumes var_to_obj: "is_of_type Q x T \<Longrightarrow> is_of_type R (f x) T"
   begin
@@ -1383,6 +1454,7 @@ context ast_problem_decs
 begin
 
   text \<open>A well-formed goal is a well-formed formula without any free variables\<close>
+
   lemma ty_sym_dom_vars:
     assumes "term.ent t \<subseteq> dom (ty_sym Q R)"
       shows "sym_term_vars t \<subseteq> dom Q"
@@ -1390,243 +1462,82 @@ begin
   proof (induction t)
     case (Fun f ts)
     have "term.ent (Fun f ts) = \<Union> (term.ent ` set ts)" by auto
-    then have "\<forall>t \<in> set ts. term.ent t \<subseteq> dom (ty_sym Q R)"
-      using Fun by blast
-    then have "\<forall>t \<in> set ts. \<Union> (sym_vars ` term.ent t) \<subseteq> dom Q"
-      using Fun.IH sym_term_vars_def by simp
-    then show ?case using sym_term_vars_def by auto
+    hence "\<forall>t \<in> set ts. term.ent t \<subseteq> dom (ty_sym Q R)" using Fun by blast
+    hence "\<forall>t \<in> set ts. \<Union> (sym_vars ` term.ent t) \<subseteq> dom Q" using Fun.IH sym_term_vars_def by simp
+    thus ?case using sym_term_vars_def by auto
   next
     case (Ent x)
-    then show ?case by (cases x; auto simp: sym_term_vars_def)
+    thus ?case by (cases x; auto simp: sym_term_vars_def)
   qed
   
   lemma ty_sym_term_imp_var_in_dom:
     assumes "ty_term (ty_sym Q R) t = Some T"
       shows "sym_term_vars t \<subseteq> dom Q"
     using ty_term_ent_dom ty_sym_dom_vars assms by blast
+
+  text \<open>The variables that are present in a well-formed formula must be in the type environment\<close>
   
-  lemma wf_atom_imp_vars_in_dom:
-    assumes "wf_atom (ty_term (ty_sym Q R)) a"
-      shows "sym_term_atom_vars a \<subseteq> dom Q"
-  proof -
-    from \<open>wf_atom (ty_term (ty_sym Q R)) a\<close>
-    have "\<forall>t \<in> atom.ent a. t \<in> dom (ty_term (ty_sym Q R))" 
-      using wf_atom_imp_ent_in_ty_env by blast
-    hence "\<forall>t \<in> atom.ent a. sym_term_vars t \<subseteq> dom Q"
-      using ty_sym_term_imp_var_in_dom by blast
-    thus "sym_term_atom_vars a \<subseteq> dom Q" 
-      using sym_term_atom_vars_def by (simp add: UN_subset_iff atom.set_map)
-  qed
-    
   lemma wf_fmla_vars:
     assumes "wf_fmla (ty_term (ty_sym Q R)) \<phi>"
       shows "f_vars \<phi> \<subseteq> dom Q"
   proof -
-    from \<open>wf_fmla (ty_term (ty_sym Q R)) \<phi>\<close>
-    have "\<forall>a \<in> atoms \<phi>. wf_atom (ty_term (ty_sym Q R)) a" 
-      using wf_fmla_imp_wf_atoms by blast
-    hence "\<forall>a \<in> atoms \<phi>. \<Union> (sym_term_vars ` ent a) \<subseteq> dom Q"
-      using wf_atom_imp_vars_in_dom sym_term_atom_vars_def by blast
+    from wf_fmla_imp_ent_in_ty_env[OF assms]
+    have "\<forall>t \<in> f_ent \<phi>. t \<in> dom (ty_term (ty_sym Q R))" by blast
+    hence "\<forall>t \<in> f_ent \<phi>. sym_term_vars t \<subseteq> dom Q" 
+      using ty_sym_term_imp_var_in_dom by fast
     thus "f_vars \<phi> \<subseteq> dom Q" 
-      unfolding f_vars_def sym_term_atom_vars_def 
-      by (simp add: UN_subset_iff formula.set_map)
-  qed
-    
-  lemma ty_term_vars_restr:
-    assumes "ty_term (ty_sym Q R) t = Some T"
-    shows "ty_term (ty_sym (Q |` (sym_term_vars t)) R) t = Some T"
-    using assms
-  proof (induction t arbitrary: T)
-    case (Fun f ts)
-    then obtain Ts where
-      "obj_fluent_sig f = Some (Ts, T)" 
-      "list_all2 (is_term_of_type (ty_sym Q R)) ts Ts"
-      by (auto split: option.splits if_splits)
-    then have 
-          "length ts = length Ts" 
-          "\<forall>i < length ts. is_term_of_type (ty_sym Q R) (ts!i) (Ts!i)"
-      using list_all2_conv_all_nth by blast+
-    hence "\<forall>i < length ts. \<exists>T. ty_term (ty_sym Q R) (ts!i) = Some T 
-        \<and> of_type T (Ts!i)"
-      by (auto split: option.splits)
-    moreover
-    have "ty_term (ty_sym (Q |` (sym_term_vars (Fun f ts))) R) t = Some T"
-      if "ty_term (ty_sym Q R) t = Some T" "t \<in> set ts" for t T
-    proof -
-      from that 
-      have 1: "ty_term (ty_sym (Q |` (sym_term_vars t)) R) t = Some T" using Fun.IH by blast
-      from \<open>t \<in> set ts\<close>
-      have "sym_term_vars t \<subseteq> sym_term_vars (Fun f ts)" 
-        unfolding sym_term_vars_def sym_term_atom_vars_def by auto
-      from ty_term_mono[OF ty_sym_mono[OF map_restrict_mono[OF this] map_le_refl]] 1
-      show "ty_term (ty_sym (Q |` (sym_term_vars (Fun f ts))) R) t = Some T" by (blast dest: map_leD)
-    qed
-    ultimately
-    have "\<forall>i < length ts. \<exists>T. 
-        ty_term (ty_sym (Q |` (sym_term_vars (Fun f ts))) R) (ts!i) = Some T 
-      \<and> of_type T (Ts!i)" 
-      using list_all_length by auto
-    then have "\<forall>i < length ts. is_term_of_type (ty_sym (Q |` (sym_term_vars (Fun f ts))) R) (ts!i) (Ts!i)"
-      by force
-    with \<open>length ts = length Ts\<close>
-    have "list_all2 (is_term_of_type (ty_sym (Q |` (sym_term_vars (Fun f ts))) R)) ts Ts"
-      using list_all2_conv_all_nth by blast
-    with \<open>obj_fluent_sig f = Some (Ts, T)\<close>
-    show ?case by simp
-  next
-    case (Ent x)
-    then show ?case by (cases x; auto simp: sym_term_vars_def)
+      using f_vars_as_f_ent
+      by (auto simp add: UN_subset_iff formula.set_map)
   qed
 
-  lemma ty_term_ent_restr_vars: 
-    assumes "f_ent \<phi> \<subseteq> dom (ty_term (ty_sym Q R))" 
-    shows "f_ent \<phi> \<subseteq> dom (ty_term (ty_sym (Q |` (f_vars \<phi>)) R))"
+  text \<open>This section shows how restrictions in the type environment can preserve well-formedness.\<close>
+
+  lemma ty_sym_term_vars_restr: 
+    assumes "e \<in> term.ent t"
+        and "ty_sym Q R e = Some T"
+      shows "ty_sym (Q |` (sym_term_vars t)) R e = Some T"
   proof -
-    have "\<exists>y. ty_term (ty_sym (Q |` (f_vars \<phi>)) R) x = Some y"
-      if "x \<in> f_ent \<phi>" for x
-    proof -
-      from that assms
-      obtain y where 
-        "ty_term (ty_sym Q R) x = Some y" 
-        by auto
-      then have 1: "ty_term (ty_sym (Q |` (sym_term_vars x)) R) x = Some y"
-        using ty_term_vars_restr by simp
-      from \<open>x \<in> f_ent \<phi>\<close>
-      have "sym_term_vars x \<subseteq> f_vars \<phi>" 
-        unfolding f_ent_def f_vars_def sym_term_vars_def sym_term_atom_vars_def by fast
-      from ty_term_mono[OF ty_sym_mono[OF map_restrict_mono[OF this] map_le_refl]] 1
-      have "ty_term (ty_sym (Q |` (f_vars \<phi>)) R) x = Some y" by (blast dest: map_leD)
-      then show "\<exists>y. ty_term (ty_sym (Q |` (f_vars \<phi>)) R) x = Some y" by simp
-    qed
-    then show "f_ent \<phi> \<subseteq> dom (ty_term (ty_sym (Q |` (f_vars \<phi>)) R))" by fast
+    from assms(1)
+    have a: "sym_vars e \<subseteq> sym_term_vars t" unfolding sym_term_vars_def by blast
+    from assms(2)
+    have "ty_sym (Q |` (sym_vars e)) R e = Some T" by (cases e; auto)
+    with ty_sym_mono[OF map_restrict_mono[OF a] map_le_refl]
+    show "ty_sym (Q |` (sym_term_vars t)) R e = Some T" by (auto dest: map_leD)
+  qed
+
+  lemma is_of_type_sym_term_vars_restr:
+    assumes "e \<in> term.ent t"
+        and "is_of_type (ty_sym Q R) e T" 
+      shows "is_of_type (ty_sym (Q |` (sym_term_vars t)) R) e T"
+    using assms ty_sym_term_vars_restr unfolding is_of_type_def
+    by (auto split: option.splits)
+
+  lemma is_of_type_term_vars_restr:
+    assumes "is_of_type (ty_term (ty_sym Q R)) t T"
+    shows "is_of_type (ty_term (ty_sym (Q |` (sym_term_vars t)) R)) t T"
+    using ty_term_is_of_type_lift_weak[OF _ assms] is_of_type_sym_term_vars_restr
+    by force
+
+  lemma is_of_type_f_vars_restr:
+  assumes "t \<in> f_ent \<phi>"
+      and "is_of_type (ty_term (ty_sym Q R)) t T"
+    shows "is_of_type (ty_term (ty_sym (Q |` (f_vars \<phi>)) R)) t T"
+  proof -
+    from is_of_type_term_vars_restr[OF assms(2)]
+    have a: "is_of_type (ty_term (ty_sym (Q |` sym_term_vars t) R)) t T" .
+    from assms(1)
+    have "sym_term_vars t \<subseteq> f_vars \<phi>" using f_vars_as_f_ent by fast
+    from is_of_type_mono[OF ty_term_mono[OF ty_sym_mono[OF map_restrict_mono[OF this] map_le_refl]] a]
+    show "is_of_type (ty_term (ty_sym (Q |` (f_vars \<phi>)) R)) t T" .
   qed
 
   lemma wf_fmla_restr_vars':
     assumes "wf_fmla (ty_term (ty_sym Q R)) \<phi>" 
       shows "wf_fmla (ty_term (ty_sym (Q |` (f_vars \<phi>)) R)) \<phi>"
-  proof -
-    from \<open>wf_fmla (ty_term (ty_sym Q R)) \<phi>\<close>
-    have "f_ent \<phi> \<subseteq> dom (ty_term (ty_sym Q R))" 
-      using wf_fmla_imp_ent_in_ty_env by blast
-    have "Q |` f_vars \<phi> \<subseteq>\<^sub>m Q" using map_restrict_less .
-    from ty_term_mono[OF ty_sym_mono[OF this map_le_refl]]
-    have "ty_term (ty_sym (Q |` f_vars \<phi>) R) \<subseteq>\<^sub>m ty_term (ty_sym Q R)" .
-    from wf_fmla_dom[OF this] ty_term_ent_restr_vars[OF \<open>f_ent \<phi> \<subseteq> dom (ty_term (ty_sym Q R))\<close>] assms
-    show "wf_fmla (ty_term (ty_sym (Q |` (f_vars \<phi>)) R)) \<phi>" by simp
-  qed
+    using ent_type_imp_wf_fmla_weak[OF is_of_type_f_vars_restr assms] .
 
 
-lemma stav_alt: "sym_term_atom_vars a = \<Union> (sym_vars ` atom_syms a)"
-  unfolding sym_term_atom_vars_def atom_syms_def sym_term_vars_def
-  by blast
-
-lemma stao_alt: "sym_term_atom_objs a = \<Union> (sym_consts ` atom_syms a)"
-  unfolding sym_term_atom_objs_def atom_syms_def sym_term_objs_def
-  by blast
-
-lemma f_vars_alt: "f_vars \<phi> = \<Union> (sym_vars ` f_syms \<phi>)"
-  unfolding f_vars_def f_syms_def stav_alt
-  by force
-
-lemma f_consts_alt: "f_consts \<phi> = \<Union> (sym_consts ` f_syms \<phi>)"
-  unfolding f_consts_def f_syms_def stao_alt
-  by force
-                                       
-lemma 4321: "v \<in> \<Union> (sym_vars ` S) \<longleftrightarrow> Var v \<in> S"
-  apply (rule iffI)
-  apply clarify
-   apply (metis empty_iff singleton_iff sym_vars.elims)
-  by force
-
-lemma 1234: "obj \<in> \<Union> (sym_consts ` S) \<longleftrightarrow> Const obj \<in> S"
-  apply (rule iffI)
-  apply clarify
-   apply (metis empty_iff singleton_iff sym_consts.elims)
-  by force
-
-
-
-lemma ty_sym_f_syms_distrib: "((ty_sym Q R) |` (f_syms \<phi>)) x = ty_sym (Q |` (f_vars \<phi>)) (R |` (f_consts \<phi>)) x"
-proof (cases x)
-  case (Var v)
-  show ?thesis 
-  proof (cases "x \<in> f_syms \<phi>")
-    case True 
-    with Var 
-    have "v \<in> f_vars \<phi>" using f_vars_alt by fastforce
-    with Var True
-    show ?thesis by force
-  next
-    case False
-    with Var
-    have "v \<notin> f_vars \<phi>" using f_vars_alt 4321 by fastforce 
-    with Var False
-    show ?thesis by simp
-  qed
-next
-  case (Const c)
-  show ?thesis
-  proof (cases "x \<in> f_syms \<phi>")
-    case True 
-    with Const 
-    have "c \<in> f_consts \<phi>" using f_consts_alt by fastforce
-    with Const True
-    show ?thesis by force
-  next
-    case False
-    with Const
-    have "c \<notin> f_consts \<phi>" using f_consts_alt 1234 by fastforce 
-    with Const False
-    show ?thesis by simp
-  qed
-qed
-
-lemma f_syms_alt: "f_syms \<phi> = \<Union> (term.ent ` f_ent \<phi>)"
-  unfolding f_syms_def f_ent_def atom_syms_def
-  by blast
-
-lemma ty_term_f_ent_distrib: 
-  assumes "((ty_term Q) |` f_ent \<phi>) x = Some T" 
-  shows "ty_term (Q |` (f_syms \<phi>)) x = Some T"
-  using assms
-proof (induction x arbitrary: T)
-  case (Fun f args)
-  then have 
-    "ty_term Q (Fun f args) = Some T"
-    "Fun f args \<in> f_ent \<phi>"
-    by (simp add: restrict_map_eq(2))+
-  then show ?case sorry
-next
-  case (Ent e)
-  then have 
-    1: "Ent e \<in> f_ent \<phi>" 
-    "ty_term Q (Ent e) = Some T" 
-    "Q e = Some T"
-    by (simp add: restrict_map_eq(2))+
-  from this(1)
-  have "e \<in> f_syms \<phi>" using f_syms_alt by fastforce
-  with 1
-  show ?case by simp
-qed
-    
-
-lemma "(ty_term (ty_sym Q R)) |` f_ent \<phi> \<subseteq>\<^sub>m ty_term (ty_sym (Q |` (f_vars \<phi>)) R)"
-  sorry
-
-
-  lemma "wf_fmla Q \<phi> \<longleftrightarrow> wf_fmla (Q|`(f_ent \<phi>)) \<phi>"
-  proof
-    assume a: "wf_fmla Q \<phi>"
-    have "\<forall>e \<in> (f_ent \<phi>). \<forall>T. is_of_type Q e T \<longrightarrow> is_of_type (Q |` (f_ent \<phi>)) e T" unfolding is_of_type_def by force
-    from ent_type_imp_wf_fmla'[OF this a]
-    show "wf_fmla (Q|`(f_ent \<phi>)) \<phi>" .
-  next
-    assume "wf_fmla (Q|`(f_ent \<phi>)) \<phi>"
-    from wf_fmla_mono[OF map_restrict_less[of Q "f_ent \<phi>"] this]
-    show "wf_fmla Q \<phi>" .
-  qed
-
-  lemma wf_fmla_restr_vars: (* this can be cleaned up *)
+  lemma wf_fmla_restr_vars:
     "wf_fmla (ty_term (ty_sym Q S)) \<phi> \<longleftrightarrow> wf_fmla (ty_term (ty_sym (Q |` (f_vars \<phi>)) S)) \<phi>"
   proof
     assume "wf_fmla (ty_term (ty_sym Q S)) \<phi>"
@@ -1638,29 +1549,24 @@ lemma "(ty_term (ty_sym Q R)) |` f_ent \<phi> \<subseteq>\<^sub>m ty_term (ty_sy
     show "wf_fmla (ty_term (ty_sym Q S)) \<phi>" .
   qed
 
-    lemma wf_fmla_alt_lemma: 
-    assumes "Q \<subseteq>\<^sub>m R "
-      shows "wf_fmla (ty_term (ty_sym Q S)) \<phi> \<longleftrightarrow> wf_fmla (ty_term (ty_sym R S)) \<phi> \<and> f_vars \<phi> \<subseteq> dom Q"
-    proof (rule iffI)
-      assume a: "wf_fmla (ty_term (ty_sym Q S)) \<phi>"
-      from wf_fmla_mono[OF ty_term_mono[OF ty_sym_mono[OF assms(1) map_le_refl]] this]
-      have "wf_fmla (ty_term (ty_sym R S)) \<phi>" .
-      with wf_fmla_vars[OF a]
-      show "wf_fmla (ty_term (ty_sym R S)) \<phi> \<and> f_vars \<phi> \<subseteq> dom Q" by blast
-    next
-      assume a: "wf_fmla (ty_term (ty_sym R S)) \<phi> \<and> f_vars \<phi> \<subseteq> dom Q"
-      with assms(1)
-      have "R |` f_vars \<phi> = Q |` f_vars \<phi>" by (simp add: map_le_restr)
-      moreover
-      from a
-      have "wf_fmla (ty_term (ty_sym (R |` f_vars \<phi>) S)) \<phi>" using wf_fmla_restr_vars by auto
-      ultimately
-      have "wf_fmla (ty_term (ty_sym (Q |` f_vars \<phi>) S)) \<phi>" by simp
-      then show "wf_fmla (ty_term (ty_sym Q S)) \<phi>" using wf_fmla_restr_vars by simp
-    qed
+  lemma wf_fmla_alt_lemma: 
+  assumes "Q \<subseteq>\<^sub>m R"
+    shows "wf_fmla (ty_term (ty_sym Q S)) \<phi> \<longleftrightarrow> wf_fmla (ty_term (ty_sym R S)) \<phi> \<and> f_vars \<phi> \<subseteq> dom Q"
+  proof (rule iffI)
+    assume a: "wf_fmla (ty_term (ty_sym Q S)) \<phi>"
+    from wf_fmla_mono[OF ty_term_mono[OF ty_sym_mono[OF assms(1) map_le_refl]] this]
+    have "wf_fmla (ty_term (ty_sym R S)) \<phi>" .
+    with wf_fmla_vars[OF a]
+    show "wf_fmla (ty_term (ty_sym R S)) \<phi> \<and> f_vars \<phi> \<subseteq> dom Q" by blast
+  next
+    assume"wf_fmla (ty_term (ty_sym R S)) \<phi> \<and> f_vars \<phi> \<subseteq> dom Q"
+    thus "wf_fmla (ty_term (ty_sym Q S)) \<phi>" 
+      using wf_fmla_restr_vars[of Q S] wf_fmla_restr_vars[of R S] 
+            map_le_restr[OF assms(1)] by simp
+  qed
 
-  theorem wf_goal_alt: "wf_goal \<phi> \<longleftrightarrow> wf_fmla (ty_term (ty_sym Q objT)) \<phi> \<and> f_vars \<phi> = {}"
-    using wf_fmla_alt_lemma[where Q = Map.empty] unfolding wf_goal_def by simp
+theorem wf_goal_alt: "wf_goal \<phi> \<longleftrightarrow> wf_fmla (ty_term (ty_sym Q objT)) \<phi> \<and> f_vars \<phi> = {}"
+  using wf_fmla_alt_lemma[where Q = Map.empty] unfolding wf_goal_def by simp
 
 end
 
@@ -1677,12 +1583,17 @@ begin
   definition exists::"variable \<Rightarrow> type \<Rightarrow> schematic_formula \<Rightarrow> schematic_formula" ("\<^bold>\<exists>_ - _._") where
     "exists v t \<phi> \<equiv> (if (v \<notin> f_vars \<phi> \<and> (t_dom t \<noteq> [])) then \<phi> else \<^bold>\<Or>(map (\<lambda>c. f_subst v c \<phi>) (t_dom t)))"
 
-  fun univ_effect::"variable \<Rightarrow> type \<Rightarrow> (schematic_formula \<times> schematic_effect) \<Rightarrow> (schematic_formula \<times> schematic_effect) list" where
-    "univ_effect v t (pre, eff) = (
-      if (v \<notin> cond_effect_vars (pre, eff) \<and> (t_dom t \<noteq> [])) 
-      then [(pre, eff)] 
-      else (map (\<lambda>c.((map_formula (sym_term_atom_subst v c) pre), 
-                      (schematic_effect_subst v c eff))) (t_dom t)))"
+  fun cond_effect_subst::"variable \<Rightarrow> object 
+    \<Rightarrow> schematic_formula \<times> schematic_effect 
+    \<Rightarrow> schematic_formula \<times> schematic_effect" where
+  "cond_effect_subst v c (pre, eff) = 
+    (f_subst v c pre, ast_effect_subst v c eff)"
+    
+  definition univ_effect::"variable \<Rightarrow> type \<Rightarrow> (schematic_formula \<times> schematic_effect) \<Rightarrow> (schematic_formula \<times> schematic_effect) list" where
+    "univ_effect v t ce = (
+      if (v \<notin> cond_effect_vars ce \<and> (t_dom t \<noteq> [])) 
+      then [ce] 
+      else (map (\<lambda>c. cond_effect_subst v c ce) (t_dom t)))"
   
   text \<open>PDDL quantifiers act on typed lists of variables\<close>
   text \<open>This function removes duplicate parameters, keeping the last occurrence\<close>
@@ -1823,8 +1734,6 @@ begin
     "v \<notin> sym_vars (sym_subst v c s)"
     by (cases s; auto)
   
-(* it might be better to go from (Q(v \<mapsto> ty)) to Q(v:=None) directly 
-    and then use ty_term_mono or something*)
   
   lemma quant_sym_inst: 
     assumes "c \<in> set (t_dom ty)"
@@ -1889,15 +1798,29 @@ begin
       shows "wf_fmla (ty_term (ty_sym (Q(v := None)) objT)) (f_subst v c \<phi>)"
     using term_upd_type[OF assms(1)] wf_inst_formula[OF _ assms(2)]
     unfolding f_subst_def sym_term_atom_subst_def by blast
+
+
+  lemma wf_quant_effect_inst:
+    assumes "c \<in> set (t_dom ty)"
+        and "wf_effect (ty_term (ty_sym (Q(v \<mapsto> ty)) objT)) eff"
+      shows "wf_effect (ty_term (ty_sym (Q(v := None)) objT)) (ast_effect_subst v c eff)"
+    using term_upd_type[OF assms(1)] wf_inst_effect[OF _ assms(2)]
+    unfolding ast_effect_subst_def by blast 
     
-    
-  lemma wf_subst_t_dom:
+  lemma wf_fmlas_t_dom_map:
     assumes "wf_fmla (ty_term (ty_sym (Q(v \<mapsto> ty)) objT)) \<phi>"
     shows "list_all (wf_fmla (ty_term (ty_sym (Q(v := None)) objT))) 
         (map (\<lambda>c. f_subst v c \<phi>) (t_dom ty))"
     using assms wf_quant_fmla_inst
     by (subst sym[OF Ball_set], simp)
 
+  lemma wf_cond_effect_t_dom_map:
+    assumes "wf_cond_effect (ty_term (ty_sym (Q (v \<mapsto> ty)) objT)) ce"
+    shows "wf_cond_effect_list (ty_term (ty_sym (Q(v := None)) objT))
+        (map (\<lambda>c. cond_effect_subst v c ce) (t_dom ty))"
+    using assms wf_quant_fmla_inst wf_quant_effect_inst
+    unfolding wf_cond_effect_list_def
+    by (subst sym[OF Ball_set]; cases "ce"; simp)
 
   lemma wf_fmla_upd: 
     assumes "v \<notin> f_vars \<phi>"
@@ -1921,7 +1844,21 @@ begin
     show "wf_fmla (ty_term (ty_sym (Q(v \<mapsto> ty)) objT)) \<phi> 
         = wf_fmla (ty_term (ty_sym (Q(v := None)) objT)) \<phi>" by simp
   qed
-  
+
+lemma wf_effect_upd:
+  assumes "v \<notin> schematic_effect_vars eff"
+  shows "wf_effect (ty_term (ty_sym (Q(v \<mapsto> ty)) objT)) eff
+          \<longleftrightarrow> wf_effect (ty_term (ty_sym (Q(v := None)) objT)) eff"
+  sorry
+
+  lemma wf_cond_effect_upd:
+    assumes "v \<notin> cond_effect_vars ce"
+    shows "wf_cond_effect (ty_term (ty_sym (Q(v \<mapsto> ty)) objT)) ce
+          \<longleftrightarrow> wf_cond_effect (ty_term (ty_sym (Q(v := None)) objT)) ce"
+    using wf_fmla_upd wf_effect_upd assms
+    by (cases "ce"; auto)
+
+
   lemma Big_Or_wf_comm: "list_all (wf_fmla Q) \<phi>s \<longleftrightarrow> wf_fmla Q (\<^bold>\<Or> \<phi>s)"
     by (induction \<phi>s) auto
   
@@ -1932,14 +1869,14 @@ begin
     assumes "wf_fmla (ty_term (ty_sym (Q(v \<mapsto> ty)) objT)) \<phi>"
     shows "wf_fmla (ty_term (ty_sym (Q(v := None)) objT))
       (\<^bold>\<Or>(map (\<lambda>c. (f_subst v c \<phi>)) (t_dom ty)))"
-    using wf_subst_t_dom[OF assms] Big_Or_wf_comm
+    using wf_fmlas_t_dom_map[OF assms] Big_Or_wf_comm
     by blast
   
   lemma wf_Big_And:
     assumes "wf_fmla (ty_term (ty_sym (Q(v \<mapsto> ty)) objT)) \<phi>"
     shows "wf_fmla (ty_term (ty_sym (Q(v := None)) objT))
       (\<^bold>\<And>(map (\<lambda>c. (f_subst v c \<phi>)) (t_dom ty)))"
-    using wf_subst_t_dom[OF assms] Big_And_wf_comm
+    using wf_fmlas_t_dom_map[OF assms] Big_And_wf_comm
     by blast
   
   lemma wf_ex_inst':
@@ -1984,7 +1921,24 @@ begin
       shows "wf_fmla (ty_term (ty_sym Q objT)) \<^bold>\<forall>v - ty. \<phi>"
     using wf_fmla_mono[OF ty_term_mono[OF ty_sym_mono[OF _ map_le_refl]], OF _ wf_univ_inst'[OF assms]]
     by simp
-    
+
+lemma wf_univ_effect_inst': 
+  assumes "wf_cond_effect (ty_term (ty_sym (Q(v \<mapsto> ty)) objT)) ce"
+  shows "wf_cond_effect_list (ty_term (ty_sym (Q(v := None)) objT)) (univ_effect v ty ce)"
+  using wf_cond_effect_t_dom_map[OF assms] wf_cond_effect_upd assms 
+  unfolding univ_effect_def wf_cond_effect_list_def
+  by (cases "v \<notin> cond_effect_vars ce \<and> t_dom ty \<noteq> []"; auto)
+
+lemma wf_univ_effect_inst:
+  assumes "wf_cond_effect (ty_term (ty_sym (Q(v \<mapsto> ty)) objT)) ce"
+  shows "wf_cond_effect_list (ty_term (ty_sym Q objT)) (univ_effect v ty ce)"
+  using wf_univ_effect_inst'[OF assms]
+  unfolding wf_cond_effect_list_def
+  apply (induction)
+  using 
+  
+  
+
   lemma wf_univ_goal: 
     assumes "wf_fmla (ty_term (ty_sym [v \<mapsto> ty] objT)) \<phi>" 
       shows "wf_goal \<^bold>\<forall>v - ty. \<phi>"
