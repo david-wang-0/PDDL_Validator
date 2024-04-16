@@ -563,6 +563,12 @@ lemma sym_subst_replaces:
   "v \<notin> sym_vars (sym_subst v c s)"
   by (cases s; auto)
 
+lemma sym_subst_v:
+  assumes "v \<in> sym_vars s"
+  shows "sym_subst v c s = Const c"
+  using assms
+  by (cases s; simp)
+
 lemma term_subst_replaces:
   "v \<notin> term_vars (term_subst v c t)"
   unfolding term_vars_def term_subst_def
@@ -1898,7 +1904,6 @@ lemma big_or_replaces:
   unfolding f_vars_def
   by (induction \<phi>s; auto)
   
-  
 lemma all_replaces: "v \<notin> f_vars (\<^bold>\<forall>v - t. \<phi>)"
   unfolding all_def
   using f_subst_replaces big_and_replaces 
@@ -1909,6 +1914,11 @@ lemma exists_replaces: "v \<notin> f_vars (\<^bold>\<exists>v - t. \<phi>)"
   using f_subst_replaces big_or_replaces
   by simp
 
+lemma assumes "v \<notin> f_vars \<phi>"
+  shows "\<^bold>\<forall>v - t. \<phi> = \<phi>"
+  using assms unfolding all_def
+  sorry (* impossible, because if t_dom is empty, then we have \<not>\<bottom> *)
+
 lemma "(v, t1) \<in> set (unique_vars ps) \<Longrightarrow> v \<notin> f_vars (pddl_all ps \<phi>)"
 proof (induction ps arbitrary: t1)
   case Nil
@@ -1916,7 +1926,7 @@ proof (induction ps arbitrary: t1)
 next
   case (Cons a ps)
   show ?case 
-  proof (cases "\<exists>t1. (v, t1) \<in> set (unique_vars ps)")
+  proof (cases "(v, t1) \<in> set (unique_vars ps)")
     case True
     then show ?thesis sorry
   next
@@ -1983,9 +1993,9 @@ begin
     assumes "v \<in> sym_vars s"
         and "R c = Some ty"
     shows "ty_sym Q R (sym_subst v c s) = Some ty"
-    using assms sym_subst_replaces                      
-    by (cases "sym_subst v c s"; auto)
-
+    using assms sym_subst_v
+    by simp
+  
   lemma not_in_sym_vars_imp_typed:
   assumes "v \<notin> sym_vars s"
       and "ty_sym Q R s = Some T"
@@ -2043,15 +2053,14 @@ begin
         shows "is_of_type (ty_sym (Q(v:=None)) objT) (sym_subst v c s) T"
     using quant_sym_inst[OF assms(1) assms(2)] not_in_sym_vars_imp_typed[OF subst_imp_not_in_vars]
     unfolding is_of_type_def by (auto split: option.splits)
- 
 
   lemma term_upd_type:
     assumes "c \<in> set (t_dom ty)"
         and "is_of_type (ty_term (ty_sym (Q(v\<mapsto>ty)) objT)) t T" 
     shows "is_of_type (ty_term (ty_sym (Q(v:=None)) objT)) (term_subst v c t) T"
-    using ty_term_is_of_type_lift[OF _ assms(2)]  quant_sym_inst'[OF assms(1)]
+    using ty_term_is_of_type_lift_strong[OF _ assms(2)] quant_sym_inst'[OF assms(1)]
+    unfolding term_subst_def
     by blast
-
 
   lemma wf_quant_fmla_inst: 
     assumes "c \<in> set (t_dom ty)"
