@@ -1,7 +1,7 @@
 chapter AFP
 
-session AI_Planning_Languages_Semantics_With_Quantifiers = HOL +
-  description \<open>AI Planning Languages Semantics and Validation\<close>
+session PDDL_Sema = HOL +
+  description \<open>Semantics of PDDL\<close>
   options [timeout = 600]
   sessions
     "HOL-Library"
@@ -23,11 +23,8 @@ session AI_Planning_Languages_Semantics_With_Quantifiers = HOL +
     Error_Monad_Add
     Option_Monad_Add
   theories
-    SASP_Semantics
-    SASP_Checker
-    PDDL_STRIPS_Semantics
-    PDDL_STRIPS_Checker
-    Lifschitz_Consistency
+    PDDL_Semantics
+    PDDL_Checker
   document_files
     "root.tex"
     "root.bib"

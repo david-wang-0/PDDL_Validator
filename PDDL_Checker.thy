@@ -1,7 +1,7 @@
 section \<open>Executable PDDL Checker\<close>
-theory PDDL_STRIPS_Checker
+theory PDDL_Checker
 imports
-  PDDL_STRIPS_Semantics
+  PDDL_Semantics
 
   Error_Monad_Add
   "HOL.String"
