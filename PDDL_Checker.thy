@@ -17,6 +17,9 @@ begin
 subsection \<open>Generic DFS Reachability Checker\<close>
 text \<open>Used for subtype checks\<close>
 
+text \<open>Creates a relation from a function. We have a function
+      \<open>succ\<close> and that function maps one element \<open>u\<close> to some elements \<open>v\<close> (by adjacency).
+      Then, here we get relation characterising which elements touch in a graph.\<close>
 definition "E_of_succ succ \<equiv> { (u,v). v\<in>set (succ u) }"
 lemma succ_as_E: "set (succ x) = E_of_succ succ `` {x}"
   unfolding E_of_succ_def by auto
@@ -58,7 +61,8 @@ context
 begin
 
   private abbreviation (input) "W\<^sub>0 \<equiv> set w\<^sub>0"
-
+text \<open>A DFS can be used to traverse the graph representing the transitive closure of 
+      a relation.\<close>
 definition "dfs_reachable_invar D V W brk \<longleftrightarrow>
     W\<^sub>0 \<subseteq> W \<union> V
   \<and> W \<union> V \<subseteq> E\<^sup>* `` W\<^sub>0
@@ -171,24 +175,28 @@ subsubsection \<open>Of-Type\<close>
 
 definition "of_type_impl G oT T \<equiv> (\<forall>pt\<in>set (primitives oT). dfs_reachable G ((=) pt) (primitives T))"
 
-fun ty_term' where
-  "ty_term' varT objT (term.VAR v) = varT v"
-| "ty_term' varT objT (term.CONST c) = Mapping.lookup objT c"
+fun ty_sym' where
+  "ty_sym' varT objT (Var v) = varT v"
+| "ty_sym' varT objT (Const c) = Mapping.lookup objT c"
 
-lemma ty_term'_correct_aux: "ty_term' varT objT t = ty_term varT (Mapping.lookup objT) t"
+lemma ty_sym'_correct_aux: "ty_sym' varT objT t = ty_sym varT (Mapping.lookup objT) t"
   by (cases t) auto
 
-lemma ty_term'_correct[simp]: "ty_term' varT objT = ty_term varT (Mapping.lookup objT)"
-  using ty_term'_correct_aux by auto
+lemma ty_sym'_correct[simp]: "ty_sym' varT objT = ty_sym varT (Mapping.lookup objT)"
+  using ty_sym'_correct_aux by auto
 
 
 context ast_domain_decs begin
 
+text \<open>We check whether a single primitive can be reached from any primitive in a set 
+      (this set is the supertype).\<close>
   definition "of_type1 pt T \<longleftrightarrow> pt \<in> subtype_rel\<^sup>* `` set (primitives T)"
 
   lemma of_type_refine1: "of_type oT T \<longleftrightarrow> (\<forall>pt\<in>set (primitives oT). of_type1 pt T)"
     unfolding of_type_def of_type1_def by auto
 
+  text \<open>We declare types and their supertypes. \<open>subtype_edge\<close> is therefore
+        the \<close>
   definition "STG \<equiv> (tab_succ (map subtype_edge (types DD)))"
 
   lemma subtype_rel_impl: "subtype_rel = E_of_succ (tab_succ (map subtype_edge (types DD)))"
@@ -334,7 +342,7 @@ context ast_problem_decs begin
   fun wf_action_schema' :: "_ \<Rightarrow> _ \<Rightarrow> ast_action_schema \<Rightarrow> bool" where
     "wf_action_schema' stg obT (Action_Schema n params pre eff) \<longleftrightarrow> (
       let
-        tyv = ty_term' (map_of params) obT
+        tyv = ty_sym' (map_of params) obT
       in
         distinct (map fst params)
       \<and> wf_fmla' tyv stg pre
@@ -344,7 +352,7 @@ context ast_problem_decs begin
     by (cases s) (auto simp: wf_fmla'_correct wf_effect'_correct)
 
   fun wf_goal' where
-    "wf_goal' obT stg \<phi> \<longleftrightarrow> wf_fmla' (ty_term' (Map.empty) obT)  stg \<phi>"
+    "wf_goal' obT stg \<phi> \<longleftrightarrow> wf_fmla' (ty_sym' (Map.empty) obT)  stg \<phi>"
 
 end
 
