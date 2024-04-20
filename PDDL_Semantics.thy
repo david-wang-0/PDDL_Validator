@@ -1853,20 +1853,6 @@ lemma "s = {} \<Longrightarrow> \<not>(\<exists> a \<in> s. P a)" by blast
 
 lemma "s = {} \<Longrightarrow> (\<forall>a \<in> s. \<forall>a \<in> t. \<not>(\<exists>b. a = b))" by blast
 
-text \<open>We only need to distinguish whether the variable is present in the effect. 
-      Assume the variable is not in the effect: we apply it, regardless of the size
-      of the domain. 
-
-      Assume the variable exists in the effect: 
-        - if the domain is empty, we get an empty list
-        - if the domain is not empty, we create a larger list of effects to apply\<close>
-  definition univ_effect::"variable \<Rightarrow> type 
-    \<Rightarrow> (schematic_formula \<times> schematic_effect) 
-    \<Rightarrow> (schematic_formula \<times> schematic_effect) list" where
-    "univ_effect v t ce = (
-      if (v \<notin> cond_effect_vars ce) 
-      then [ce] 
-      else (map (\<lambda>c. cond_effect_subst v c ce) (t_dom t)))"
   
   text \<open>PDDL quantifiers act on typed lists of variables\<close>
   text \<open>This function removes duplicate parameters, keeping the last occurrence. It is not necessary. \<close>
@@ -1885,13 +1871,28 @@ text \<open>We only need to distinguish whether the variable is present in the e
   definition pddl_exists::"(variable \<times> type) list \<Rightarrow> schematic_formula \<Rightarrow> schematic_formula" where
     "pddl_exists ps \<phi> = foldr (\<lambda>(v, t) \<phi>. (\<^bold>\<exists> v - t. \<phi>)) ps \<phi>"
 
+  text \<open>We only need to distinguish whether the variable is present in the effect. 
+      Assume the variable is not in the effect: we apply it, regardless of the size
+      of the domain. 
+
+      Assume the variable exists in the effect: 
+        - if the domain is empty, we get an empty list
+        - if the domain is not empty, we create a larger list of effects to apply\<close>
+  definition univ_effect::"variable \<Rightarrow> type 
+    \<Rightarrow> (schematic_formula \<times> schematic_effect) 
+    \<Rightarrow> (schematic_formula \<times> schematic_effect) list" where
+    "univ_effect v t ce = (
+      if (v \<notin> cond_effect_vars ce) 
+      then [ce] 
+      else (map (\<lambda>c. cond_effect_subst v c ce) (t_dom t)))"
+
   definition univ_effect_list::"variable \<Rightarrow> type \<Rightarrow> (schematic_formula \<times> schematic_effect) list 
     \<Rightarrow> (schematic_formula \<times> schematic_effect) list"  where 
   "univ_effect_list v t effs \<equiv> (flatmap (univ_effect v t) effs)"
   
   definition pddl_univ_effect_list::"(variable \<times> type) list \<Rightarrow> (schematic_formula \<times> schematic_effect) list
     \<Rightarrow> (schematic_formula \<times> schematic_effect) list" where
-  "pddl_univ_effect_list vts effs \<equiv> (flatmap (\<lambda>(v, t). univ_effect_list v t effs) vts)"
+  "pddl_univ_effect_list vts effs \<equiv> (fold (\<lambda>(v, t) eff. univ_effect_list v t eff) vts effs)"
    
   lemma v_in_unique_vars': "(v, t) \<in> set ps \<Longrightarrow> v \<in> snd (unique_vars' ps)"
   proof (induction ps)
@@ -2232,24 +2233,47 @@ begin
     by simp
  (* Thinking about these only makes sense, if we implement a well-formedness check
     as a step before applying/expanding the universal effects. We never do. Fun exercise -- maybe. *)
-definition upd_type_env::"(variable \<rightharpoonup> type) \<Rightarrow> (variable \<times> type) list \<Rightarrow> (variable \<rightharpoonup> type)" where
-  "upd_type_env te params \<equiv> foldr (\<lambda>(v, ty) Q. Q(v \<mapsto> ty)) params te"
+  definition upd_ty_env::"(variable \<rightharpoonup> type) \<Rightarrow> (variable \<times> type) list \<Rightarrow> (variable \<rightharpoonup> type)" where
+    "upd_ty_env te params \<equiv> foldr (\<lambda>(v, ty) Q. Q(v \<mapsto> ty)) params te"
+  
+  
+  (* TODO: prove wf in the context of quantifiers which bind lists *)
 
-thm ent_type_imp_wf_cond_effect_list
+  find_theorems "?P \<Longrightarrow> ?thesis"
+  
+  lemma list_all_flatmap: "list_all (list_all P) (map f xs) \<longleftrightarrow> list_all P (flatmap f xs)"
+    by (induction xs; auto)
 
-(* TODO: prove wf in the context of quantifiers which bind lists *)
 
-lemma wf_pddl_univ_effect_list_inst':
-  assumes "wf_cond_effect_list (ty_term (ty_sym (upd_type_env Q args) objT)) ces"
-  shows "wf_cond_effect_list (ty_term (ty_sym Q objT)) (pddl_univ_effect_list args ces)"
-  using assms ent_type_imp_wf_cond_effect_list
-proof (induction args)
-  case Nil
-  then show ?case 
-next
-  case (Cons a args)
-  then show ?case 
-qed
+  lemma wf_univ_effect_list_inst:
+    assumes "wf_cond_effect_list (ty_term (ty_sym (Q (v \<mapsto> ty)) objT)) ces" (is "wf_cond_effect_list ?Q ces")
+    shows "wf_cond_effect_list (ty_term (ty_sym Q objT)) (univ_effect_list v ty ces)" (is "wf_cond_effect_list ?R (univ_effect_list v ty ces)")
+  proof -
+    from assms(1)
+    have "list_all (wf_cond_effect ?Q) ces" unfolding wf_cond_effect_list_def
+      by blast
+    from list.pred_mono_strong[OF this]
+    have "list_all ((wf_cond_effect_list ?R) o (univ_effect v ty)) ces"
+      using wf_univ_effect_inst[of Q v ty] by simp
+    hence "list_all (wf_cond_effect_list ?R) (map (univ_effect v ty) ces)"
+      using list.pred_map by blast
+    then show "wf_cond_effect_list ?R (univ_effect_list v ty ces)"
+      unfolding wf_cond_effect_list_def univ_effect_list_def
+      using list_all_flatmap by auto
+  qed
+  
+  lemma wf_pddl_univ_effect_list_inst: (* this is not quite right, because the type environment is not correct *)
+    assumes "wf_cond_effect_list (ty_term (ty_sym (upd_ty_env Q vts) objT)) ces" (is "wf_cond_effect_list ?Q ces")
+    shows "wf_cond_effect_list (ty_term (ty_sym Q objT)) (pddl_univ_effect_list vts ces)" (is "wf_cond_effect_list ?R (pddl_univ_effect_list vts ces)")
+    using assms
+  proof (induction vts)
+    case Nil
+    then show ?case unfolding pddl_univ_effect_list_def upd_ty_env_def 
+  next
+    case (Cons a vts)
+    then show ?case sorry
+  qed
+
   
 end \<comment> \<open>Context of \<open>wf_problem_decs\<close>\<close>
 
