@@ -69,6 +69,16 @@ lemma map_restrict_less: "Q |` S \<subseteq>\<^sub>m Q"
   unfolding map_le_def restrict_map_def
   by auto
 
+abbreviation flatten where
+  "flatten xs \<equiv> foldr append xs []"
+
+value "flatten [[1::nat],[2],[3]]"
+
+abbreviation flatmap where
+ "flatmap f xs \<equiv> flatten (map f xs)"
+
+value "flatmap (\<lambda>x. [x, 1::nat]) [1, 2, 3]"
+
 subsection \<open>Important definitions\<close>
 
 text \<open>
@@ -1304,7 +1314,7 @@ begin
     \<and> ground_action_path (foldr apply_effect (map ((inst_effect M) o snd) (active_effects M (effects \<alpha>))) M) \<alpha>s M'"
      apply (auto simp: execute_ground_action_def valid_active_effects_def
         ground_action_enabled_def valid_ground_action_def 
-        apply_conditional_effect_list_def Let_def active_effects_def list.map_comp
+        apply_conditional_effect_list_def Let_def
         elim: wf_ground_action.elims(2))
     using wf_ground_action.elims(3) by fastforce 
 end
@@ -1489,6 +1499,20 @@ begin
     using assms
     by (cases ce; auto intro: ent_type_imp_wf_effect ent_type_imp_wf_fmla)
 
+  lemma ent_type_imp_wf_cond_effect_list:
+    assumes "\<forall>eff \<in> set effs. \<forall>e \<in> cond_effect_ent eff. \<forall>T. is_of_type Q e T \<longrightarrow> is_of_type R (f e) T"
+          and "wf_cond_effect_list Q effs"
+        shows "wf_cond_effect_list R (map (map_cond_effect f) effs)"
+    using assms(2, 1) unfolding wf_cond_effect_list_def
+    apply (induction effs)
+    using ent_type_imp_wf_cond_effect by force+
+
+lemma ent_type_imp_wf_cond_effect_list_flatmap:
+ assumes "\<forall>eff \<in> set effs. \<forall>e \<in> cond_effect_ent eff. \<forall>T. is_of_type Q e T \<longrightarrow> is_of_type R (f e) T"
+     and "wf_cond_effect_list Q effs"
+   shows "wf_cond_effect_list R (flatmap (map_cond_effect f) effs)"
+
+  
   lemma ent_type_imp_wf_fmla_strong:
     assumes "\<And>e T. is_of_type Q e T \<Longrightarrow> is_of_type R (f e) T"
           and "wf_fmla Q \<phi>"
@@ -1507,13 +1531,8 @@ begin
     assumes "\<And>e T. is_of_type Q e T \<Longrightarrow> is_of_type R (f e) T"
         and "wf_cond_effect_list Q effs"
       shows "wf_cond_effect_list R (map (map_cond_effect f) effs)"
-    using assms(2)
-    unfolding wf_cond_effect_list_def
-    apply (induction effs)
-     apply simp
-    using assms(1) ent_type_imp_wf_cond_effect_strong
-    by force
-
+    using ent_type_imp_wf_cond_effect_list[OF _ assms(2)] assms(1)
+    by blast
   text \<open>lifting type preservation from entities to terms\<close>
 
   lemma ty_term_is_of_type_lift':
@@ -1866,19 +1885,14 @@ text \<open>We only need to distinguish whether the variable is present in the e
   definition pddl_exists::"(variable \<times> type) list \<Rightarrow> schematic_formula \<Rightarrow> schematic_formula" where
     "pddl_exists ps \<phi> = foldr (\<lambda>(v, t) \<phi>. (\<^bold>\<exists> v - t. \<phi>)) ps \<phi>"
 
-  abbreviation flatten where
-    "flatten xs \<equiv> foldr append xs []"
-
-  value "flatten [[1::nat],[2],[3]]"
+  definition univ_effect_list::"variable \<Rightarrow> type \<Rightarrow> (schematic_formula \<times> schematic_effect) list 
+    \<Rightarrow> (schematic_formula \<times> schematic_effect) list"  where 
+  "univ_effect_list v t effs \<equiv> (flatmap (univ_effect v t) effs)"
   
-  abbreviation flatmap where
-   "flatmap f xs \<equiv> flatten (map f xs)"
-
-  value "flatmap (\<lambda>x. [x, 1::nat]) [1, 2, 3]" 
-
-  definition pddl_univ_effect::"(variable \<times> type) list \<Rightarrow> (schematic_formula \<times> schematic_effect) list  \<Rightarrow> (schematic_formula \<times> schematic_effect) list" where
-    "pddl_univ_effect ps ce = foldr (\<lambda>(v, t) e. flatmap (univ_effect v t) e) ps ce"
-
+  definition pddl_univ_effect_list::"(variable \<times> type) list \<Rightarrow> (schematic_formula \<times> schematic_effect) list
+    \<Rightarrow> (schematic_formula \<times> schematic_effect) list" where
+  "pddl_univ_effect_list vts effs \<equiv> (flatmap (\<lambda>(v, t). univ_effect_list v t effs) vts)"
+   
   lemma v_in_unique_vars': "(v, t) \<in> set ps \<Longrightarrow> v \<in> snd (unique_vars' ps)"
   proof (induction ps)
     case (Cons p ps)
@@ -1916,12 +1930,6 @@ text \<open>We only need to distinguish whether the variable is present in the e
     hence "v \<in> snd (unique_vars' ps)" using v_in_unique_vars' by blast
     thus "unique_vars ((v, t2)#ps) = unique_vars ps" by (auto simp: Let_def split: prod.split)
   qed
-  
-
-  lemma pddl_univ_effect_bind_order: "\<exists>t1. (v, t1) \<in> set ps \<Longrightarrow> pddl_univ_effect ps \<phi> = pddl_univ_effect ((v, t2)#ps) \<phi>"
-    unfolding pddl_univ_effect_def
-    using unique_vars_unique
-    sorry (* this is not provable, I think *)
 
 lemma big_and_replaces:
   assumes "\<forall>\<phi> \<in> set \<phi>s. v \<notin> f_vars \<phi>" 
@@ -1947,53 +1955,6 @@ lemma exists_replaces: "v \<notin> f_vars (\<^bold>\<exists>v - t. \<phi>)"
   using f_subst_replaces big_or_replaces
   by simp
 
-lemma assumes "v \<notin> f_vars \<phi>"
-  shows "\<^bold>\<forall>v - ty. \<phi> = \<phi>"
-  proof (cases "t_dom ty \<noteq> []")
-    case True
-    then show ?thesis using assms unfolding all_def by presburger
-  next
-    case False
-    then show ?thesis using assms f_subst_idem unfolding all_def sorry
-  qed
-
-
-  lemma pddl_all_bind_order: "\<exists>t1. (v, t1) \<in> set ps \<Longrightarrow> pddl_all ps \<phi> = pddl_all ((v, t2)#ps) \<phi>"
-    unfolding pddl_all_def
-    apply (induction ps)
-     apply (auto simp: all_replaces)
-    sorry
-   
-  lemma pddl_exists_bind_order: "\<exists>t1. (v, t1) \<in> set ps \<Longrightarrow> pddl_exists ps \<phi> = pddl_exists ((v, t2)#ps) \<phi>"
-    unfolding pddl_exists_def
-    using unique_vars_unique
-    by simp
-
-lemma "(v, t1) \<in> set (unique_vars ps) \<Longrightarrow> v \<notin> f_vars (pddl_all ps \<phi>)"
-proof (induction ps arbitrary: t1)
-  case Nil
-  then show ?case by auto
-next
-  case (Cons a ps)
-  show ?case 
-  proof (cases "(v, t1) \<in> set (unique_vars ps)")
-    case True
-    then show ?thesis sorry
-  next
-    case False
-    then show ?thesis sorry
-  qed
-qed
-  
-
-lemma "pddl_all ((v, t)#vts) \<phi> = \<^bold>\<forall>v - t. (pddl_all vts \<phi>)"
-proof (cases "(v, t1) \<in> set (unique_vars vts)")
-  case True
-  then show ?thesis sorry
-next
-  case False
-  then show ?thesis sorry
-qed
 end
 
 locale wf_problem_decs = ast_problem_decs +
@@ -2259,7 +2220,7 @@ begin
     shows "wf_cond_effect_list (ty_term (ty_sym (Q(v := None)) objT)) (univ_effect v ty ce)"
     using wf_cond_effect_t_dom_map[OF assms] wf_cond_effect_upd assms 
     unfolding univ_effect_def wf_cond_effect_list_def
-    by (cases "v \<notin> cond_effect_vars ce \<and> t_dom ty \<noteq> []"; auto)
+    by (cases "v \<notin> cond_effect_vars ce"; auto)
   
   lemma wf_univ_effect_inst: (* The second Q should be an arbitrary R which is a larger map than Q *)
     assumes "wf_cond_effect (ty_term (ty_sym (Q(v \<mapsto> ty)) objT)) ce"
@@ -2269,13 +2230,27 @@ begin
     apply (simp add: list_all_iff)
     using wf_cond_effect_mono[OF ty_term_mono[OF ty_sym_mono[of "Q(v := None)" Q, OF _ map_le_refl]]]
     by simp
+ (* Thinking about these only makes sense, if we implement a well-formedness check
+    as a step before applying/expanding the universal effects. We never do. Fun exercise -- maybe. *)
+definition upd_type_env::"(variable \<rightharpoonup> type) \<Rightarrow> (variable \<times> type) list \<Rightarrow> (variable \<rightharpoonup> type)" where
+  "upd_type_env te params \<equiv> foldr (\<lambda>(v, ty) Q. Q(v \<mapsto> ty)) params te"
 
+thm ent_type_imp_wf_cond_effect_list
 
 (* TODO: prove wf in the context of quantifiers which bind lists *)
-lemma wf_pddl_univ_effect_inst':
-  assumes "wf_cond_effect_list (ty_term (ty_sym (Q(v \<mapsto> ty)) objT)) ces"
-  shows "wf_cond_effect_list (ty_term (ty_sym (Q(v := None)) objT)) (pddl_univ_effect args ces)"
-  sorry
+
+lemma wf_pddl_univ_effect_list_inst':
+  assumes "wf_cond_effect_list (ty_term (ty_sym (upd_type_env Q args) objT)) ces"
+  shows "wf_cond_effect_list (ty_term (ty_sym Q objT)) (pddl_univ_effect_list args ces)"
+  using assms ent_type_imp_wf_cond_effect_list
+proof (induction args)
+  case Nil
+  then show ?case 
+next
+  case (Cons a args)
+  then show ?case 
+qed
+  
 end \<comment> \<open>Context of \<open>wf_problem_decs\<close>\<close>
 
 subsection \<open>PDDL Semantics\<close>
@@ -2478,7 +2453,7 @@ context ast_problem begin
         ent_type_imp_wf_cond_effect_list_strong[where f = "inst_term params as" and Q = "ty_term (ty_sym (map_of params) objT)" and R = "ty_term objT"]
         assms(2)
     show ?thesis by (auto simp: Let_def wf_cond_effect_list_def)
-    qed
+  qed
 
 end
 
@@ -2731,9 +2706,9 @@ begin
   lemma wf_apply_effects:
     assumes "\<forall>e \<in> set effs. wf_fully_instantiated_effect e"
             "wf_world_model s"
-      shows "wf_world_model (fold apply_effect effs s)"
+      shows "wf_world_model (foldr apply_effect effs s)" 
     using assms
-    by (induction effs; metis fold_invariant wf_apply_effect)
+    by (induction effs arbitrary: s; simp add: wf_apply_effect)
   
   lemma wf_execute_ground:
     assumes "valid_ground_action \<alpha> s"
@@ -2742,15 +2717,15 @@ begin
   proof (cases \<alpha>)                   
     case [simp]: (Ground_Action pre ces)
     with assms
-    have "\<forall>e \<in> set (active_effects s ces). valid_full_effect_inst e (inst_effect s e)"
+    have "\<forall>(pre, eff) \<in> set (active_effects s ces). valid_full_effect_inst eff (inst_effect s eff)"
       using valid_ground_action_def valid_active_effects_def by simp
-    hence "\<forall>e \<in> set (active_effects s ces). wf_fully_instantiated_effect (inst_effect s e)"
-      using valid_full_effect_inst.elims(2) by metis
-    hence "\<forall>e \<in> set (map (inst_effect s) (active_effects s ces)). wf_fully_instantiated_effect e"
-      by simp
-    hence "wf_world_model (fold apply_effect (map (inst_effect s) (active_effects s ces)) s)"
+    hence "\<forall>(pre, eff) \<in> set (active_effects s ces). wf_fully_instantiated_effect (inst_effect s eff)"
+      by (smt (verit, del_insts) ast_domain.valid_full_effect_inst.elims(2) old.prod.case prod.exhaust_sel)
+    hence "\<forall>eff \<in> set (map ((inst_effect s) o snd) (active_effects s ces)). wf_fully_instantiated_effect eff"
+      by auto
+    hence "wf_world_model (foldr apply_effect (map ((inst_effect s) o snd) (active_effects s ces)) s)"
       using wf_apply_effects assms(2) by blast
-    then show ?thesis using execute_ground_action_def by simp 
+    then show ?thesis using execute_ground_action_def apply_conditional_effect_list_def by simp
   qed
 
   (* TODO: The execution of plan actions and ground actions does not 
@@ -2923,6 +2898,8 @@ proof -
         valuation M \<Turnstile> pre_inst \<longleftrightarrow> valuation M \<Turnstile> map_pre (inst_term params args) (foldr (\<lambda>(v, ty) \<phi>. (\<^bold>\<exists>v - ty. \<phi>)) vts \<phi>)"
     by (metis ground_action.sel(1) instantiate_action_schema.simps)
 qed
+
+(* TODO: semantics of quantifiers in preconditions of conditional effects *)
   
   (* TODO: semantics of conditional effects - before the semantics of universal effects *)
 
@@ -2930,23 +2907,121 @@ qed
 
   (* TODO: semantics of universal effects with lists of arguments *)
 
-  (* TODO: semantics of quantifiers with lists of arguments *)
-
 
   text \<open>Applying a list of conditional effects means filtering them, instantiating them, and then
         applying them one by one.\<close>
+
+  find_theorems name: "univ_effect"
+
+  thm wf_problem_decs.wf_univ_effect_inst
+
+lemma wf_conditional_effect_idk:
+  assumes "wf_cond_effect (ty_term (ty_sym (map_of params) objT)) ce"
+      and "params_match params as"
+      and "distinct (map fst params)"
+    shows "wf_cond_effect (ty_term objT) (map_cond_effect (inst_term params as) ce)"
+proof -
+
+  let ?f = "(the o (map_of (zip (map fst params) as)))"
+  have "is_of_type objT (?f e) T"
+    if "is_of_type (map_of params) e T" 
+    for e T
+  proof -
+    from that obtain i T' where
+      "i < length params"
+      "params ! i = (e, T')"
+      "of_type T' T"
+      using is_of_type_map_ofE by metis
+
+    from \<open>params ! i = (e, T')\<close> \<open>i < length params\<close>
+    have "(map fst params) ! i = e" by simp
+    from \<open>params_match params as\<close>
+    have "length (map snd params) = length as" unfolding params_match_def 
+      using list_all2_conv_all_nth by metis
+    then have "length (map fst params) = length as" by simp
+    with \<open>i < length params\<close>
+    have "(zip (map fst params) as) ! i = ((map fst params) ! i, as ! i)" by simp_all
+    with \<open>(map fst params) ! i = e\<close>
+    have "(zip (map fst params) as) ! i = (e, as ! i)" by blast
+    with \<open>i < length params\<close> \<open>length (map fst params) = length as\<close>
+    have "(e, as ! i) \<in> set (zip (map fst params) as)" 
+      using in_set_conv_nth by force
+    moreover
+    have "map fst (zip (map fst params) as) = map fst params" 
+      using \<open>length (map fst params) = length as\<close> by auto
+    with \<open>distinct (map fst params)\<close>
+    have "distinct (map fst (zip (map fst params) as))" by argo
+    ultimately
+    have "(map_of (zip (map fst params) as)) e = Some (as ! i)" 
+      by auto
+    then have "(the o (map_of (zip (map fst params) as))) e = as ! i" by auto
+    from \<open>params_match params as\<close> 
+    have "list_all2 (is_of_type objT) as (map snd params)" 
+      unfolding params_match_def by blast
+    with \<open>length (map snd params) = length as\<close> \<open>i < length params\<close>
+    have "is_of_type objT (as ! i) ((map snd params) ! i)"
+      by (simp add: list_all2_conv_all_nth)
+    then obtain T'' where
+      "objT (as ! i) = Some T''"
+      "of_type T'' ((map snd params) ! i)"
+      unfolding is_of_type_def by (auto split: option.splits)
+    with \<open>params ! i = (e, T')\<close>
+    have "of_type T'' T'"
+      by (simp add: \<open>i < length params\<close>)
+    with \<open>of_type T' T\<close>
+    have "of_type T'' T" using of_type_trans by blast
+    with \<open>objT (as ! i) = Some T''\<close>
+    have "is_of_type objT (as ! i) T" unfolding is_of_type_def by simp
+    with \<open>(the o (map_of (zip (map fst params) as))) e = as ! i\<close>
+    show "is_of_type objT ((the o (map_of (zip (map fst params) as))) e) T" by simp
+  qed
+  then
+  have "is_of_type objT (inst_sym params as e) T" if
+       "is_of_type (ty_sym (map_of params) objT) e T" for e T
+    using that unfolding inst_sym.simps 
+    using INST_sym_to_obj by blast
+  then 
+  have "is_of_type (ty_term objT) (map_term (inst_sym params as) t) T"
+    if "is_of_type (ty_term (ty_sym (map_of params) objT)) t T" for t T
+    using that ty_term_is_of_type_lift_strong by blast
+  then
+  show "wf_cond_effect (ty_term objT) (map_cond_effect (inst_term params as) ce)"
+    using ent_type_imp_wf_cond_effect_strong[OF _ \<open>wf_cond_effect (ty_term (ty_sym (map_of params) objT)) ce\<close>] 
+    by auto
+qed
+
 
 lemma conditional_effect_list_sem:
   assumes "wf_cond_effect_list (ty_term (ty_sym (map_of params) objT)) ces"
       and "inst_ces = map (map_cond_effect (inst_term params as)) ces"
       and "active = active_effects M inst_ces"
-      and "applicable = map ((inst_effect M)o snd) active"
+      and "applicable = map ((inst_effect M) o snd) active"
     shows "foldr apply_effect applicable M = apply_conditional_effect_list inst_ces M"
   using assms unfolding apply_conditional_effect_list_def
   by (auto simp: Let_def)
 
+lemma apply_conditional_effects_in_action_schema_sem:
+  assumes "a = (Action_Schema n params pre ces)"
+      and "wf_action_schema a"
+      and "action_params_match a as"
+      and "Ground_Action pre_inst eff_inst = instantiate_action_schema a as"
+      and "active = active_effects M eff_inst"
+      and "applicable = map ((inst_effect M) o snd) active"
+    shows "foldr apply_effect applicable M = apply_conditional_effect_list eff_inst M"
+  using conditional_effect_list_sem assms
+  unfolding action_params_match_def params_match_def apply_conditional_effect_list_def
+  by presburger
+  using assms apply (auto simp: Let_def intro: conditional_effect_list_sem wf_problem_decs.wf_univ_effect_inst)
+proof -
+  
+
+qed
+
   text \<open>Applying a universal effect, means to filter the individual effects, instantiate them, and
         then apply them one by one\<close>
+
+  text \<open>How would we characterise the semantics of universal effects?\<close>
+  text \<open>We need to characterise the semantics of preconditions in universal effects. \<close>
 
 lemma univ_effect_sem:
 assumes "ces = (univ_effect v ty ce)"
@@ -2955,36 +3030,15 @@ assumes "ces = (univ_effect v ty ce)"
     and "params_match params as"
     and "inst_ces = map (map_cond_effect (inst_term params as)) ces"
     and "inst_ces' = map (map_cond_effect (inst_term params as)) ces'"
-    and "M' = apply_conditional_effect_list inst_ces"
   shows "apply_conditional_effect_list inst_ces = apply_conditional_effect_list inst_ces'"
-  using assms apply (auto simp: Let_def)
+  using assms apply (auto simp: Let_def intro: conditional_effect_list_sem wf_problem_decs.wf_univ_effect_inst)
+  sorry
 
 lemma univ_effect_list_sem:
-  
-
-  text \<open>Here, we prove that the application of a universal effect is equivalent to instantiating the 
-        variables in the effect with every element in the domain of the type and then applying each of 
-        the resulting effects from right to left.\<close>
-lemma univ_effect_sem:
-  assumes "a = Action_Schema n params pre (univ_effect v ty ce)"
-      and "wf_action_schema a"
-      and "action_params_match a as"
-      and "Ground_Action pre_inst eff_inst = instantiate_action_schema a as"
-      and "ces = map (\<lambda>c. map_cond_effect (inst_term params as) (cond_effect_subst v c ce)) (t_dom ty)"
-      and "wf_world_model M"
-      and "M' = apply_conditional_effect_list eff_inst M"
-    shows "M' = apply_conditional_effect_list ces M"
-  using assms unfolding apply_conditional_effect_list_def
-proof -
-  have "eff_inst = map (\<lambda>c. map_cond_effect (inst_term params as) (cond_effect_subst v c ce)) (t_dom ty)"
-    using assms(1, 2, 3, 4) apply (auto simp: Let_def cond_effect_subst_alt)
-qed
-      
-
-lemma pddl_univ_effect_sem:
-  assumes "a = Action_Schema n params pre (pddl_univ_effect vs ce)"
+  assumes "ces' = pddl_univ_effect_list vts ces"
   shows "True"
   sorry
+  
   
 end \<comment> \<open>Context of \<open>ast_problem\<close>\<close>
 
