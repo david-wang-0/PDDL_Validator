@@ -552,7 +552,8 @@ begin
       "wf_action_schema a"
     shows "wf_effect_inst (effect ai)"
     using wf_instantiate_action_schema[OF A] unfolding ai_def[symmetric]
-    by (cases ai) (auto simp: wf_effect_inst_alt)
+    by (cases ai) (auto simp: wf_effect_inst)
+  find_theorems name: "wf*effe"
 
 end \<comment> \<open>Context of \<open>ast_problem\<close>\<close>
 
@@ -660,6 +661,8 @@ primrec holds :: "'a formula set \<Rightarrow> 'a formula \<Rightarrow> bool" wh
       Error_Monad.return (apply_effect (effect ai) s)
     }"
 
+  (* here we check that an effect is well formed and we execute it *)
+
   text \<open>Justification of implementation.\<close>
   lemma (in wf_ast_problem) en_exE_return_iff:
     assumes "wm_basic s"
@@ -727,9 +730,9 @@ context ast_problem begin
   text \<open>First, we combine the well-formedness check of the plan actions and
     their execution into a single iteration.\<close>
   fun valid_plan_from1 :: "world_model \<Rightarrow> plan \<Rightarrow> bool" where
-    "valid_plan_from1 s [] \<longleftrightarrow> close_world s \<TTurnstile> (inst_goal (goal P))"
+    "valid_plan_from1 s [] \<longleftrightarrow> valuation s \<Turnstile> (inst_goal (goal P))"
   | "valid_plan_from1 s (\<pi>#\<pi>s)
-      \<longleftrightarrow> plan_action_enabled \<pi> s
+      \<longleftrightarrow> valid_plan_action \<pi> s
         \<and> (valid_plan_from1 (execute_plan_action \<pi> s) \<pi>s)"
 
   lemma valid_plan_from1_refine: "valid_plan_from s \<pi>s = valid_plan_from1 s \<pi>s"

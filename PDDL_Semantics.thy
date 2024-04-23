@@ -195,13 +195,13 @@ text \<open>An effect modifies the objects for which a predicate holds as well
       an undefined value might occur is syntactically enforced as the assignment of a 
       return value for a function application.\<close>
 
-datatype (ent: 'ent) tf_upd = TF_Upd func "'ent list" "'ent option"
+datatype (ent: 'ent) of_upd = OF_Upd func "'ent list" (ret_val: "'ent option")
 datatype (ent: 'ent) nf_upd = NF_Upd func upd_op "'ent list" "'ent num_fluent"
 
 datatype (ent: 'ent) ast_effect = 
   Effect  (adds: "('ent pred) list") 
           (dels: "('ent pred) list")
-          (tf_upds: "('ent tf_upd) list")
+          (of_upds: "('ent of_upd) list")
           (nf_upds: "('ent nf_upd) list")
 
 text \<open>{@typ schematic_formula}s represent formulas that are used in action schemas.
@@ -234,14 +234,14 @@ text \<open>The types used to model fully instantiated effects. \<open>adds\<clo
       model these.
 
       This decision simplifies the well-formedness checks.\<close>
-datatype instantiated_tf_upd = TU func "object option list" "object option" 
-datatype instantiated_nf_upd = NU func "object option list" "rat option"
+datatype instantiated_of_upd = OFU func "object option list" (return_value: "object option")
+datatype instantiated_nf_upd = NFU func upd_op "object option list" "rat option"
 
 datatype fully_instantiated_effect =
-  Eff (adds: "(object pred option) list")
-      (dels: "(object pred option) list")
-      (tf_upds: "instantiated_tf_upd list")
-      (nf_upds: "instantiated_nf_upd list")
+  Eff "(object pred option) list"
+      "(object pred option) list"
+      (ous: "instantiated_of_upd list")
+      (nus: "instantiated_nf_upd list")
 
 
 subsubsection \<open>Domains\<close>
@@ -261,10 +261,16 @@ text \<open>A world model is required to interpret the value of functions and pr
       \<open>of_int\<close> (\emph{object function interpretation}) maps a function's name to a valuation 
       for various argument lists. \<open>nf_int\<close> (\emph{numeric function interpretation} maps a function's
       name to a valuation for argument lists. Numeric functions return rational numbers.\<close>
+
+
+type_synonym object_interpretation = "func \<rightharpoonup> (object list \<rightharpoonup> object)"
+
+type_synonym numeric_function_interpretation = "func \<rightharpoonup> (object list \<rightharpoonup> rat)"
+
 datatype world_model = World_Model 
   (preds: "object pred set")
-  (of_int: "func \<rightharpoonup> object list \<rightharpoonup> object")
-  (nf_int: "func \<rightharpoonup> object list \<rightharpoonup> rat")
+  (of_int: "object_interpretation")
+  (nf_int: "numeric_function_interpretation")
 
 
 text \<open>A predicate declaration contains the predicate's name and its
@@ -365,8 +371,8 @@ definition pred_vars where
 definition atom_vars::"symbol term atom \<Rightarrow> variable set" where
   "atom_vars a \<equiv> \<Union> (term_vars ` atom.ent a)"
 
-definition tf_upd_vars::"symbol term tf_upd \<Rightarrow> variable set" where
-  "tf_upd_vars tu = \<Union> (term_vars ` tf_upd.ent tu)"
+definition of_upd_vars::"symbol term of_upd \<Rightarrow> variable set" where
+  "of_upd_vars tu = \<Union> (term_vars ` of_upd.ent tu)"
 
 definition nf_upd_vars::"symbol term nf_upd \<Rightarrow> variable set" where
   "nf_upd_vars nu = \<Union> (term_vars ` nf_upd.ent nu)"
@@ -392,8 +398,8 @@ definition pred_consts where
 definition atom_consts::"symbol term atom \<Rightarrow> object set" where
   "atom_consts a \<equiv> \<Union> (term_consts ` atom.ent a)"
 
-definition tf_upd_consts::"symbol term tf_upd \<Rightarrow> object set" where
-  "tf_upd_consts tu = \<Union> (term_consts ` tf_upd.ent tu)"
+definition of_upd_consts::"symbol term of_upd \<Rightarrow> object set" where
+  "of_upd_consts tu = \<Union> (term_consts ` of_upd.ent tu)"
 
 definition nf_upd_consts::"symbol term nf_upd \<Rightarrow> object set" where
   "nf_upd_consts nu = \<Union> (term_consts ` nf_upd.ent nu)"
@@ -451,14 +457,14 @@ fun eff_vars::"schematic_effect \<Rightarrow> variable set" where
   "eff_vars (Effect a d tu nu) = 
       \<Union> (pred_vars ` (set a)) 
     \<union> \<Union> (pred_vars ` (set d)) 
-    \<union> \<Union> (tf_upd_vars ` (set tu)) 
+    \<union> \<Union> (of_upd_vars ` (set tu)) 
     \<union> \<Union> (nf_upd_vars ` (set nu))"
 
 definition pred_syms where
   "pred_syms p = \<Union> (term.ent ` pred.ent p)"
 
-definition tf_upd_syms where
-  "tf_upd_syms u = \<Union> (term.ent ` tf_upd.ent u)"
+definition of_upd_syms where
+  "of_upd_syms u = \<Union> (term.ent ` of_upd.ent u)"
 
 definition nf_upd_syms where
   "nf_upd_syms u = \<Union> (term.ent ` nf_upd.ent u)"
@@ -467,7 +473,7 @@ fun eff_syms::"schematic_effect \<Rightarrow> symbol set" where
   "eff_syms (Effect a d tu nu) = 
     \<Union> (pred_syms ` (set a))
   \<union> \<Union> (pred_syms ` (set d))
-  \<union> \<Union> (tf_upd_syms ` (set tu))
+  \<union> \<Union> (of_upd_syms ` (set tu))
   \<union> \<Union> (nf_upd_syms ` (set nu))"
 
 fun cond_effect_ent::"'ent atom formula \<times> 'ent ast_effect \<Rightarrow> 'ent set" where
@@ -534,10 +540,10 @@ lemma f_vars_as_f_ent: "f_vars \<phi> = \<Union> (term_vars ` f_ent \<phi>)"
 
 text \<open>Similarly, we can extract variables and symbols from effects.\<close>
 lemma eff_syms_as_eff_ent: "eff_syms eff = \<Union> (term.ent ` ast_effect.ent eff)"
-  by (induction eff; simp add: pred_syms_def tf_upd_syms_def nf_upd_syms_def)
+  by (induction eff; simp add: pred_syms_def of_upd_syms_def nf_upd_syms_def)
   
 lemma eff_vars_as_eff_syms: "eff_vars eff = \<Union> (sym_vars ` eff_syms eff)"
-  by (induction eff; simp add: pred_vars_def tf_upd_vars_def nf_upd_vars_def eff_syms_as_eff_ent term_vars_def)
+  by (induction eff; simp add: pred_vars_def of_upd_vars_def nf_upd_vars_def eff_syms_as_eff_ent term_vars_def)
 
 lemma eff_vars_as_eff_ent: "eff_vars eff = \<Union> (term_vars ` ast_effect.ent eff)"
   by (induction eff; simp add: eff_vars_as_eff_syms eff_syms_as_eff_ent term_vars_def)
@@ -881,8 +887,8 @@ text \<open>These two functions compute the type of a term. For a functinal term
     text \<open>An update to a function on objects is well-formed if the function has 
           been declared, the signature matches the types of the arguments and new return value, 
           and the arguments and the term to assign the return value are well-formed.\<close>
-    fun wf_tf_upd::"'ent tf_upd \<Rightarrow> bool" where
-    "wf_tf_upd (TF_Upd f as v) = (case obj_fun_sig f of 
+    fun wf_of_upd::"'ent of_upd \<Rightarrow> bool" where
+    "wf_of_upd (OF_Upd f as v) = (case obj_fun_sig f of 
       None \<Rightarrow> False
     | Some (Ts, T) \<Rightarrow>
           list_all2 is_of_type as Ts 
@@ -908,7 +914,7 @@ text \<open>These two functions compute the type of a term. For a functinal term
       "wf_effect (Effect a d tu nu) \<longleftrightarrow>
           (\<forall>u \<in> set a. wf_pred_upd u)
         \<and> (\<forall>u \<in> set d. wf_pred_upd u)
-        \<and> (\<forall>u \<in> set tu. wf_tf_upd u)
+        \<and> (\<forall>u \<in> set tu. wf_of_upd u)
         \<and> (\<forall>u \<in> set nu. wf_nf_upd u)
         "
 
@@ -918,23 +924,23 @@ text \<open>These two functions compute the type of a term. For a functinal term
     definition wf_cond_effect_list where
       "wf_cond_effect_list \<equiv> list_all wf_cond_effect"
 
-    abbreviation wf_of_int'::"func \<Rightarrow> ('ent list \<rightharpoonup> 'ent) \<Rightarrow> bool" where
-      "wf_of_int' f f' \<equiv> (case obj_fun_sig f of 
+    abbreviation wf_of_arg_r_map::"func \<Rightarrow> ('ent list \<rightharpoonup> 'ent) \<Rightarrow> bool" where
+      "wf_of_arg_r_map f f' \<equiv> (case obj_fun_sig f of 
         None \<Rightarrow> False 
       | Some (Ts, T) \<Rightarrow> 
           (\<forall>as \<in> dom f'. list_all2 is_of_type as Ts 
           \<and> is_of_type (the (f' as)) T))"
   
     definition wf_of_int::"(func \<rightharpoonup> 'ent list \<rightharpoonup> 'ent) \<Rightarrow> bool" where
-      "wf_of_int ti \<equiv> (\<forall>f \<in> dom ti. wf_of_int' f (the (ti f)))"
+      "wf_of_int ti \<equiv> (\<forall>f \<in> dom ti. wf_of_arg_r_map f (the (ti f)))"
 
-    abbreviation wf_nf_int'::"func \<Rightarrow> ('ent list \<rightharpoonup> rat) \<Rightarrow> bool" where
-      "wf_nf_int' f ti' \<equiv> (case num_fun_sig f of 
+    definition wf_nf_int_map::"func \<Rightarrow> ('ent list \<rightharpoonup> rat) \<Rightarrow> bool" where
+      "wf_nf_int_map n f' \<equiv> (case num_fun_sig n of 
         None \<Rightarrow> False 
-      | Some Ts \<Rightarrow> (\<forall>as \<in> dom ti'. list_all2 is_of_type as Ts))"
+      | Some Ts \<Rightarrow> \<forall>as \<in> dom f'. list_all2 is_of_type as Ts)"
   
     definition wf_nf_int::"(func \<rightharpoonup> 'ent list \<rightharpoonup> rat) \<Rightarrow> bool" where
-      "wf_nf_int ti \<equiv> (\<forall>f \<in> dom ti. wf_nf_int' f (the (ti f)))"
+      "wf_nf_int ni \<equiv> (\<forall>(f, m) \<in> Map.graph ni. wf_nf_int_map f m)"
 
     lemma list_all2_is_of_type_imp_set_in_ty_env:
       assumes "list_all2 is_of_type args Ts"
@@ -1121,59 +1127,61 @@ subsection \<open>Semantics of actions in dynamic world state.\<close>
 context ast_domain
 begin
     
-  fun inst_tf_upd::"world_model 
-    \<Rightarrow> object term tf_upd 
-    \<Rightarrow> instantiated_tf_upd" where
-    "inst_tf_upd M (TF_Upd f args r) = (TU f (map (term_val M) args) (((term_val M) o the) r))"
+  fun inst_of_upd::"world_model 
+    \<Rightarrow> object term of_upd 
+    \<Rightarrow> instantiated_of_upd" where
+    "inst_of_upd M (OF_Upd f args r) = (OFU f (map (term_val M) args) (((term_val M) o the) r))"
+
+  text \<open>When we instantiate an update to numeric functions, what do we do?
+        \<close>
 
   fun inst_nf_upd::"world_model
     \<Rightarrow> object term nf_upd
     \<Rightarrow> instantiated_nf_upd" where
     "inst_nf_upd M (NF_Upd f op args t) = (
       let args' = map (term_val M) args
-      in
-      (case (nf_val M (NFun f args), nf_val M t) of
-        (None, change) \<Rightarrow> (case op of 
-          Assign \<Rightarrow> (NU f args' change) 
-        | _      \<Rightarrow> (NU f args' None)
-        )
-      | (Some current, Some change) \<Rightarrow> (case op of
-          Assign \<Rightarrow> (NU f args' (Some change))
-        | ScaleUp \<Rightarrow> (NU f args' (Some (current * change)))
-        | ScaleDown \<Rightarrow> (NU f args' (Some (current / change)))
-        | Increase \<Rightarrow> (NU f args' (Some (current + change)))
-        | Decrease \<Rightarrow> (NU f args' (Some (current - change)))
-        )
-      )
-    )"
+      in NFU f op args' (nf_val M t))"
   
   fun inst_effect :: "world_model \<Rightarrow> ground_effect \<Rightarrow> fully_instantiated_effect" where
     "inst_effect M (Effect a d tu nu) = (
       Eff (map (pred_inst M) a) 
           (map (pred_inst M) d) 
-          (map (inst_tf_upd M) tu) 
+          (map (inst_of_upd M) tu) 
           (map (inst_nf_upd M) nu))"
 
   text \<open>When we apply an update that returns undefined, we can either unassign the interpretation
-        or update it to Undefined. In both cases, term_val will return Undefined.
-        We have removed Undefined for now.\<close>
-  fun apply_tf_upd::"instantiated_tf_upd
-    \<Rightarrow> (func \<rightharpoonup> object list \<rightharpoonup> object) 
-    \<Rightarrow> (func \<rightharpoonup> object list \<rightharpoonup> object)" where
-    "apply_tf_upd (TU f as v) ti = (
+        or update it to Undefined. In both cases, term_val will return Undefined.\<close>
+  fun apply_of_upd::"instantiated_of_upd
+    \<Rightarrow> (object_interpretation) 
+    \<Rightarrow> (object_interpretation)" where
+    "apply_of_upd (OFU f as v) ti = (
       case (ti f) of
         Some ti1 \<Rightarrow> (ti(f \<mapsto> (ti1((map the as) := v))))
       | None \<Rightarrow> (ti(f \<mapsto> (Map.empty((map the as) := v))))
     )"
 
   text \<open>The return value will never be undefined, unless the update is not well-formed.\<close>
+  
+  fun upd_nf_int::"(object list \<rightharpoonup> rat) \<Rightarrow> upd_op \<Rightarrow> object list \<Rightarrow> rat \<Rightarrow> rat \<Rightarrow> (object list \<rightharpoonup> rat)" where
+    "upd_nf_int m ScaleUp args old n = (m (args \<mapsto> (old * n)))"
+  | "upd_nf_int m ScaleDown args old n = (m (args \<mapsto> (old / n)))"
+  | "upd_nf_int m Increase args old n = (m (args \<mapsto> (old + n)))"
+  | "upd_nf_int m Decrease args old n = (m (args \<mapsto> (old - n)))"
+
+  fun apply_nf_upd'::"func \<Rightarrow> upd_op \<Rightarrow> object list \<Rightarrow> rat 
+    \<Rightarrow> numeric_function_interpretation \<Rightarrow> numeric_function_interpretation" where
+  "apply_nf_upd' n Assign as v ni = (
+      let f' = (case ni n of Some f' \<Rightarrow> f' | None \<Rightarrow> Map.empty)
+      in ni(n \<mapsto> (f'(as \<mapsto>v)))
+    )" |  
+  "apply_nf_upd' n op as v ni = (
+      case ni n of Some f' \<Rightarrow> ni(n \<mapsto> (upd_nf_int f' op as (the (f' as)) v))
+    )"
+
   fun apply_nf_upd::"instantiated_nf_upd
-    \<Rightarrow> (func \<rightharpoonup> object list \<rightharpoonup> rat) 
-    \<Rightarrow> (func \<rightharpoonup> object list \<rightharpoonup> rat)" where
-    "apply_nf_upd (NU f as v) ni = (
-      case (ni f) of
-        Some ni1 \<Rightarrow> (ni(f \<mapsto> (ni1((map the as) := v))))
-      | None \<Rightarrow> (ni(f \<mapsto> (Map.empty((map the as) := v)))))"
+    \<Rightarrow> numeric_function_interpretation
+    \<Rightarrow> numeric_function_interpretation" where
+    "apply_nf_upd (NFU n op as v) ni = apply_nf_upd' n op (map the as) (the v) ni"
 
   text \<open>It seems to be agreed upon that, in case of a contradictory effect,
     addition overrides deletion. We model this behaviour by first executing
@@ -1183,30 +1191,35 @@ begin
     "apply_effect (Eff a d tu nu) (World_Model p ti ni) = (
       World_Model 
         ((p - set (map the d)) \<union> set (map the a)) 
-        (fold (apply_tf_upd) tu ti) 
+        (fold (apply_of_upd) tu ti) 
         (fold (apply_nf_upd) nu ni))"
-
  
 
   text \<open>This definition is faulty, because the effects will interfere\<close>
-  (* fun conditionally_apply_conditional_effect::"(ground_formula \<times> ground_effect) \<Rightarrow> world_model \<Rightarrow> world_model" where
-    "conditionally_apply_conditional_effect (pre, eff) M = (
+  (* fun inst_apply_conditional_effect::"(ground_formula \<times> ground_effect) \<Rightarrow> world_model \<Rightarrow> world_model" where
+    "inst_apply_conditional_effect (pre, eff) M = (
       if (valuation M \<Turnstile> pre) 
       then apply_conditional_effect (pre, eff) M
       else M)" *)
 
+  fun inst_apply_conditional_effect::"world_model \<Rightarrow> (ground_formula \<times> ground_effect) \<Rightarrow> world_model \<Rightarrow> world_model" where
+    "inst_apply_conditional_effect eM (pre, eff) M = (
+        if (valuation eM \<Turnstile> pre) then apply_effect (inst_effect eM eff) M else M
+    )"
 
-  definition active_effects::"world_model \<Rightarrow> (ground_formula \<times> ground_effect) list \<Rightarrow> (ground_formula \<times> ground_effect) list" where
-    "active_effects M effs = (filter (\<lambda>(pre, eff). valuation M \<Turnstile> pre) effs)"
+  (* TODO: Define the non-interference of effects with one another *)
+  (* Updates to numeric functions should contain the update operators even when fully instantiated *)
+  (* One important point is the non-interference of effects. If effects interfere, then plans are invalid. *)
+  (* TODO: When we apply conditional effects, we instantiate them with respect to
+      one world model, but apply them with respect to another. We could define the function that applies
+      a conditional effect to a world-model with respect to two world-models, one of which is used to 
+      instantiate the effect, and one we apply it to. Moreover, preconditions should be evaluated w.r.t.
+      the first world model. *)
   
   text \<open>We first have to filter out the inactive effects. Following that, we instantiate the 
         active effects. Then the effects are applied individually by a right fold.\<close>
   definition apply_conditional_effect_list where
-    "apply_conditional_effect_list effs M = (
-      let active = active_effects M effs;
-          inst_effs = map ((inst_effect M) o snd) active
-      in foldr apply_effect inst_effs M
-    )"
+    "apply_conditional_effect_list effs M = (foldr (inst_apply_conditional_effect M) effs M)"
 
   text \<open>Execute a ground action\<close>
   definition execute_ground_action :: "ground_action \<Rightarrow> world_model \<Rightarrow> world_model" where
@@ -1220,7 +1233,6 @@ begin
   | "wf_app_pred_upd (Some (Eq _ _)) = False"
   | "wf_app_pred_upd (Some (Pred p as)) = wf_pred_eq objT (Pred p as)"
 
-  
   fun is_some where
     "is_some (Some x) = True"
   | "is_some None = False"
@@ -1228,61 +1240,141 @@ begin
   text \<open>An update to an object fluent (term function) is well-formed, if
         the arguments are defined and well-typed, and the return value is
         either None or well-typed.\<close>
-  fun wf_app_tf_upd::"instantiated_tf_upd \<Rightarrow> bool" where
-    "wf_app_tf_upd (TU f as v) = (case obj_fun_sig f of 
+  fun wf_app_of_upd::"instantiated_of_upd \<Rightarrow> bool" where
+    "wf_app_of_upd (OFU f as v) = (case obj_fun_sig f of 
           None \<Rightarrow> False
         | Some (Ts, T) \<Rightarrow>
               list_all is_some as
             \<and> list_all2 ((is_of_type objT) o the) as Ts 
             \<and> (v = None \<or> is_of_type objT (the v) T))"
 
+  definition nf_args_well_typed::"func \<Rightarrow> object list \<Rightarrow> bool" where
+  "nf_args_well_typed f args = (case num_fun_sig f of None \<Rightarrow> False | Some Ts \<Rightarrow> list_all2 (is_of_type objT) args Ts)"
+
   text \<open>An update to a numeric fluent is well-formed, if the arguments are 
         defined and well-typed, and the return value is defined.\<close>
   fun wf_app_nf_upd::"instantiated_nf_upd \<Rightarrow> bool" where
-    "wf_app_nf_upd (NU f as v) = (case (num_fun_sig f) of 
-      None \<Rightarrow> False
-    | Some Ts \<Rightarrow> 
-        list_all is_some as
-      \<and> list_all2 ((is_of_type objT) o the) as Ts 
-      \<and> is_some v)"
-  
+    "wf_app_nf_upd (NFU f op args v) = (
+        list_all is_some args 
+      \<and> is_some v \<and> (op = ScaleDown \<longrightarrow> the v \<noteq> (of_rat 0))
+      \<and> nf_args_well_typed f (map the args))"
+
   fun wf_fully_instantiated_effect where
     "wf_fully_instantiated_effect (Eff a d tu nu) \<longleftrightarrow> 
         (\<forall>ae \<in> set a. wf_app_pred_upd ae)
       \<and> (\<forall>de \<in> set d. wf_app_pred_upd de)
-      \<and> (\<forall>u \<in> set tu. wf_app_tf_upd u)
+      \<and> (\<forall>u \<in> set tu. wf_app_of_upd u)     
       \<and> (\<forall>u \<in> set nu. wf_app_nf_upd u)"
-                          
+
+  text \<open>Non-interference of updates to functions is important, since we could obtain lists
+        of effects which make no sense.\<close>
+  fun int_nf_upds where
+    "int_nf_upds (NFU f op as v) (NFU f' op' as' v') =
+    ((f = f \<and> as = as') \<longrightarrow> (op = op' \<longrightarrow> (op = Assign \<longrightarrow> v \<noteq> v')))"
+  
+  fun non_int_nf_upds where
+    "non_int_nf_upds (NFU f op as v) (NFU f' op' as' v') = 
+      (f \<noteq> f \<or> as \<noteq> as \<or> (op = op' \<and> (op \<noteq> Assign \<or> v = v')))"
+  
+  definition non_int_nf_upd_list where
+    "non_int_nf_upd_list xs \<equiv> pairwise non_int_nf_upds (set xs)"
+  
+  definition non_int_nf_upd_lists where
+    "non_int_nf_upd_lists xs ys \<equiv> non_int_nf_upd_list (xs @ ys)"
+  
+  fun non_int_of_upds where
+    "non_int_of_upds (OFU f as v) (OFU f' as' v') =
+    (f \<noteq> f' \<or> as \<noteq> as' \<or> v = v')"
+  
+  definition non_int_of_upd_list where
+    "non_int_of_upd_list xs \<equiv> pairwise non_int_of_upds (set xs)"
+  
+  definition non_int_of_upd_lists where
+    "non_int_of_upd_lists xs ys \<equiv> non_int_of_upd_list (xs @ ys)"
+
+  definition non_int_effs where
+    "non_int_effs e1 e2 \<equiv> 
+      non_int_nf_upd_lists (nus e1) (nus e2)
+    \<and> non_int_of_upd_lists (ous e1) (ous e2)"
+
+  definition non_int_cond_effs where
+    "non_int_cond_effs M e1 e2 \<equiv> (valuation M \<Turnstile> fst e1 \<and> valuation M \<Turnstile> fst e2) \<longrightarrow> (non_int_effs (inst_effect M (snd e1)) (inst_effect M (snd e2)))"
+
+  definition non_int_cond_eff_list where
+    "non_int_cond_eff_list M xs \<equiv> pairwise (non_int_cond_effs M) (set xs)"
+
+  text \<open>Well-instantiated in this context means that the final instantiation
+        did not unintentionally cause the update to the return value to be falsely defined.
+        \<close>
   fun valid_ret_val_inst::"'a option \<Rightarrow> 'b option \<Rightarrow> bool" where
     "valid_ret_val_inst None None = True"
   | "valid_ret_val_inst (Some r) (Some r') = True"
   | "valid_ret_val_inst _ _ = False"
 
-  fun valid_term_upd_full_inst::"object term tf_upd
-    \<Rightarrow> instantiated_tf_upd \<Rightarrow> bool" where
-    "valid_term_upd_full_inst (TF_Upd f as v) (TU f' as' v') = valid_ret_val_inst v v'"
+  fun well_inst_of_upd'::"object term of_upd \<Rightarrow> instantiated_of_upd \<Rightarrow> bool" where
+    "well_inst_of_upd' (OF_Upd f as v) (OFU f' as' v') = valid_ret_val_inst v v'"
+
+  definition well_inst_of_upd::"world_model \<Rightarrow> object term of_upd \<Rightarrow> bool" where
+    "well_inst_of_upd M u \<equiv> well_inst_of_upd' u (inst_of_upd M u)"
+
+  text \<open>I cannot come up with a better name for this
+
+        Even following the
+        final instantiation, we have to evaluate the update w.r.t. the world
+        model in the case of the relative updates. In that case, we need to
+        ensure that these have not been undefined.
+
+        We instantiate with respect to one world model but we evaluate with
+        respect to an updated one. Can we ensure that the updates preserve this?  
+        
+        Yes, if the world-model assigns some value to some function from objects to 
+        numbers, it cannot be unassigned. Therefore checking this before the execution
+        of a list of actions is sufficient.\<close>
+
+  fun nf_upd_defined'::"numeric_function_interpretation \<Rightarrow> instantiated_nf_upd \<Rightarrow> bool" where
+    "nf_upd_defined' _ (NFU _ Assign _ _) = True"
+  | "nf_upd_defined' ni (NFU f _ args _) = (
+      case ni f of 
+        Some f' \<Rightarrow> f' (map the args) \<noteq> None 
+      | None \<Rightarrow> False)"
   
-  fun valid_full_effect_inst where
-    "valid_full_effect_inst (Effect a d tu nu) (Eff a' d' tu' nu') \<longleftrightarrow>
-      wf_fully_instantiated_effect (Eff a' d' tu' nu') \<and> (\<forall>(u, u') \<in> set (zip tu tu'). valid_term_upd_full_inst u u')"
+  definition nf_upd_defined::"world_model \<Rightarrow> object term nf_upd \<Rightarrow> bool" where
+    "nf_upd_defined M upd = nf_upd_defined' (nf_int M) (inst_nf_upd M upd)"
 
-  definition valid_active_effects::"world_model \<Rightarrow> (ground_formula \<times> ground_effect) list \<Rightarrow> bool" where
-    "valid_active_effects M e \<equiv> (\<forall>(pre, e) \<in> set (active_effects M e). valid_full_effect_inst e (inst_effect M e))"
+  (* Is this the best place to put this check? Probably not *)
 
+  definition well_inst_eff::"world_model \<Rightarrow> ground_effect \<Rightarrow> bool" where
+    "well_inst_eff M eff \<equiv> list_all (well_inst_of_upd M) (of_upds eff) \<and> list_all (nf_upd_defined M) (nf_upds eff)"
+  
+  definition well_inst_cond_eff::"world_model \<Rightarrow> (ground_formula \<times> ground_effect) \<Rightarrow> bool" where
+    "well_inst_cond_eff M eff \<equiv> (valuation M \<Turnstile> (fst eff)) \<longrightarrow> (well_inst_eff M (snd eff))"
+  
+  definition well_inst_cond_eff_list::"world_model \<Rightarrow> (ground_formula \<times> ground_effect) list \<Rightarrow> bool" where
+    "well_inst_cond_eff_list M effs \<equiv> list_all (well_inst_cond_eff M) effs"
+
+  definition active_effects::"world_model \<Rightarrow> (ground_formula \<times> ground_effect) list \<Rightarrow> (ground_formula \<times> ground_effect) list" where
+    "active_effects M effs = (filter (\<lambda>(pre, eff). valuation M \<Turnstile> pre) effs)"
+
+  definition valid_effects::"world_model \<Rightarrow> (ground_formula \<times> ground_effect) list \<Rightarrow> bool" where
+    "valid_effects M effs \<equiv> 
+      (\<forall>(pre, eff) \<in> set (active_effects M effs). wf_fully_instantiated_effect (inst_effect M eff))
+      \<and> (well_inst_cond_eff_list M effs)
+      \<and> (non_int_cond_eff_list M effs)"
+  
   definition ground_action_enabled where
     "ground_action_enabled \<alpha> M \<equiv> valuation M \<Turnstile> precondition \<alpha>"
 
-  fun wf_ground_action :: "ground_action \<Rightarrow> bool" where
-    "wf_ground_action (Ground_Action pre eff) \<longleftrightarrow> (
-        wf_fmla (ty_term objT) pre
-      \<and> wf_cond_effect_list (ty_term objT) eff
+  definition wf_ground_action :: "ground_action \<Rightarrow> bool" where
+    "wf_ground_action \<alpha> \<equiv> (
+        wf_fmla (ty_term objT) (precondition \<alpha>)
+      \<and> wf_cond_effect_list (ty_term objT) (effects \<alpha>)
       )"
   
   definition valid_ground_action where
     "valid_ground_action \<alpha> M \<equiv>
         wf_ground_action \<alpha>
       \<and> ground_action_enabled \<alpha> M 
-      \<and> valid_active_effects M (effects \<alpha>)"
+      \<and> valid_effects M (effects \<alpha>)"
 
   text \<open>As plan actions are executed by first instantiating them, and then
     executing the action instance, it is natural to define a well-formedness
@@ -1295,6 +1387,13 @@ begin
   | "ground_action_path M (\<alpha>#\<alpha>s) M' \<longleftrightarrow> valid_ground_action \<alpha> M
     \<and> ground_action_path (execute_ground_action \<alpha> M) \<alpha>s M'"
 
+  lemma inst_apply_cond_fold_alt: "foldr (inst_apply_conditional_effect M') effs M 
+    = foldr apply_effect (map (inst_effect M' \<circ> snd) (active_effects M' effs)) M"
+    apply (induction effs arbitrary: M')
+    unfolding active_effects_def 
+    subgoal by simp
+    subgoal for a by (cases a; auto)
+    done
 
   text \<open>Unfolded definition of ground_action_path. 
       The precondition of the action is well-formed.
@@ -1310,13 +1409,12 @@ begin
       wf_fmla (ty_term objT) (precondition \<alpha>)
     \<and> wf_cond_effect_list (ty_term objT) (effects \<alpha>)
     \<and> valuation M \<Turnstile> precondition \<alpha>
-    \<and> (\<forall>(pre, e) \<in> set (active_effects M (effects \<alpha>)). valid_full_effect_inst e (inst_effect M e))
-    \<and> ground_action_path (foldr apply_effect (map ((inst_effect M) o snd) (active_effects M (effects \<alpha>))) M) \<alpha>s M'"
-     apply (auto simp: execute_ground_action_def valid_active_effects_def
-        ground_action_enabled_def valid_ground_action_def 
-        apply_conditional_effect_list_def Let_def
-        elim: wf_ground_action.elims(2))
-    using wf_ground_action.elims(3) by fastforce 
+    \<and> (\<forall>(pre, eff) \<in> set (active_effects M (effects \<alpha>)). wf_fully_instantiated_effect (inst_effect M eff))
+    \<and> well_inst_cond_eff_list M (effects \<alpha>)
+    \<and> non_int_cond_eff_list M (effects \<alpha>)
+    \<and> ground_action_path (apply_conditional_effect_list (effects \<alpha>) M) \<alpha>s M'"
+    by (auto simp: valid_ground_action_def execute_ground_action_def ground_action_enabled_def
+            wf_ground_action_def valid_effects_def apply_conditional_effect_list_def)
 end
 
 subsection \<open>Conditions for the preservation of well-formedness\<close>
@@ -1433,32 +1531,32 @@ begin
       shows "\<forall>u \<in> set (map (map_pred f) upd). wf_pred_upd R u"
     using assms ent_type_imp_wf_pred_upd by fastforce
 
-  lemma ent_type_imp_wf_tf_upd:
-    assumes "\<forall>e \<in> tf_upd.ent tu. \<forall>T. is_of_type Q e T \<longrightarrow> is_of_type R (f e) T"
-    and "wf_tf_upd Q tu"
-    shows "wf_tf_upd R (map_tf_upd f tu)"
+  lemma ent_type_imp_wf_of_upd:
+    assumes "\<forall>e \<in> of_upd.ent tu. \<forall>T. is_of_type Q e T \<longrightarrow> is_of_type R (f e) T"
+    and "wf_of_upd Q tu"
+    shows "wf_of_upd R (map_of_upd f tu)"
   proof (cases tu)
-    case [simp]: (TF_Upd fn args r)
+    case [simp]: (OF_Upd fn args r)
     from assms(2)
     obtain Ts T where
       a: "obj_fun_sig fn = Some (Ts, T)"
       "list_all2 (is_of_type Q) args Ts"
       "is_of_type Q (the r) T \<or> r = None"
       by (auto split: option.splits)
-    from list_all2_is_of_type[OF assms(1)[simplified TF_Upd tf_upd.set ball_Un, THEN conjunct1] a(2)]
+    from list_all2_is_of_type[OF assms(1)[simplified OF_Upd of_upd.set ball_Un, THEN conjunct1] a(2)]
     have "list_all2 (is_of_type R) (map f args) Ts" .
     moreover
     from a(3) assms(1)
     have "is_of_type R (the (map_option f r)) T \<or> map_option f r = None" by force
     ultimately 
-    show ?thesis using tf_upd.map[of f fn args r] using a(1) by auto
+    show ?thesis using of_upd.map[of f fn args r] using a(1) by auto
   qed
 
-  lemma ent_type_imp_wf_tf_upds:
-    assumes "\<forall>e \<in> \<Union>(tf_upd.ent ` set tu). \<forall>T. is_of_type Q e T \<longrightarrow> is_of_type R (f e) T"
-        and "\<forall>u \<in> set tu. wf_tf_upd Q u"
-      shows "\<forall>u \<in> set (map (map_tf_upd f) tu). wf_tf_upd R u"
-    using assms ent_type_imp_wf_tf_upd by fastforce
+  lemma ent_type_imp_wf_of_upds:
+    assumes "\<forall>e \<in> \<Union>(of_upd.ent ` set tu). \<forall>T. is_of_type Q e T \<longrightarrow> is_of_type R (f e) T"
+        and "\<forall>u \<in> set tu. wf_of_upd Q u"
+      shows "\<forall>u \<in> set (map (map_of_upd f) tu). wf_of_upd R u"
+    using assms ent_type_imp_wf_of_upd by fastforce
   
   lemma ent_type_imp_wf_nf_upd:
     assumes "\<forall>e \<in> nf_upd.ent nu. \<forall>T. is_of_type Q e T \<longrightarrow> is_of_type R (f e) T"
@@ -1482,10 +1580,10 @@ begin
     from assms(2)
     have "\<forall>u \<in> set a. (wf_pred_upd Q) u" 
          "\<forall>u \<in> set d. (wf_pred_upd Q) u"
-         "\<forall>u \<in> set tu. (wf_tf_upd Q) u"
+         "\<forall>u \<in> set tu. (wf_of_upd Q) u"
          "\<forall>u \<in> set nu. (wf_nf_upd Q) u" by simp_all
     with assms(1)[simplified Effect ast_effect.set ball_Un] 
-        ent_type_imp_wf_pred_upds ent_type_imp_wf_tf_upds ent_type_imp_wf_nf_upds
+        ent_type_imp_wf_pred_upds ent_type_imp_wf_of_upds ent_type_imp_wf_nf_upds
     show ?thesis 
       apply (subst Effect; subst ast_effect.map; subst wf_effect.simps)
       apply (elim conjE; intro conjI)
@@ -1506,11 +1604,6 @@ begin
     using assms(2, 1) unfolding wf_cond_effect_list_def
     apply (induction effs)
     using ent_type_imp_wf_cond_effect by force+
-
-lemma ent_type_imp_wf_cond_effect_list_flatmap:
- assumes "\<forall>eff \<in> set effs. \<forall>e \<in> cond_effect_ent eff. \<forall>T. is_of_type Q e T \<longrightarrow> is_of_type R (f e) T"
-     and "wf_cond_effect_list Q effs"
-   shows "wf_cond_effect_list R (flatmap (map_cond_effect f) effs)"
 
   
   lemma ent_type_imp_wf_fmla_strong:
@@ -1892,7 +1985,7 @@ lemma "s = {} \<Longrightarrow> (\<forall>a \<in> s. \<forall>a \<in> t. \<not>(
   
   definition pddl_univ_effect_list::"(variable \<times> type) list \<Rightarrow> (schematic_formula \<times> schematic_effect) list
     \<Rightarrow> (schematic_formula \<times> schematic_effect) list" where
-  "pddl_univ_effect_list vts effs \<equiv> (fold (\<lambda>(v, t) eff. univ_effect_list v t eff) vts effs)"
+  "pddl_univ_effect_list vts effs \<equiv> (foldr (\<lambda>(v, t) eff. univ_effect_list v t eff) vts effs)"
    
   lemma v_in_unique_vars': "(v, t) \<in> set ps \<Longrightarrow> v \<in> snd (unique_vars' ps)"
   proof (induction ps)
@@ -2233,10 +2326,6 @@ begin
     by simp
  (* Thinking about these only makes sense, if we implement a well-formedness check
     as a step before applying/expanding the universal effects. We never do. Fun exercise -- maybe. *)
-  definition upd_ty_env::"(variable \<rightharpoonup> type) \<Rightarrow> (variable \<times> type) list \<Rightarrow> (variable \<rightharpoonup> type)" where
-    "upd_ty_env te params \<equiv> foldr (\<lambda>(v, ty) Q. Q(v \<mapsto> ty)) params te"
-  
-  
   (* TODO: prove wf in the context of quantifiers which bind lists *)
 
   find_theorems "?P \<Longrightarrow> ?thesis"
@@ -2262,16 +2351,27 @@ begin
       using list_all_flatmap by auto
   qed
   
-  lemma wf_pddl_univ_effect_list_inst: (* this is not quite right, because the type environment is not correct *)
+  definition upd_ty_env::"(variable \<rightharpoonup> type) \<Rightarrow> (variable \<times> type) list \<Rightarrow> (variable \<rightharpoonup> type)" where
+    "upd_ty_env te params \<equiv> fold (\<lambda>(v, ty) Q. Q(v \<mapsto> ty)) params te"
+  
+  lemma wf_pddl_univ_effect_list_inst: 
     assumes "wf_cond_effect_list (ty_term (ty_sym (upd_ty_env Q vts) objT)) ces" (is "wf_cond_effect_list ?Q ces")
     shows "wf_cond_effect_list (ty_term (ty_sym Q objT)) (pddl_univ_effect_list vts ces)" (is "wf_cond_effect_list ?R (pddl_univ_effect_list vts ces)")
     using assms
-  proof (induction vts)
+  proof (induction vts arbitrary: ces Q)
     case Nil
-    then show ?case unfolding pddl_univ_effect_list_def upd_ty_env_def 
+    then show ?case unfolding pddl_univ_effect_list_def upd_ty_env_def by simp
   next
     case (Cons a vts)
-    then show ?case sorry
+    then obtain v ty where
+      a: "a = (v, ty)"
+      by fastforce
+    from Cons.prems a
+    have "wf_cond_effect_list (ty_term (ty_sym (upd_ty_env (Q(v\<mapsto>ty)) vts) objT)) ces" unfolding upd_ty_env_def by simp
+    then have "wf_cond_effect_list (ty_term (ty_sym (Q(v\<mapsto>ty)) objT)) (pddl_univ_effect_list vts ces)" using Cons.IH by blast
+    then have "wf_cond_effect_list (ty_term (ty_sym Q objT)) (univ_effect_list v ty (pddl_univ_effect_list vts ces))" using wf_univ_effect_list_inst by blast
+    with a
+    show ?case unfolding pddl_univ_effect_list_def by simp
   qed
 
   
@@ -2476,7 +2576,7 @@ context ast_problem begin
     with ent_type_imp_wf_fmla_strong[where f = "inst_term params as" and Q = "ty_term (ty_sym (map_of params) objT)" and R = "ty_term objT"]
         ent_type_imp_wf_cond_effect_list_strong[where f = "inst_term params as" and Q = "ty_term (ty_sym (map_of params) objT)" and R = "ty_term objT"]
         assms(2)
-    show ?thesis by (auto simp: Let_def wf_cond_effect_list_def)
+    show ?thesis by (auto simp: Let_def wf_cond_effect_list_def wf_ground_action_def)
   qed
 
 end
@@ -2561,17 +2661,17 @@ begin
       by (cases a; auto)
     done
 
-  lemma wf_apply_tf_upd: 
+  lemma wf_apply_of_upd: 
       assumes "wf_of_int objT ti" 
-              "wf_app_tf_upd tu"
-        shows "wf_of_int objT (apply_tf_upd tu ti)" (is "wf_of_int objT ?ti'")
+              "wf_app_of_upd tu"
+        shows "wf_of_int objT (apply_of_upd tu ti)" (is "wf_of_int objT ?ti'")
   proof (cases tu)
-    case [simp]: (TU f as v)
-    have "wf_of_int' objT f' (the (?ti' f'))"
+    case [simp]: (OFU f as v)
+    have "wf_of_arg_r_map objT f' (the (?ti' f'))"
       if "f' \<in> dom ?ti'" for f'
     proof (cases "f = f'")
       case True
-      with \<open>wf_app_tf_upd tu\<close>
+      with \<open>wf_app_of_upd tu\<close>
       obtain Ts T where 
         "obj_fun_sig f' = Some (Ts, T)" by (auto split: option.splits)
       from True \<open>f' \<in> dom ?ti'\<close>
@@ -2583,7 +2683,7 @@ begin
         if "as' \<in> dom fn" for as'
       proof (cases "map the as = as'")
         case True
-        with \<open>wf_app_tf_upd tu\<close> \<open>obj_fun_sig f' = Some (Ts, T)\<close> \<open>f = f'\<close>
+        with \<open>wf_app_of_upd tu\<close> \<open>obj_fun_sig f' = Some (Ts, T)\<close> \<open>f = f'\<close>
         have "list_all2 ((is_of_type objT) o the) as Ts " by (auto split: option.splits)
         with \<open>map the as = as'\<close>
         have "list_all2 (is_of_type objT) as' Ts" 
@@ -2592,7 +2692,7 @@ begin
         have "fn as' = v" by blast
         with \<open>as' \<in> dom fn\<close>
         have "v \<noteq> None" by fast
-        with \<open>wf_app_tf_upd tu\<close> \<open>f = f'\<close> \<open>obj_fun_sig f' = Some (Ts, T)\<close>
+        with \<open>wf_app_of_upd tu\<close> \<open>f = f'\<close> \<open>obj_fun_sig f' = Some (Ts, T)\<close>
         have "is_of_type objT (the v) T" by auto
         with \<open>fn as' = v\<close> \<open>list_all2 (is_of_type objT) as' Ts\<close>
         show ?thesis by blast
@@ -2604,7 +2704,7 @@ begin
              "f' \<in> dom ti"
           by (auto split: option.splits if_splits)
         from \<open>wf_of_int objT ti\<close> \<open>f' \<in> dom ti\<close> 
-        have "wf_of_int' objT f' (the (ti f'))" unfolding wf_of_int_def by fast
+        have "wf_of_arg_r_map objT f' (the (ti f'))" unfolding wf_of_int_def by fast
         with \<open>as' \<in> dom (the (ti f'))\<close> \<open>obj_fun_sig f' = Some (Ts, T)\<close>
         have "list_all2 (is_of_type objT) as' Ts 
           \<and> is_of_type objT (the (the (ti f') as')) T" by simp
@@ -2615,84 +2715,63 @@ begin
       show ?thesis by (auto split: option.splits)
     next
       case False
-      hence "the (apply_tf_upd (TU f as v) ti f') = the (ti f')"
+      hence "the (apply_of_upd (OFU f as v) ti f') = the (ti f')"
         by (auto split: option.splits)
-      with \<open>f' \<in> dom ?ti'\<close> \<open>wf_app_tf_upd tu\<close> \<open>f \<noteq> f'\<close>
+      with \<open>f' \<in> dom ?ti'\<close> \<open>wf_app_of_upd tu\<close> \<open>f \<noteq> f'\<close>
       have "f' \<in> dom ti" by (auto split: option.splits)
-      with \<open>wf_of_int objT ti\<close> \<open>the (apply_tf_upd (TU f as v) ti f') = the (ti f')\<close>
+      with \<open>wf_of_int objT ti\<close> \<open>the (apply_of_upd (OFU f as v) ti f') = the (ti f')\<close>
       show ?thesis unfolding wf_of_int_def by (auto split: option.splits)
     qed
     then show ?thesis unfolding wf_of_int_def by blast
   qed
 
-  lemma wf_apply_tf_upds: 
-      assumes "\<forall>u \<in> set tu. wf_app_tf_upd u"
+  lemma wf_apply_of_upds: 
+      assumes "\<forall>u \<in> set tu. wf_app_of_upd u"
               "wf_of_int objT ti" 
-        shows "wf_of_int objT (fold apply_tf_upd tu ti)"
+        shows "wf_of_int objT (fold apply_of_upd tu ti)"
   using assms
   proof (induction tu)
     case Nil
     then show ?case by auto
   next
     case (Cons u tu)
-    then show ?case by (metis fold_invariant wf_apply_tf_upd)
+    then show ?case by (metis fold_invariant wf_apply_of_upd)
   qed
-  
+
   lemma wf_apply_nf_upd: 
         assumes "wf_nf_int objT ni" 
                 "wf_app_nf_upd nu"
+                "nf_upd_defined' ni nu"
           shows "wf_nf_int objT (apply_nf_upd nu ni)" (is "wf_nf_int objT ?ni'")
   proof (cases nu)
-    case [simp]: (NU f as v)
-    have "wf_nf_int' objT f' (the (?ni' f'))"
-      if "f' \<in> dom ?ni'" for f'
-    proof (cases "f = f'")
-      case True
-      with \<open>wf_app_nf_upd nu\<close>
-      obtain Ts where 
-        "num_fun_sig f' = Some Ts" by (auto split: option.splits)
-      from True \<open>f' \<in> dom ?ni'\<close>
-      obtain fn where
-        "?ni' f' = Some fn"
-        "fn (map the as) = v" by (auto split: option.splits)
-      have "list_all2 (is_of_type objT) as' Ts"
-        if "as' \<in> dom fn" for as'
-      proof (cases "map the as = as'")
-        case True
-        with \<open>wf_app_nf_upd nu\<close> \<open>num_fun_sig f' = Some Ts\<close> \<open>f = f'\<close>
-        have "list_all2 ((is_of_type objT) o the) as Ts" by (auto split: option.splits)
-        with \<open>map the as = as'\<close>
-        have "list_all2 (is_of_type objT) as' Ts" 
-          by (auto split: option.splits simp: list_all2_conv_all_nth)
-        with \<open>map the as = as'\<close> \<open>fn (map the as) = v\<close>
-        have "fn as' = v" by blast
-        with \<open>list_all2 (is_of_type objT) as' Ts\<close>
-        show ?thesis by blast
-      next
-        case False
-        with \<open>?ni' f' = Some fn\<close> \<open>f' \<in> dom ?ni'\<close> \<open>as' \<in> dom fn\<close> \<open>f = f'\<close>
-        have "fn as' = the (ni f') as'" 
-             "f' \<in> dom ni"
-             "as' \<in> dom (the (ni f'))" 
-          by (auto split: option.splits if_splits)
-          
-        from \<open>wf_nf_int objT ni\<close> \<open>f' \<in> dom ni\<close> 
-        have "wf_nf_int' objT f' (the (ni f'))" unfolding wf_nf_int_def by fast
-        with \<open>as' \<in> dom (the (ni f'))\<close> \<open>num_fun_sig f' = Some Ts\<close>
-        show ?thesis by auto
-      qed
-      with \<open>num_fun_sig f' = Some Ts\<close> \<open>?ni' f' = Some fn\<close>
-      show ?thesis by (auto split: option.splits)
+    case [simp]: (NFU n op as v)
+    consider "op = Assign" 
+      | "op = ScaleDown" 
+      | "op \<noteq> ScaleDown \<and> op \<noteq> Assign" by blast
+    note c = this
+
+    have "wf_nf_int_map objT f m" 
+      if "(f, m) \<in> Map.graph ?ni'" for f m
+    proof cases
+      assume "f = n"
+      show ?thesis
     next
-      case False
-      hence "the (apply_nf_upd (NU f as v) ni f') = the (ni f')"
-        by (auto split: option.splits)
-      with \<open>f' \<in> dom ?ni'\<close> \<open>wf_app_nf_upd nu\<close> \<open>f \<noteq> f'\<close>
-      have "f' \<in> dom ni" by (auto split: option.splits)
-      with \<open>wf_nf_int objT ni\<close> \<open>the (apply_nf_upd (NU f as v) ni f') = the (ni f')\<close>
-      show ?thesis unfolding wf_nf_int_def by (auto split: option.splits)
+      assume "f \<noteq> n"
+      then show ?thesis sorry
     qed
-    then show ?thesis unfolding wf_nf_int_def by blast
+    have "True"
+    proof (cases rule: c)
+      assume "op = Assign"
+      show ?thesis sorry
+    next
+      assume "op = ScaleDown"
+      then show ?thesis sorry
+    next
+      assume "op \<noteq> ScaleDown \<and> op \<noteq> Assign"
+      then show ?thesis sorry
+    qed
+
+    show ?thesis sorry
   qed
 
   lemma wf_apply_nf_upds: 
@@ -2717,8 +2796,8 @@ begin
       have "\<forall>p' \<in> ((p - set (map the d)) \<union> set (map the a)). wf_predicate objT p'"
         using wf_world_model_def wf_apply_pred_upd by auto
       moreover
-      have "wf_of_int objT (fold apply_tf_upd tu ti)"
-        using wf_apply_tf_upds assms wf_world_model_def by force
+      have "wf_of_int objT (fold apply_of_upd tu ti)"
+        using wf_apply_of_upds assms wf_world_model_def by force
       moreover
       have "wf_nf_int objT (fold apply_nf_upd nu ni)"
         using wf_apply_nf_upds assms wf_world_model_def by force
@@ -2741,7 +2820,7 @@ begin
   proof (cases \<alpha>)                   
     case [simp]: (Ground_Action pre ces)
     with assms
-    have "\<forall>(pre, eff) \<in> set (active_effects s ces). valid_full_effect_inst eff (inst_effect s eff)"
+    have "\<forall>(pre, eff) \<in> set (active_effects s ces). a eff (inst_effect s eff)"
       using valid_ground_action_def valid_active_effects_def by simp
     hence "\<forall>(pre, eff) \<in> set (active_effects s ces). wf_fully_instantiated_effect (inst_effect s eff)"
       by (smt (verit, del_insts) ast_domain.valid_full_effect_inst.elims(2) old.prod.case prod.exhaust_sel)
@@ -2778,6 +2857,11 @@ begin
     using assms
     by (induction \<pi>s arbitrary: M) (auto intro: wf_execute)
 
+
+  (* We might want to connect the following facts as lemmas rather than definitions:
+      - The initial world model I is always well-formed (checked)
+      - A valid plan is a plan-action path from I to some state satisfying the goal
+      - How do we know that the semantics of action execution make sense? *)
 end
 
 subsubsection \<open>Semantics of quantifiers under instantiation\<close>
@@ -2905,6 +2989,7 @@ proof -
     by (metis ground_action.sel(1) instantiate_action_schema.simps)
 qed
 
+(* these do not make sense *)
 lemma pddl_exists_precondition_sem:
   assumes "a = Action_Schema n params (pddl_exists vts \<phi>) eff"
     and "action_params_match a args"
@@ -3055,8 +3140,9 @@ assumes "ces = (univ_effect v ty ce)"
     and "inst_ces = map (map_cond_effect (inst_term params as)) ces"
     and "inst_ces' = map (map_cond_effect (inst_term params as)) ces'"
   shows "apply_conditional_effect_list inst_ces = apply_conditional_effect_list inst_ces'"
-  using assms apply (auto simp: Let_def intro: conditional_effect_list_sem wf_problem_decs.wf_univ_effect_inst)
-  sorry
+proof -
+  
+qed
 
 lemma univ_effect_list_sem:
   assumes "ces' = pddl_univ_effect_list vts ces"
