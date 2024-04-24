@@ -1329,9 +1329,12 @@ begin
       case ni f of 
         Some f' \<Rightarrow> f' (map the args) \<noteq> None
       | None \<Rightarrow> False)"
-  
+
+  definition nf_upd_defined''::"world_model \<Rightarrow> instantiated_nf_upd \<Rightarrow> bool" where
+    "nf_upd_defined'' M upd = nf_upd_defined' (nf_int M) upd"
+    
   definition nf_upd_defined::"world_model \<Rightarrow> object term nf_upd \<Rightarrow> bool" where
-    "nf_upd_defined M upd = nf_upd_defined' (nf_int M) (inst_nf_upd M upd)"
+    "nf_upd_defined M upd = nf_upd_defined'' M (inst_nf_upd M upd)"
 
   (* Is this the best place to put this check? Probably not *)
 
@@ -2730,7 +2733,7 @@ begin
     then show ?case by (metis fold_invariant wf_apply_of_upd)
   qed
   
-  lemma wf_apply_nf_upd: 
+  lemma wf_apply_nf_upd: (* TODO: clean up? *)
         assumes "wf_nf_int objT ni" 
                 "wf_app_nf_upd nu"
                 "nf_upd_defined' ni nu"
@@ -2751,14 +2754,14 @@ begin
     proof cases
       assume "n' = n"
       show ?thesis
-      proof (cases rule: c)
+      proof (cases)
         assume "op = Assign"
         show ?thesis
         proof (cases "ni n")
           case None
-          with that \<open>n' = n\<close> \<open>op = Assign\<close>
-          have "m = upd_nf_int Map.empty Assign (map the as) (the (Map.empty (map the as))) (the v)" 
-            using in_graphD by fastforce
+          with  \<open>op = Assign\<close> \<open>n' = n\<close> that
+          have m_def: "m = upd_nf_int Map.empty Assign (map the as) (the (Map.empty (map the as))) (the v)" 
+          by (auto dest: in_graphD)
           hence "dom m = {(map the as)}" by simp
           moreover
           from \<open>wf_app_nf_upd nu\<close> \<open>n' = n\<close>
@@ -2769,7 +2772,7 @@ begin
           case (Some m')
           with that \<open>n' = n\<close> \<open>op = Assign\<close>
           have m_def: "m = upd_nf_int m' Assign (map the as) (the (m' (map the as))) (the v)" 
-            using in_graphD by fastforce
+            by (auto dest: in_graphD)
           have "list_all2 (is_of_type objT) as' Ts" 
             if "as' \<in> dom m" for as'
           proof (cases "as' = map the as")
@@ -2778,8 +2781,8 @@ begin
             show ?thesis using nf_args_well_typed_def by auto
           next
             assume "as' \<noteq> map the as" 
-            with \<open>nf_upd_defined' ni nu\<close> that m_def
-            have "as' \<in> dom m'" by simp
+            with \<open>nf_upd_defined' ni nu\<close> that m_def \<open>op = Assign\<close>
+            have "as' \<in> dom m'" by auto
             from \<open>ni n = Some m'\<close> 
             have "(n, m') \<in> Map.graph ni" using in_graphI by fast
             with \<open>wf_nf_int objT ni\<close>
@@ -2793,42 +2796,12 @@ begin
           show ?thesis unfolding wf_nf_int_map_def by simp
         qed
       next
-        assume "op = ScaleDown"
+        assume "op \<noteq> Assign"
         with \<open>nf_upd_defined' ni nu\<close>
         obtain m' where 
           "ni n = Some m'"
-          by fastforce
-        with that \<open>n' = n\<close> \<open>op = ScaleDown\<close>
-        have m_def: "m = upd_nf_int m' ScaleDown (map the as) (the (m' (map the as))) (the v)" 
-          using in_graphD by fastforce
-        have "list_all2 (is_of_type objT) as' Ts" 
-            if "as' \<in> dom m" for as'
-        proof (cases "as' = map the as")
-          case True
-          with \<open>wf_app_nf_upd nu\<close> \<open>num_fun_sig n = Some Ts\<close>
-          show ?thesis using nf_args_well_typed_def by auto
-        next
-          case False
-          with \<open>nf_upd_defined' ni nu\<close> that m_def
-          have "as' \<in> dom m'" by simp
-          from \<open>ni n = Some m'\<close> 
-          have "(n, m') \<in> Map.graph ni" using in_graphI by fast
-          with \<open>wf_nf_int objT ni\<close>
-          have "wf_nf_int_map objT n m'" unfolding wf_nf_int_def by blast
-          with \<open>n' = n\<close>
-          have "wf_nf_int_map objT n' m'" by blast
-          with \<open>as' \<in> dom m'\<close> \<open>num_fun_sig n = Some Ts\<close> \<open>n' = n\<close>
-          show ?thesis unfolding wf_nf_int_map_def by auto
-        qed
-        with \<open>num_fun_sig n = Some Ts\<close> \<open>n' = n\<close>
-        show ?thesis unfolding wf_nf_int_map_def by simp
-      next
-        assume "op \<noteq> ScaleDown \<and> op \<noteq> Assign"
-        with \<open>nf_upd_defined' ni nu\<close>
-        obtain m' where 
-          "ni n = Some m'"
-          by (smt (verit) NFU ast_domain.nf_upd_defined'.simps(2) ast_domain.nf_upd_defined'.simps(4) ast_domain.nf_upd_defined'.simps(5) option.case_eq_if option.collapse upd_op.exhaust)
-        with that \<open>n' = n\<close> \<open>op \<noteq> ScaleDown \<and> op \<noteq> Assign\<close>
+          by (cases op; auto split: option.splits)
+        with that \<open>n' = n\<close> \<open>op \<noteq> Assign\<close>
         have m_def: "m = upd_nf_int m' op (map the as) (the (m' (map the as))) (the v)" 
           using in_graphD by fastforce
         have "list_all2 (is_of_type objT) as' Ts" 
@@ -2839,8 +2812,8 @@ begin
           show ?thesis using nf_args_well_typed_def by auto
         next
           case False
-          with \<open>nf_upd_defined' ni nu\<close> that m_def \<open>op \<noteq> ScaleDown \<and> op \<noteq> Assign\<close>
-          have "as' \<in> dom m'" by (smt (verit, ccfv_SIG) ast_domain.upd_nf_int.elims domIff fun_upd_other)
+          with \<open>nf_upd_defined' ni nu\<close> that m_def \<open>op \<noteq> Assign\<close>
+          have "as' \<in> dom m'" by (cases op; auto split: option.splits)
           from \<open>ni n = Some m'\<close> 
           have "(n, m') \<in> Map.graph ni" using in_graphI by fast
           with \<open>wf_nf_int objT ni\<close>
@@ -2866,42 +2839,77 @@ begin
     then
     show ?thesis unfolding wf_nf_int_def by blast
   qed
-
-lemma nf_upd_defined_inv: (* this is not easy to prove *)
-  assumes "nf_upd_defined' ni nu"
-      and "wf_app_nf_upd nu"
-      and "nf_upd_defined' ni nu'"
-      and "wf_app_nf_upd nu'"
-    shows "nf_upd_defined' (apply_nf_upd nu' ni) nu"
-  sorry
-
-lemma nf_upd_defined_fold_inv:
-  assumes "nf_upd_defined' ni nu"
-      and "wf_app_nf_upd nu"
-      and "list_all (nf_upd_defined' ni) upds"
-      and "list_all wf_app_nf_upd upds"
-    shows "nf_upd_defined' (fold apply_nf_upd upds ni) nu"
-  using assms
-  apply (induction upds arbitrary: ni)
-   apply simp
-  using nf_upd_defined_inv
-  by (metis Ball_set fold_simps(2) list_all_simps(1))
+  
+  lemma nf_upd_defined_inv:
+    assumes "nf_upd_defined' ni nu"
+        and "wf_app_nf_upd nu"
+        and "nf_upd_defined' ni nu'"
+        and "wf_app_nf_upd nu'"
+      shows "nf_upd_defined' (apply_nf_upd nu' ni) nu" (is "nf_upd_defined' ?ni' nu")
+  proof -
+    from assms
+    obtain n op as v n' op' as' v' where
+      [simp]: "nu = NFU n op as v"
+      "nu' = NFU n' op' as' v'"
+      by (cases nu; cases nu'; simp)
+    from \<open>nf_upd_defined' ni nu\<close>
+    have 1: "op \<noteq> Assign \<Longrightarrow> (\<exists>f. ni n = Some f \<and> f (map the as) \<noteq> None)" by (cases op; cases "ni n"; auto)
+  
+    have 2: "\<exists>f'. ?ni' n = Some f' \<and> f' (map the as) \<noteq> None" 
+      if "op \<noteq> Assign"
+    proof (cases "n = n'")
+      assume [simp]: "n = n'"
+      from \<open>nf_upd_defined' ni nu\<close> \<open>op \<noteq> Assign\<close>
+      obtain f' where
+        f': "ni n = Some f'"
+        "f' (map the as) \<noteq> None"
+        using 1 by blast
+      with \<open>wf_app_nf_upd nu'\<close> \<open>nf_upd_defined' ni nu'\<close>
+      have "upd_nf_int f' op' (map the as') (the (f' (map the as'))) (the v') (map the as) \<noteq> None"
+        by (cases "map the as = map the as'"; cases op'; auto)
+      with f' 
+      show ?thesis by simp
+    next
+      assume "n \<noteq> n'"
+      then have "?ni' n = ni n" by (auto split: option.splits simp: Let_def)
+      with 1 that
+      show ?thesis by auto
+    qed
+  
+    show "nf_upd_defined' ?ni' nu"
+      apply (cases "op = Assign") 
+      subgoal by (cases op; auto)
+      subgoal by (drule 2; cases op; auto)
+      done
+  qed
+  
+  lemma nf_upd_defined_fold_inv:
+    assumes "nf_upd_defined' ni nu"
+        and "wf_app_nf_upd nu"
+        and "list_all (nf_upd_defined' ni) upds"
+        and "list_all wf_app_nf_upd upds"
+      shows "nf_upd_defined' (fold apply_nf_upd upds ni) nu"
+    using assms
+    apply (induction upds arbitrary: ni)
+     apply simp
+    using nf_upd_defined_inv
+    by (metis Ball_set fold_simps(2) list_all_simps(1))
 
 
   lemma wf_apply_nf_upds: 
-    assumes "\<forall>u \<in> set nu. wf_app_nf_upd u"
-            "\<forall>u \<in> set nu. nf_upd_defined' ni u"
+    assumes "\<forall>u \<in> set upds. wf_app_nf_upd u"
+            "\<forall>u \<in> set upds. nf_upd_defined' ni u"
             "wf_nf_int objT ni" 
-      shows "wf_nf_int objT (fold apply_nf_upd nu ni)"
-    using assms wf_apply_nf_upd nf_upd_defined_fold_inv
-    sorry
+      shows "wf_nf_int objT (fold apply_nf_upd upds ni)"
+    using assms
+    by (induction upds arbitrary: ni; auto simp: wf_apply_nf_upd nf_upd_defined_inv)
 
   text \<open>Application of a well-formed effect preserves well-formedness
     of the model. We also need the fact that the effect is valid w.r.t. the 
     world model. However, the notion of validity is only defined for ground_effects.\<close>
   lemma wf_apply_effect:
     assumes "wf_fully_instantiated_effect e"
-        and "valid_full_effect_inst M e" (* need to redefine the notion of validity *)
+        and "valid_full_effect_inst M e"
     assumes "wf_world_model M"
     shows "wf_world_model (apply_effect e M)"
   proof (cases e)    
