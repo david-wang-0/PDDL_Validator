@@ -918,8 +918,8 @@ text \<open>These two functions compute the type of a term. For a functinal term
         \<and> (\<forall>u \<in> set nu. wf_nf_upd u)
         "
 
-    fun wf_cond_effect where
-      "wf_cond_effect (pre, eff) \<longleftrightarrow> wf_fmla pre \<and> wf_effect eff"
+  definition wf_cond_effect where
+      "wf_cond_effect eff \<longleftrightarrow> wf_fmla (fst eff) \<and> wf_effect (snd eff)"
 
     definition wf_cond_effect_list where
       "wf_cond_effect_list \<equiv> list_all wf_cond_effect"
@@ -1216,7 +1216,7 @@ begin
   text \<open>We first have to filter out the inactive effects. Following that, we instantiate the 
         active effects. Then the effects are applied individually by a right fold.\<close>
   definition apply_conditional_effect_list where
-    "apply_conditional_effect_list effs M = (foldr (inst_apply_conditional_effect M) effs M)"
+    "apply_conditional_effect_list effs M = (fold (inst_apply_conditional_effect M) effs M)"
 
   text \<open>Execute a ground action\<close>
   definition execute_ground_action :: "ground_action \<Rightarrow> world_model \<Rightarrow> world_model" where
@@ -1616,7 +1616,7 @@ begin
     assumes "\<forall>e \<in> cond_effect_ent ce. \<forall>T. is_of_type Q e T \<longrightarrow> is_of_type R (f e) T"
         and "wf_cond_effect Q ce"
       shows "wf_cond_effect R (map_cond_effect f ce)"
-    using assms
+    using assms unfolding wf_cond_effect_def
     by (cases ce; auto intro: ent_type_imp_wf_effect ent_type_imp_wf_fmla)
 
   lemma ent_type_imp_wf_cond_effect_list:
@@ -1787,7 +1787,7 @@ begin
         shows "wf_cond_effect R eff"
     using assms
     apply (cases eff)
-    using wf_effect_mono wf_fmla_mono by fastforce
+    using wf_effect_mono wf_fmla_mono unfolding wf_cond_effect_def by fastforce
   
   fun subst_sym_with_obj where
     "subst_sym_with_obj psubst (Var x) = psubst x"
@@ -2250,7 +2250,7 @@ begin
     shows "wf_cond_effect (ty_term (ty_sym (Q(v \<mapsto> ty)) objT)) ce
           \<longleftrightarrow> wf_cond_effect (ty_term (ty_sym (Q(v := None)) objT)) ce"
     using wf_fmla_upd wf_effect_upd assms
-    by (cases "ce"; auto)
+    by (cases "ce"; auto simp: wf_cond_effect_def)
 
   lemma Big_Or_wf_comm: "list_all (wf_fmla Q) \<phi>s \<longleftrightarrow> wf_fmla Q (\<^bold>\<Or> \<phi>s)"
     by (induction \<phi>s) auto
@@ -3077,26 +3077,61 @@ begin
     show "wf_world_model (fold (inst_apply_effect M) effs M)" .
   qed
 
+
 lemma wf_execute_cond_effect_list:
+  assumes "wf_world_model M"
+    "wf_inst_cond_effect_list M effs"
+    "well_inst_cond_effect_list M M effs"
+  shows "wf_world_model (apply_conditional_effect_list effs M)"
+proof -
+  have wf_apply_cond_effect: 
+      "wf_world_model (inst_apply_conditional_effect eM eff M)"
+    if "wf_world_model M"
+       "wf_inst_cond_effect eM eff"
+       "well_inst_cond_effect eM M eff" for eM M eff
+      unfolding inst_apply_conditional_effect_def
+      apply (cases "valuation eM \<Turnstile> fst eff")
+      using wf_apply_effect that(2)[simplified wf_inst_cond_effect_def] 
+        that(3)[simplified well_inst_cond_effect_def]
+       apply auto[1]
+      using that(1)
+      by auto
   
+  have ce_inv: "well_inst_cond_effect eM (inst_apply_conditional_effect eM eff' M) eff"
+    if "well_inst_cond_effect eM M eff"
+       "wf_inst_cond_effect eM eff"
+       "well_inst_cond_effect eM M eff'"
+       "wf_inst_cond_effect eM eff'"
+       "wf_world_model M"
+     for eM M eff eff'
+    using that well_inst_effect_inv 
+    unfolding inst_apply_conditional_effect_def 
+      well_inst_cond_effect_def wf_inst_cond_effect_def by auto
+ 
+  have "wf_world_model (fold (inst_apply_conditional_effect eM) effs M)"
+    if "wf_world_model M"
+       "wf_inst_cond_effect_list eM effs"
+       "well_inst_cond_effect_list eM M effs" 
+        for eM M effs eff
+    using that
+    apply (induction effs arbitrary: M)
+     apply auto[1]
+    unfolding well_inst_cond_effect_list_def wf_inst_cond_effect_list_def
+    by (metis ce_inv fold_simps(2) list.pred_inject(2) list_all_length wf_apply_cond_effect)
+    
+  from this[OF assms]
+  show "wf_world_model (apply_conditional_effect_list effs M)" 
+    unfolding apply_conditional_effect_list_def .
+qed
   
   lemma wf_execute_ground:
     assumes "valid_ground_action \<alpha> s"
             "wf_world_model s"
       shows "wf_world_model (execute_ground_action \<alpha> s)"
-  proof (cases \<alpha>)                   
-    case [simp]: (Ground_Action pre ces)
-    with assms
-    have "\<forall>(pre, eff) \<in> set (active_effects s ces). a eff (inst_effect s eff)"
-      using valid_ground_action_def valid_active_effects_def by simp
-    hence "\<forall>(pre, eff) \<in> set (active_effects s ces). wf_fully_instantiated_effect (inst_effect s eff)"
-      by (smt (verit, del_insts) ast_domain.valid_full_effect_inst.elims(2) old.prod.case prod.exhaust_sel)
-    hence "\<forall>eff \<in> set (map ((inst_effect s) o snd) (active_effects s ces)). wf_fully_instantiated_effect eff"
-      by auto
-    hence "wf_world_model (foldr apply_effect (map ((inst_effect s) o snd) (active_effects s ces)) s)"
-      using wf_apply_effects assms(2) by blast
-    then show ?thesis using execute_ground_action_def apply_conditional_effect_list_def by simp
-  qed
+    using assms 
+    unfolding execute_ground_action_def valid_ground_action_def valid_effects_def
+    using wf_execute_cond_effect_list[OF assms(2)]
+    by blast
 
   (* TODO: The execution of plan actions and ground actions does not 
             preserve well-formedness, unless we take into account that the
