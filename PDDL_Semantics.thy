@@ -1181,11 +1181,11 @@ begin
     the deletions, and then the additions. Also, effects that occur later
     in the list override those that occur earlier.\<close>
   fun apply_effect::"fully_instantiated_effect \<Rightarrow> world_model \<Rightarrow> world_model" where
-    "apply_effect (Eff a d tu nu) (World_Model p ti ni) = (
+    "apply_effect (Eff a d ou nu) (World_Model p oi ni) = (
       World_Model 
         ((p - set (map the d)) \<union> set (map the a)) 
-        (fold (apply_of_upd) tu ti) 
-        (fold (apply_nf_upd) nu ni))"
+        (fold apply_of_upd ou oi) 
+        (fold apply_nf_upd nu ni))"
  
 
   text \<open>This definition is faulty, because the effects will interfere\<close>
@@ -1195,10 +1195,14 @@ begin
       then apply_conditional_effect (pre, eff) M
       else M)" *)
 
-  fun inst_apply_conditional_effect::"world_model \<Rightarrow> (ground_formula \<times> ground_effect) \<Rightarrow> world_model \<Rightarrow> world_model" where
-    "inst_apply_conditional_effect eM (pre, eff) M = (
-        if (valuation eM \<Turnstile> pre) then apply_effect (inst_effect eM eff) M else M
-    )"
+  definition inst_apply_effect::"world_model \<Rightarrow> ground_effect \<Rightarrow> world_model \<Rightarrow> world_model" where
+    "inst_apply_effect eM eff M = (apply_effect (inst_effect eM eff) M)"
+
+  definition inst_apply_conditional_effect::"world_model \<Rightarrow> (ground_formula \<times> ground_effect) \<Rightarrow> world_model \<Rightarrow> world_model" where
+    "inst_apply_conditional_effect eM eff M = (
+      if (valuation eM \<Turnstile> (fst eff)) 
+      then inst_apply_effect eM (snd eff) M 
+      else M)"
 
   (* TODO: Define the non-interference of effects with one another *)
   (* Updates to numeric functions should contain the update operators even when fully instantiated *)
@@ -1296,19 +1300,19 @@ begin
   definition non_int_cond_eff_list where
     "non_int_cond_eff_list M xs \<equiv> pairwise (non_int_cond_effs M) (set xs)"
 
-  text \<open>Well-instantiated in this context means that the final instantiation
-        did not unintentionally cause the update to the return value to be falsely defined.
-        \<close>
+  text \<open> \<^term>\<open>None\<close> represents the intentional update to a function
+        using \<open>undefined\<close>. Another source of \<^term>\<open>None\<close> in the return value
+        of a \<open>instantiated_of_upd\<close> is the instantiation process itself.\<close>
   fun valid_ret_val_inst::"'a option \<Rightarrow> 'b option \<Rightarrow> bool" where
     "valid_ret_val_inst None None = True"
   | "valid_ret_val_inst (Some r) (Some r') = True"
   | "valid_ret_val_inst _ _ = False"
 
-  fun well_inst_of_upd'::"object term of_upd \<Rightarrow> instantiated_of_upd \<Rightarrow> bool" where
-    "well_inst_of_upd' (OF_Upd f as v) (OFU f' as' v') = valid_ret_val_inst v v'"
+  fun of_upd_rv_corr'::"object term of_upd \<Rightarrow> instantiated_of_upd \<Rightarrow> bool" where
+    "of_upd_rv_corr' (OF_Upd f as v) (OFU f' as' v') = valid_ret_val_inst v v'"
 
-  definition well_inst_of_upd::"world_model \<Rightarrow> object term of_upd \<Rightarrow> bool" where
-    "well_inst_of_upd M u \<equiv> well_inst_of_upd' u (inst_of_upd M u)"
+  definition of_upd_rv_corr::"world_model \<Rightarrow> object term of_upd \<Rightarrow> bool" where
+    "of_upd_rv_corr M u \<equiv> of_upd_rv_corr' u (inst_of_upd M u)"
 
   text \<open>I cannot come up with a better name for this
 
@@ -1333,28 +1337,54 @@ begin
   definition nf_upd_defined''::"world_model \<Rightarrow> instantiated_nf_upd \<Rightarrow> bool" where
     "nf_upd_defined'' M upd = nf_upd_defined' (nf_int M) upd"
     
-  definition nf_upd_defined::"world_model \<Rightarrow> object term nf_upd \<Rightarrow> bool" where
-    "nf_upd_defined M upd = nf_upd_defined'' M (inst_nf_upd M upd)"
+  definition nf_upd_defined::"world_model \<Rightarrow> world_model \<Rightarrow> object term nf_upd \<Rightarrow> bool" where
+    "nf_upd_defined eM M upd= nf_upd_defined'' M (inst_nf_upd eM upd)"
 
-  (* Is this the best place to put this check? Probably not *)
 
-  definition well_inst_eff::"world_model \<Rightarrow> ground_effect \<Rightarrow> bool" where
-    "well_inst_eff M eff \<equiv> list_all (well_inst_of_upd M) (of_upds eff) \<and> list_all (nf_upd_defined M) (nf_upds eff)"
+  text \<open>The names here are weird, but the necessary information exists. Maybe I will
+        clean this up later. TODO?\<close>
+  definition well_inst_effect::"world_model \<Rightarrow> ground_effect \<Rightarrow> world_model \<Rightarrow> bool" where
+    "well_inst_effect eM eff M \<equiv> list_all (of_upd_rv_corr eM) (of_upds eff) \<and> list_all (nf_upd_defined eM M) (nf_upds eff)"
+
+  definition well_inst_cond_effect::"world_model \<Rightarrow> world_model \<Rightarrow> (ground_formula \<times> ground_effect) \<Rightarrow> bool" where
+    "well_inst_cond_effect eM M eff\<equiv> (valuation eM \<Turnstile> (fst eff)) \<longrightarrow> (well_inst_effect eM (snd eff) M)"
   
-  definition well_inst_cond_eff::"world_model \<Rightarrow> (ground_formula \<times> ground_effect) \<Rightarrow> bool" where
-    "well_inst_cond_eff M eff \<equiv> (valuation M \<Turnstile> (fst eff)) \<longrightarrow> (well_inst_eff M (snd eff))"
-  
-  definition well_inst_cond_eff_list::"world_model \<Rightarrow> (ground_formula \<times> ground_effect) list \<Rightarrow> bool" where
-    "well_inst_cond_eff_list M effs \<equiv> list_all (well_inst_cond_eff M) effs"
+  definition well_inst_cond_effect_list::"world_model \<Rightarrow> world_model \<Rightarrow> (ground_formula \<times> ground_effect) list \<Rightarrow> bool" where
+    "well_inst_cond_effect_list eM M effs \<equiv> list_all (well_inst_cond_effect eM M) effs"
 
   definition active_effects::"world_model \<Rightarrow> (ground_formula \<times> ground_effect) list \<Rightarrow> (ground_formula \<times> ground_effect) list" where
     "active_effects M effs = (filter (\<lambda>(pre, eff). valuation M \<Turnstile> pre) effs)"
 
+
+  text \<open>Before a ground effect is applied, it must be fully instantiated. 
+        That the fully instantiated effect is well-formed is only necessary
+        if it is active. 
+
+        This simplifies proofs regarding the preservation of well-formedness 
+        following action execution. One condition for the preservation is that
+        updates to numeric functions are well instantiated. This means that
+        we do not attempt to apply a relative update if the term's value is
+        undefined in the previous state. That is only checked for active effects,
+        i.e. effects whose preconditions are met. 
+
+        Since full instantiation requires the evaluation of nested terms against
+        a world model, it is easier to only check the well-formedness of fully
+        instantiated effects, when they are active. I believe that the presence
+        of that precondition will simplify the proof for the successive application
+        of effects. \<close>
+  definition wf_inst_cond_effect::"world_model \<Rightarrow> (ground_formula \<times> ground_effect) \<Rightarrow> bool" where
+    "wf_inst_cond_effect M eff = (valuation M \<Turnstile> (fst eff) \<longrightarrow> (wf_fully_instantiated_effect (inst_effect M (snd eff))))"
+
+  definition wf_inst_cond_effect_list::"world_model \<Rightarrow> (ground_formula \<times> ground_effect) list \<Rightarrow> bool" where
+    "wf_inst_cond_effect_list M effs = list_all (wf_inst_cond_effect M) effs"
+
   definition valid_effects::"world_model \<Rightarrow> (ground_formula \<times> ground_effect) list \<Rightarrow> bool" where
     "valid_effects M effs \<equiv> 
-      (\<forall>(pre, eff) \<in> set (active_effects M effs). wf_fully_instantiated_effect (inst_effect M eff))
-      \<and> (well_inst_cond_eff_list M effs)
+         (wf_inst_cond_effect_list M effs)
+      \<and> (well_inst_cond_effect_list M M effs)
       \<and> (non_int_cond_eff_list M effs)"
+
+  (* First instantiate, then filter, then check validity *)
   
   definition ground_action_enabled where
     "ground_action_enabled \<alpha> M \<equiv> valuation M \<Turnstile> precondition \<alpha>"
@@ -1384,11 +1414,7 @@ begin
 
   lemma inst_apply_cond_fold_alt: "foldr (inst_apply_conditional_effect M') effs M 
     = foldr apply_effect (map (inst_effect M' \<circ> snd) (active_effects M' effs)) M"
-    apply (induction effs arbitrary: M')
-    unfolding active_effects_def 
-    subgoal by simp
-    subgoal for a by (cases a; auto)
-    done
+    sorry (* To do: fix later *)
 
   text \<open>Unfolded definition of ground_action_path. 
       The precondition of the action is well-formed.
@@ -1405,11 +1431,12 @@ begin
     \<and> wf_cond_effect_list (ty_term objT) (effects \<alpha>)
     \<and> valuation M \<Turnstile> precondition \<alpha>
     \<and> (\<forall>(pre, eff) \<in> set (active_effects M (effects \<alpha>)). wf_fully_instantiated_effect (inst_effect M eff))
-    \<and> well_inst_cond_eff_list M (effects \<alpha>)
+    \<and> well_inst_cond_effect_list M (effects \<alpha>)
     \<and> non_int_cond_eff_list M (effects \<alpha>)
     \<and> ground_action_path (apply_conditional_effect_list (effects \<alpha>) M) \<alpha>s M'"
-    by (auto simp: valid_ground_action_def execute_ground_action_def ground_action_enabled_def
+    apply (auto simp: valid_ground_action_def execute_ground_action_def ground_action_enabled_def
             wf_ground_action_def valid_effects_def apply_conditional_effect_list_def)
+    sorry (* TODO: fix later *)
 end
 
 subsection \<open>Conditions for the preservation of well-formedness\<close>
@@ -1919,9 +1946,7 @@ lemma wf_effect_restr_vars:
   using wf_effect_restr_vars' 
     wf_effect_mono[OF 
       ty_term_mono[OF 
-        ty_sym_mono[OF map_restrict_less[of Q "eff_vars eff"] map_le_refl]
-        ]
-      ] by blast
+        ty_sym_mono[OF map_restrict_less[of Q "eff_vars eff"] map_le_refl]]] by blast
 end
 
 subsection \<open>Quantifiers\<close>
@@ -2651,9 +2676,9 @@ begin
     assumes "wf_app_pred_upd u"
     shows "wf_predicate objT (the u)"
     using assms
-    apply (cases u; auto)
-    subgoal for a
-      by (cases a; auto)
+    apply (cases u)
+    subgoal by simp
+    subgoal for a by (cases a; auto)
     done
 
   lemma wf_apply_of_upd: 
@@ -2724,14 +2749,7 @@ begin
       assumes "\<forall>u \<in> set tu. wf_app_of_upd u"
               "wf_of_int objT ti" 
         shows "wf_of_int objT (fold apply_of_upd tu ti)"
-  using assms
-  proof (induction tu)
-    case Nil
-    then show ?case by auto
-  next
-    case (Cons u tu)
-    then show ?case by (metis fold_invariant wf_apply_of_upd)
-  qed
+  using assms by (induction tu arbitrary: ti; auto simp: wf_apply_of_upd)
   
   lemma wf_apply_nf_upd: (* TODO: clean up? *)
         assumes "wf_nf_int objT ni" 
@@ -2882,18 +2900,6 @@ begin
       subgoal by (drule 2; cases op; auto)
       done
   qed
-  
-  lemma nf_upd_defined_fold_inv:
-    assumes "nf_upd_defined' ni nu"
-        and "wf_app_nf_upd nu"
-        and "list_all (nf_upd_defined' ni) upds"
-        and "list_all wf_app_nf_upd upds"
-      shows "nf_upd_defined' (fold apply_nf_upd upds ni) nu"
-    using assms
-    apply (induction upds arbitrary: ni)
-     apply simp
-    using nf_upd_defined_inv
-    by (metis Ball_set fold_simps(2) list_all_simps(1))
 
 
   lemma wf_apply_nf_upds: 
@@ -2904,39 +2910,175 @@ begin
     using assms
     by (induction upds arbitrary: ni; auto simp: wf_apply_nf_upd nf_upd_defined_inv)
 
+
   text \<open>Application of a well-formed effect preserves well-formedness
     of the model. We also need the fact that the effect is valid w.r.t. the 
     world model. However, the notion of validity is only defined for ground_effects.\<close>
   lemma wf_apply_effect:
-    assumes "wf_fully_instantiated_effect e"
-        and "valid_full_effect_inst M e"
     assumes "wf_world_model M"
-    shows "wf_world_model (apply_effect e M)"
-  proof (cases e)    
-    case [simp]: (Eff a d tu nu)
-    show ?thesis 
-    proof (cases M)
-      case [simp]: (World_Model p ti ni)
-      from assms
-      have "\<forall>p' \<in> ((p - set (map the d)) \<union> set (map the a)). wf_predicate objT p'"
-        using wf_world_model_def wf_apply_pred_upd by auto
+        and "well_inst_effect eM eff M"
+        and "wf_fully_instantiated_effect (inst_effect eM eff)"
+      shows "wf_world_model (inst_apply_effect eM eff M)"
+    using assms
+  proof -
+    obtain preds oi ni where
+      M: "M = World_Model preds oi ni"
+      by (cases M; simp)
+    
+    obtain a' d' ous' nus' where
+      eff': "inst_effect eM eff = Eff a' d' ous' nus'"
+      by (cases "inst_effect eM eff"; simp)
+    
+    obtain preds' oi' ni' where
+      M': "inst_apply_effect eM eff M = World_Model preds' oi' ni'"
+      using world_model.exhaust by blast
+  
+    have preds': "preds' = preds - set (map the d') \<union> set (map the a')"
+         and oi': "oi' = fold apply_of_upd ous' oi"
+         and ni': "ni' = fold apply_nf_upd nus' ni"
+      using M eff' M' unfolding inst_apply_effect_def by simp+
+    
+    have "wf_predicate objT p" if "p \<in> preds - set (map the d') \<union> set (map the a')" for p
+    proof -
+      have "list_all (wf_predicate objT) (map the a')"
+       "list_all (wf_predicate objT) (map the d')"
+        using assms(3)[simplified eff'] 
+        subgoal by (induction a'; auto intro: wf_apply_pred_upd simp: Ball_set) 
+        using assms(3)[simplified eff'] 
+        subgoal by (induction d'; auto intro: wf_apply_pred_upd simp: Ball_set)
+        done
+      with that  assms(1)[simplified M wf_world_model_def]
+      show "wf_predicate objT p" by (auto simp: sym[OF Ball_set]) 
+    qed 
+    moreover
+    have "wf_of_int objT (fold apply_of_upd ous' oi)"
+      using assms(1)[simplified M wf_world_model_def] assms(3)[simplified eff']
+        wf_apply_of_upds by simp
+    moreover
+    have "wf_nf_int objT (fold apply_nf_upd nus' ni)"
+    proof -
+      from eff'
+      have "nus' = map (inst_nf_upd eM) (nf_upds eff)"
+        by (cases eff; auto)
+      with assms(2)[simplified M]
+      have "list_all (nf_upd_defined' ni) nus'" 
+        unfolding well_inst_effect_def nf_upd_defined_def nf_upd_defined''_def
+        apply simp
+        apply (drule conjunct2)
+        by (simp add: list_all_length)
       moreover
-      have "wf_of_int objT (fold apply_of_upd tu ti)"
-        using wf_apply_of_upds assms wf_world_model_def by force
+      from assms(3)[simplified eff'] 
+      have "list_all wf_app_nf_upd nus'"
+        by (simp add: Ball_set)
       moreover
-      have "wf_nf_int objT (fold apply_nf_upd nu ni)"
-        using wf_apply_nf_upds assms wf_world_model_def sorry (* not possible *)
-      ultimately show ?thesis 
-        using wf_world_model_def by force
+      from assms(1)[simplified M]
+      have "wf_nf_int objT ni" by (simp add: wf_world_model_def)
+      ultimately
+      show "wf_nf_int objT (fold apply_nf_upd nus' ni)" using wf_apply_nf_upds by (simp add: Ball_set)
     qed
+    ultimately
+    show "wf_world_model (inst_apply_effect eM eff M)"
+      using  preds' oi' ni' M'
+      unfolding wf_world_model_def 
+      by auto
+  qed
+
+  
+  lemma well_inst_effect_inv:
+    assumes "wf_world_model M"
+            "wf_fully_instantiated_effect (inst_effect eM eff)"
+            "well_inst_effect eM eff M"
+            "wf_fully_instantiated_effect (inst_effect eM eff1)"
+            "well_inst_effect eM eff1 M"
+      shows "well_inst_effect eM eff (inst_apply_effect eM eff1 M)"
+  proof -
+    obtain p oi ni where
+      M: "M = World_Model p oi ni"
+      by (rule world_model.exhaust)
+    obtain a' d' ou' nu' where
+      eff': "inst_effect eM eff = Eff a' d' ou' nu'"
+      by (rule fully_instantiated_effect.exhaust)
+  
+    obtain a1' d1' ou1' nu1' where
+      eff1': "inst_effect eM eff1 = Eff a1' d1' ou1' nu1'"
+      by (rule fully_instantiated_effect.exhaust)
+  
+    obtain p' oi' ni' where
+      M': "inst_apply_effect eM eff1 M = World_Model p' oi' ni'"
+      by (rule world_model.exhaust)
+  
+    have ni': "ni' = fold apply_nf_upd nu1' ni"
+      using eff1' M' M unfolding inst_apply_effect_def
+      by auto
+  
+    from eff'
+    have nu': "nu' = map (inst_nf_upd eM) (nf_upds eff)"
+      by (cases eff; auto)
+    with assms(3)[simplified M]
+    have "list_all (nf_upd_defined' ni) nu'" 
+      unfolding well_inst_effect_def nf_upd_defined_def nf_upd_defined''_def
+      apply simp
+      apply (drule conjunct2)
+      by (simp add: list_all_length)
+    moreover
+    from assms(2)[simplified eff']
+    have "list_all wf_app_nf_upd nu'"
+      by (simp add: Ball_set)
+    moreover
+    from eff1'
+    have "nu1' = map (inst_nf_upd eM) (nf_upds eff1)"
+      by (cases eff1; auto)
+    with assms(5)[simplified M]
+    have "list_all (nf_upd_defined' ni) nu1'" 
+      unfolding well_inst_effect_def nf_upd_defined_def nf_upd_defined''_def
+      apply simp
+      apply (drule conjunct2)
+      by (simp add: list_all_length)
+    moreover
+    from assms(4)[simplified eff1']
+    have "list_all wf_app_nf_upd nu1'"
+      by (simp add: Ball_set)
+    moreover
+    have "nf_upd_defined' (fold apply_nf_upd upds ni) nu"
+      if "nf_upd_defined' ni nu"
+         "wf_app_nf_upd nu"
+         "list_all (nf_upd_defined' ni) upds"
+         "list_all wf_app_nf_upd upds"
+       for ni nu upds 
+      using that
+      apply (induction upds arbitrary: ni)
+       apply simp
+      using nf_upd_defined_inv
+      by (metis Ball_set fold_simps(2) list_all_simps(1))
+    ultimately
+    have "list_all (nf_upd_defined' ni') nu'"
+      by (induction nu'; auto simp: ni')
+    hence "list_all (nf_upd_defined eM (inst_apply_effect eM eff1 M)) (nf_upds eff)"
+      unfolding nu' M' nf_upd_defined_def nf_upd_defined''_def
+      by (simp add: list_all_length)
+    with assms(3)
+    show "well_inst_effect eM eff (inst_apply_effect eM eff1 M)"
+      unfolding well_inst_effect_def by simp
   qed
 
   lemma wf_apply_effects:
-    assumes "\<forall>e \<in> set effs. wf_fully_instantiated_effect e"
-            "wf_world_model s"
-      shows "wf_world_model (foldr apply_effect effs s)" 
-    using assms
-    by (induction effs arbitrary: s; simp add: wf_apply_effect)
+  assumes "wf_world_model M"
+          "\<forall>eff \<in> set effs. wf_fully_instantiated_effect (inst_effect M eff)"
+          "\<forall>eff \<in> set effs. well_inst_effect M eff M"
+    shows "wf_world_model (fold (inst_apply_effect M) effs M)"
+  proof -
+    have "wf_world_model (fold (inst_apply_effect eM) effs M)" 
+      if "wf_world_model M"
+         "\<forall>eff \<in> set effs. wf_fully_instantiated_effect (inst_effect eM eff)"
+         "\<forall>eff \<in> set effs. well_inst_effect eM eff M" for eM 
+      using that wf_apply_effect well_inst_effect_inv
+      by (induction effs arbitrary: M; simp)
+    from this[OF assms]
+    show "wf_world_model (fold (inst_apply_effect M) effs M)" .
+  qed
+
+lemma wf_execute_cond_effect_list:
+  
   
   lemma wf_execute_ground:
     assumes "valid_ground_action \<alpha> s"
