@@ -163,32 +163,45 @@ lemma dfs_all_tab_succ_correct: "dfs_all (tab_succ l) vs\<^sub>0 = (set l)\<^sup
   apply (subst dfs_all_correct)
   by (simp_all add: tab_succ_correct finite_imp_finite_dfs_reachable)
 
-find_theorems name: "rel*inv"
-
-term "(A\<inverse>)"
-
-term "A `` B"
-
 subsection \<open>Implementation Refinements\<close>
 
 subsubsection \<open>Of-Type\<close>
 
 definition "of_type_impl G oT T \<equiv> (\<forall>pt\<in>set (primitives oT). dfs_reachable G ((=) pt) (primitives T))"
 
-fun ty_sym' where
-  "ty_sym' varT objT (Var v) = varT v"
-| "ty_sym' varT objT (Const c) = Mapping.lookup objT c"
+definition "of_type' G oT T \<equiv> (\<forall>pt\<in>set (primitives oT). dfs_reachable G ((=) pt) (primitives T))"
 
-lemma ty_sym'_correct_aux: "ty_sym' varT objT t = ty_sym varT (Mapping.lookup objT) t"
-  by (cases t) auto
-
-lemma ty_sym'_correct[simp]: "ty_sym' varT objT = ty_sym varT (Mapping.lookup objT)"
-  using ty_sym'_correct_aux by auto
-
+(* definition "of_type_impl = of_type' STG" -- TODO: simpler
+ *)
+text \<open>The mapping from variables to types tends to be small, since it 
+      is derived from an argument list, so using the default implementation
+      of a map as a list is sufficient.\<close>
 
 context ast_domain_decs begin
+  
+  definition sig_impl::"(predicate, type list) mapping" where
+    "sig_impl = Mapping.of_alist (map (\<lambda>PredDecl p n \<Rightarrow> (p,n)) (predicates DD))"
+  (* TODO: simplify *)
+  lemma sig_impl_correct: "Mapping.lookup sig_impl = sig"
+    unfolding sig_impl_def sig_def
+    by (rule ext; rule lookup_of_alist)
 
-text \<open>We check whether a single primitive can be reached from any primitive in a set 
+  text \<open>Implementation of the signatures for functions.\<close>
+  definition obj_fun_sig_impl::"(func, (type list \<times> type)) mapping" where
+    "obj_fun_sig_impl = Mapping.of_alist (map (\<lambda>ObjFunDecl f ts t \<Rightarrow> (f, (ts, t))) (object_funs DD))"
+  
+  lemma ofs_impl_correct: "Mapping.lookup obj_fun_sig_impl = obj_fun_sig"
+    unfolding obj_fun_sig_impl_def obj_fun_sig_def
+    by (rule ext; rule lookup_of_alist)
+  
+  definition num_fun_sig_impl::"(func, type list) mapping" where
+    "num_fun_sig_impl = Mapping.of_alist (map (\<lambda>NumFunDecl f ts \<Rightarrow> (f, ts)) (num_funs DD))"
+  
+  lemma nfs_impl_correct: "Mapping.lookup num_fun_sig_impl = num_fun_sig"
+    unfolding num_fun_sig_impl_def num_fun_sig_def
+    by (rule ext; rule lookup_of_alist)
+
+  text \<open>We check whether a single primitive can be reached from any primitive in a set 
       (this set is the supertype).\<close>
   definition "of_type1 pt T \<longleftrightarrow> pt \<in> subtype_rel\<^sup>* `` set (primitives T)"
 
@@ -198,7 +211,7 @@ text \<open>We check whether a single primitive can be reached from any primitiv
   text \<open>We declare types and their supertypes. \<open>subtype_edge\<close> is therefore
         the \<close>
   definition "STG \<equiv> (tab_succ (map subtype_edge (types DD)))"
-
+  
   lemma subtype_rel_impl: "subtype_rel = E_of_succ (tab_succ (map subtype_edge (types DD)))"
     by (simp add: tab_succ_correct subtype_rel_def)
 
@@ -208,89 +221,398 @@ text \<open>We check whether a single primitive can be reached from any primitiv
   lemma of_type_impl_correct: "of_type_impl STG oT T \<longleftrightarrow> of_type oT T"
     unfolding of_type1_impl STG_def of_type_impl_def of_type_refine1 ..
 
+
+  text \<open>Executable constT\<close>
   definition mp_constT :: "(object, type) mapping" where
     "mp_constT = Mapping.of_alist (consts DD)"
 
   lemma mp_constT_correct[simp]: "Mapping.lookup mp_constT = constT"
     unfolding mp_constT_def constT_def
-    apply transfer 
-    by (simp add: Map_To_Mapping.map_apply_def)
+    by (rule ext; rule lookup_of_alist)
 
-
-  text \<open>Lifting the subtype-graph through wf-checker\<close>
-  context
-    fixes ty_ent :: "'ent \<rightharpoonup> type"  \<comment> \<open>Entity's type, None if invalid\<close>
+  
+  context (* This could be used for the original ty_term as well. Next iteration *)
+    fixes of_type:: "type \<Rightarrow> type \<Rightarrow> bool"
+      and ofs:: "func \<rightharpoonup> (type list \<times> type)"
+      and ty_ent:: "'ent \<rightharpoonup> type"
   begin
+    fun is_term_of_type' :: "'ent term \<Rightarrow> type \<Rightarrow> bool" and
+          ty_term'::"'ent term \<Rightarrow> type option" where
+        "is_term_of_type' v T = (case ty_term' v of
+          Some vT \<Rightarrow> of_type vT T
+        | None \<Rightarrow> False)"
+      | "ty_term' (Ent e) = ty_ent e"
+      | "ty_term' (Fun f as) = (case (ofs f) of 
+          Some (Ts, T) \<Rightarrow> (if (list_all2 is_term_of_type' as Ts) 
+            then Some T else None)
+        | None \<Rightarrow> None)"
+  end
 
-    definition "is_of_type' stg v T \<longleftrightarrow> (
-      case ty_ent v of
-        Some vT \<Rightarrow> of_type_impl stg vT T
-      | None \<Rightarrow> False)"
+  (* This definition is a workaround, since the usage of 
+      of_type and obj_fun_sig are hardcoded in ty_term *)
+  definition ty_term_impl::"('ent \<rightharpoonup> type) \<Rightarrow> 'ent term \<rightharpoonup> type" where
+    "ty_term_impl ty_ent \<equiv> (ty_term' (of_type_impl STG) (Mapping.lookup obj_fun_sig_impl) ty_ent)"
 
-    lemma is_of_type'_correct: "is_of_type' STG v T = is_of_type ty_ent v T"
-      unfolding is_of_type'_def 
-      unfolding is_of_type_def 
-      unfolding of_type_impl_correct ..
+  abbreviation is_term_of_type_impl::"('ent \<rightharpoonup> type) \<Rightarrow> 'ent term \<Rightarrow> type \<Rightarrow> bool" where
+    "is_term_of_type_impl ty_ent \<equiv> (is_term_of_type' (of_type_impl STG) (Mapping.lookup obj_fun_sig_impl) ty_ent)"
 
-    fun wf_pred_atom' where "wf_pred_atom' stg (p,vs) \<longleftrightarrow> (case sig p of
+  lemma ty_term_impl_correct: "ty_term_impl ty_ent = ty_term ty_ent"
+    unfolding ty_term_impl_def
+    apply (rule ext)
+    subgoal for x
+    apply (induction x rule: is_term_of_type_ty_term.induct(2)[
+          where P = "\<lambda>t T. is_term_of_type_impl ty_ent t T = is_term_of_type ty_ent t T"])
+    subgoal 
+      apply (subst is_term_of_type'.simps, subst is_term_of_type.simps)
+      apply (rule ssubst, assumption)
+      apply (subst of_type_impl_correct)
+      by simp
+    subgoal by simp
+    subgoal for f vs
+      apply (subst ty_term.simps, subst ty_term'.simps)
+      apply (subst ofs_impl_correct)+
+      apply (rule option.case_cong)
+        apply simp
+       apply simp
+      subgoal for x
+        apply (rule prod.case_cong)
+         apply simp
+        subgoal for Ts T
+          thm if_cong
+          apply (rule if_cong)
+          subgoal by (metis list.rel_mono_strong ofs_impl_correct)
+          by auto
+        done
+      done
+    done
+  done
+  
+  context 
+    fixes of_type::"type \<Rightarrow> type \<Rightarrow> bool"
+      and ty_ent::"'ent \<rightharpoonup> type"
+  begin
+    definition is_of_type' :: "'ent \<Rightarrow> type \<Rightarrow> bool" where
+      "is_of_type' v T \<longleftrightarrow> (
+        case ty_ent v of
+          Some vT \<Rightarrow> of_type vT T
+        | None \<Rightarrow> False)"
+  end
+
+  context 
+    fixes of_type:: "type \<Rightarrow> type \<Rightarrow> bool"
+      and ofs:: "func \<rightharpoonup> (type list \<times> type)"
+      and nfs:: "func \<rightharpoonup> type list"
+      and ty_ent:: "'ent \<rightharpoonup> type"
+  begin
+    definition "is_of_type'' = is_of_type' of_type ty_ent"
+
+    fun wf_pred'::"predicate \<times> 'ent list \<Rightarrow> bool" where
+      "wf_pred' (p,vs) \<longleftrightarrow> (
+        case Mapping.lookup sig_impl p of
           None \<Rightarrow> False
-        | Some Ts \<Rightarrow> list_all2 (is_of_type' stg) vs Ts)"
+        | Some Ts \<Rightarrow> list_all2 is_of_type'' vs Ts)"
+ 
+    fun wf_pred_eq' :: "'ent pred \<Rightarrow> bool" where
+      "wf_pred_eq' (Pred p vs) \<longleftrightarrow> wf_pred' (p,vs)"
+    | "wf_pred_eq' (pred.Eq a b) \<longleftrightarrow> ty_ent a \<noteq> None \<and> ty_ent b \<noteq> None"
 
-    lemma wf_pred_atom'_correct: "wf_pred_atom' STG pvs = wf_pred_atom ty_ent pvs"
-      by (cases pvs) (auto simp: is_of_type'_correct[abs_def] split:option.split)
+    text \<open>This checks that a predicate is well-formed and not an equality.\<close>
+    fun wf_predicate' :: "'ent pred \<Rightarrow> bool" where
+      "wf_predicate' (Pred p vs) \<longleftrightarrow> wf_pred' (p, vs)"
+    | "wf_predicate' (pred.Eq _ _) \<longleftrightarrow> False"
 
-    fun wf_atom' :: "_ \<Rightarrow> 'ent atom \<Rightarrow> bool" where
-      "wf_atom' stg (atom.predAtm p vs) \<longleftrightarrow> wf_pred_atom' stg (p,vs)"
-    | "wf_atom' stg (atom.Eq a b) = (ty_ent a \<noteq> None \<and> ty_ent b \<noteq> None)"
+    text \<open>A function call is well-formed if the function has been
+          declared and the types of the arguments matches the types
+          of the parameters\<close>
+    fun wf_num_func'::"func \<times> 'ent list \<Rightarrow> bool" where
+      "wf_num_func' (f, as) \<longleftrightarrow> (
+        case nfs f of
+          None \<Rightarrow> False
+        | Some Ts \<Rightarrow> list_all2 is_of_type'' as Ts
+      )"
 
-    lemma wf_atom'_correct: "wf_atom' STG a = wf_atom ty_ent a"
-      by (cases a) (auto simp: wf_pred_atom'_correct is_of_type'_correct[abs_def] split: option.splits)
-
-    fun wf_fmla' :: "_ \<Rightarrow> ('ent atom) formula \<Rightarrow> bool" where
-      "wf_fmla' stg (Atom a) \<longleftrightarrow> wf_atom' stg a"
-    | "wf_fmla' stg \<bottom> \<longleftrightarrow> True"
-    | "wf_fmla' stg (\<phi>1 \<^bold>\<and> \<phi>2) \<longleftrightarrow> (wf_fmla' stg \<phi>1 \<and> wf_fmla' stg \<phi>2)"
-    | "wf_fmla' stg (\<phi>1 \<^bold>\<or> \<phi>2) \<longleftrightarrow> (wf_fmla' stg \<phi>1 \<and> wf_fmla' stg \<phi>2)"
-    | "wf_fmla' stg (\<phi>1 \<^bold>\<rightarrow> \<phi>2) \<longleftrightarrow> (wf_fmla' stg \<phi>1 \<and> wf_fmla' stg \<phi>2)"
-    | "wf_fmla' stg (\<^bold>\<not>\<phi>) \<longleftrightarrow> wf_fmla' stg \<phi>"
-
-    lemma wf_fmla'_correct: "wf_fmla' STG \<phi> \<longleftrightarrow> wf_fmla ty_ent \<phi>"
-      by (induction \<phi> rule: wf_fmla.induct) (auto simp: wf_atom'_correct)
-
-    fun wf_fmla_atom1' where
-      "wf_fmla_atom1' stg (Atom (predAtm p vs)) \<longleftrightarrow> wf_pred_atom' stg (p,vs)"
-    | "wf_fmla_atom1' stg _ \<longleftrightarrow> False"
-
-    lemma wf_fmla_atom1'_correct: "wf_fmla_atom1' STG \<phi> = wf_fmla_atom ty_ent \<phi>"
-      by (cases \<phi> rule: wf_fmla_atom.cases) (auto
-        simp: wf_atom'_correct is_of_type'_correct[abs_def] split: option.splits)
-
-    fun wf_effect' where
-      "wf_effect' stg (Effect a d) \<longleftrightarrow>
-          (\<forall>ae\<in>set a. wf_fmla_atom1' stg ae)
-        \<and> (\<forall>de\<in>set d.  wf_fmla_atom1' stg de)"
-
-    lemma wf_effect'_correct: "wf_effect' STG e = wf_effect ty_ent e"
-      by (cases e) (auto simp: wf_fmla_atom1'_correct)
+    text \<open>Fluents and comparisons are well-formed if the components are well-formed\<close>
+    fun wf_num_fluent'::"'ent num_fluent \<Rightarrow> bool" where
+      "wf_num_fluent' (NFun f as) = wf_num_func' (f, as)"
+    | "wf_num_fluent' (Num _) = True"
+    | "wf_num_fluent' (Add a b) = (wf_num_fluent' a \<and> wf_num_fluent' b)"
+    | "wf_num_fluent' (Sub a b) = (wf_num_fluent' a \<and> wf_num_fluent' b)"
+    | "wf_num_fluent' (Mult a b) = (wf_num_fluent' a \<and> wf_num_fluent' b)"
+    | "wf_num_fluent' (Div a b) = (wf_num_fluent' a \<and> wf_num_fluent' b)"
     
+    fun wf_num_comp' :: "'ent num_comp \<Rightarrow> bool" where
+      "wf_num_comp' (Num_Eq a b) = (wf_num_fluent' a \<and> wf_num_fluent' b)"
+    | "wf_num_comp' (num_comp.Lt a b) = (wf_num_fluent' a \<and> wf_num_fluent' b)"
+    | "wf_num_comp' (num_comp.Le a b) = (wf_num_fluent' a \<and> wf_num_fluent' b)"
 
-  end \<comment> \<open>Context fixing \<open>ty_ent\<close>\<close>
+    text \<open>Predicate-atoms are well-formed if their arguments match the
+      signature, equalities are well-formed if the arguments are valid
+      objects (have a type), comparisons are well-formed if the functions
+      and terms are well-typed.
+    \<close>
+    fun wf_atom' :: "'ent atom \<Rightarrow> bool" where
+      "wf_atom' (PredAtom p) \<longleftrightarrow> wf_pred_eq' p"
+    | "wf_atom' (NumComp nc) \<longleftrightarrow> wf_num_comp' nc"
+
+    text \<open>A formula is well-formed if its components are well-formed
+    \<close>
+    fun wf_fmla' :: "('ent atom) formula \<Rightarrow> bool" where
+      "wf_fmla' (Atom a) \<longleftrightarrow> wf_atom' a"
+    | "wf_fmla' (\<bottom>) \<longleftrightarrow> True"
+    | "wf_fmla' (\<phi>1 \<^bold>\<and> \<phi>2) \<longleftrightarrow> (wf_fmla' \<phi>1 \<and> wf_fmla' \<phi>2)"
+    | "wf_fmla' (\<phi>1 \<^bold>\<or> \<phi>2) \<longleftrightarrow> (wf_fmla' \<phi>1 \<and> wf_fmla' \<phi>2)"
+    | "wf_fmla' (\<^bold>\<not>\<phi>) \<longleftrightarrow> wf_fmla' \<phi>"
+    | "wf_fmla' (\<phi>1 \<^bold>\<rightarrow> \<phi>2) \<longleftrightarrow> (wf_fmla' \<phi>1 \<and> wf_fmla' \<phi>2)"
 
 
-  definition wf_domain_decs' :: "_ \<Rightarrow> _ \<Rightarrow> bool" where
-    "wf_domain_decs' stg conT \<equiv>
-      wf_types
-    \<and> distinct (map (predicate_decl.pred) (predicates DD))
-    \<and> (\<forall>p\<in>set (predicates DD). wf_predicate_decl p)
-    \<and> distinct (map fst (consts DD))
-    \<and> (\<forall>(n,T)\<in>set (consts DD). wf_type T)
-    "
+    text \<open>An update to a function on objects is well-formed if the function has 
+          been declared, the signature matches the types of the arguments and new return value, 
+          and the arguments and the term to assign the return value are well-formed.\<close>
+    fun wf_of_upd'::"'ent of_upd \<Rightarrow> bool" where
+    "wf_of_upd' (OF_Upd f as v) = (case obj_fun_sig f of 
+      None \<Rightarrow> False
+    | Some (Ts, T) \<Rightarrow>
+          list_all2 is_of_type'' as Ts 
+        \<and> (v = None \<or> is_of_type'' (the v) T))" 
+  
+    text \<open>An update to a numeric function is well-formed if the function has been declared,
+          the signature matches the types of the arguments, the arguments are well-formed,
+          and the value that is being assigned is well-formed.\<close>
+    fun wf_nf_upd'::"'ent nf_upd \<Rightarrow> bool" where
+    "wf_nf_upd' (NF_Upd f op as v) = (case nfs f of 
+        None \<Rightarrow> False
+      | Some Ts \<Rightarrow> 
+          list_all2 is_of_type'' as Ts 
+        \<and> wf_num_fluent' v
+    )"
 
-  lemma wf_domain_decs'_correct: "wf_domain_decs' STG mp_constT = wf_domain_decs"
-    unfolding wf_domain_decs_def wf_domain_decs'_def
-    by (auto)
+    text \<open>An effect is well-formed if its constituent parts are well-formed\<close>
+    fun wf_effect' where
+      "wf_effect' (Effect a d tu nu) \<longleftrightarrow>
+          (\<forall>u \<in> set a. wf_predicate' u)
+        \<and> (\<forall>u \<in> set d. wf_predicate' u)
+        \<and> (\<forall>u \<in> set tu. wf_of_upd' u)
+        \<and> (\<forall>u \<in> set nu. wf_nf_upd' u)
+        "
 
+    definition wf_cond_effect' where
+      "wf_cond_effect' eff \<longleftrightarrow> wf_fmla' (fst eff) \<and> wf_effect' (snd eff)"
 
+    definition wf_cond_effect_list' where
+      "wf_cond_effect_list' \<equiv> list_all wf_cond_effect'"
+
+    definition wf_of_arg_r_map'::"func \<Rightarrow> ('ent list \<rightharpoonup> 'ent) \<Rightarrow> bool" where
+      "wf_of_arg_r_map' f f' \<equiv> (case ofs f of 
+        None \<Rightarrow> False 
+      | Some (Ts, T) \<Rightarrow> 
+          (\<forall>as \<in> dom f'. list_all2 is_of_type'' as Ts 
+          \<and> is_of_type'' (the (f' as)) T))"
+  
+    definition wf_of_int'::"(func \<rightharpoonup> 'ent list \<rightharpoonup> 'ent) \<Rightarrow> bool" where
+      "wf_of_int' ti \<equiv> (\<forall>f \<in> dom ti. wf_of_arg_r_map' f (the (ti f)))"
+
+    definition wf_nf_int_map'::"func \<Rightarrow> ('ent list \<rightharpoonup> rat) \<Rightarrow> bool" where
+      "wf_nf_int_map' n f' \<equiv> (case nfs n of 
+        None \<Rightarrow> False 
+      | Some Ts \<Rightarrow> \<forall>as \<in> dom f'. list_all2 is_of_type'' as Ts)"
+  
+    definition wf_nf_int'::"(func \<rightharpoonup> 'ent list \<rightharpoonup> rat) \<Rightarrow> bool" where
+      "wf_nf_int' ni \<equiv> (\<forall>(f, m) \<in> Map.graph ni. wf_nf_int_map' f m)"
+  end
+
+  abbreviation "is_of_type_impl \<equiv> is_of_type'' (of_type_impl STG)"
+  
+  lemma is_of_type_impl_correct: "is_of_type_impl ty_ent = is_of_type ty_ent"
+    unfolding  is_of_type_def is_of_type''_def is_of_type'_def
+    using of_type_impl_correct
+    by (auto split: option.splits)
+
+  definition "wf_pred_impl \<equiv> wf_pred' (of_type_impl STG)"
+
+  lemma wf_pred_impl_correct: "wf_pred_impl ty_ent = wf_pred ty_ent"
+    unfolding wf_pred_impl_def
+    apply (rule ext)
+    subgoal for x
+    apply (cases x)
+      subgoal for p vs
+        apply (rule ssubst[of x], assumption)
+        apply (subst wf_pred'.simps, subst wf_pred.simps)
+        by (rule option.case_cong; simp add: sig_impl_correct is_of_type_impl_correct)
+      done
+    done 
+  
+  definition "wf_pred_eq_impl = wf_pred_eq' (of_type_impl STG)"
+  
+  lemma wf_pred_eq_impl_correct: "wf_pred_eq_impl ty_ent = wf_pred_eq ty_ent"
+    unfolding wf_pred_eq_impl_def
+    apply (intro ext)
+    subgoal for x
+      by (cases x; simp add: wf_pred_impl_correct[simplified wf_pred_impl_def])
+    done
+    
+    definition "wf_predicate_impl = wf_predicate' (of_type_impl STG)"
+                                           
+    lemma wf_predicate_impl_correct: "wf_predicate_impl ty_ent = wf_predicate ty_ent"
+      unfolding wf_predicate_impl_def
+      apply (intro ext)
+      subgoal for x
+        by (cases x; simp add: wf_pred_impl_correct[simplified wf_pred_impl_def])
+      done
+  
+  definition "wf_num_func_impl = wf_num_func' (of_type_impl STG) (Mapping.lookup num_fun_sig_impl)"
+  
+  lemma wf_num_func_impl_correct: "wf_num_func_impl ty_ent = wf_num_func ty_ent"
+    unfolding wf_num_func_impl_def
+    apply (rule ext)
+    subgoal for x 
+      apply (cases x)
+      subgoal for a b
+        apply (rule ssubst[of x], assumption)
+        apply (subst wf_num_func'.simps, subst wf_num_func.simps)
+        by (rule option.case_cong; simp add: nfs_impl_correct is_of_type_impl_correct)
+      done
+    done
+  
+  definition "wf_num_fluent_impl = wf_num_fluent' (of_type_impl STG) (Mapping.lookup num_fun_sig_impl)"
+  
+  lemma wf_num_fluent_impl_correct: "wf_num_fluent_impl ty_ent = wf_num_fluent ty_ent"
+    unfolding wf_num_fluent_impl_def
+    apply (rule ext)
+    subgoal for x
+      apply (induction x)
+      subgoal by (simp add: wf_num_func_impl_correct[simplified wf_num_func_impl_def])
+      subgoal by simp
+      by auto
+    done
+    
+  definition "wf_num_comp_impl = wf_num_comp' (of_type_impl STG) (Mapping.lookup num_fun_sig_impl)"
+  
+  lemma wf_num_comp_impl_correct: "wf_num_comp_impl ty_ent = wf_num_comp ty_ent"
+    unfolding wf_num_comp_impl_def
+    apply (rule ext)
+    subgoal for x
+      by (induction x; simp add: wf_num_fluent_impl_correct[simplified wf_num_fluent_impl_def])+
+    done
+  
+  definition "wf_atom_impl = wf_atom' (of_type_impl STG) (Mapping.lookup num_fun_sig_impl)"
+  
+  lemma wf_atom_impl_correct: "wf_atom_impl ty_ent = wf_atom ty_ent"
+    unfolding wf_atom_impl_def
+    apply (rule ext)
+    subgoal for x 
+      by (cases x; simp add: wf_num_comp_impl_correct[simplified wf_num_comp_impl_def]
+                        wf_pred_eq_impl_correct[simplified wf_pred_eq_impl_def])
+    done
+
+  definition "wf_fmla_impl = wf_fmla' (of_type_impl STG) (Mapping.lookup num_fun_sig_impl)"
+  
+  lemma wf_fmla_impl_correct: "wf_fmla_impl ty_ent = wf_fmla ty_ent"
+    unfolding wf_fmla_impl_def
+    apply (rule ext)
+    subgoal for x
+      apply (induction x)
+      subgoal by (simp add: wf_atom_impl_correct[simplified wf_atom_impl_def])
+      by auto
+    done
+
+  definition "wf_of_upd_impl = wf_of_upd' (of_type_impl STG)"
+  
+  lemma wf_of_upd_impl_correct: "wf_of_upd_impl ty_ent = wf_of_upd ty_ent"
+    unfolding wf_of_upd_impl_def
+    apply (rule ext)
+    subgoal for x
+      apply (cases x)
+      subgoal for f as v
+        apply (rule ssubst[of x], assumption)
+        apply (subst wf_of_upd'.simps, subst wf_of_upd.simps)
+        by (rule option.case_cong; simp add: is_of_type_impl_correct)
+      done
+    done
+  
+  definition "wf_nf_upd_impl = wf_nf_upd' (of_type_impl STG) (Mapping.lookup num_fun_sig_impl)"
+  
+  lemma wf_nf_upd_impl_correct: "wf_nf_upd_impl ty_ent = wf_nf_upd ty_ent"
+    unfolding wf_nf_upd_impl_def
+    apply (rule ext)
+    subgoal for x
+      apply (cases x)
+      subgoal for f op as v
+        apply (rule ssubst[of x], assumption)
+        apply (subst wf_nf_upd'.simps, subst wf_nf_upd.simps)
+        apply (subst wf_num_fluent_impl_correct[simplified wf_num_fluent_impl_def])
+        apply (subst nfs_impl_correct)
+        apply (subst is_of_type_impl_correct)
+        by simp
+      done
+    done
+  
+  definition "wf_effect_impl = wf_effect' (of_type_impl STG) (Mapping.lookup num_fun_sig_impl)"
+  
+  lemma wf_effect_impl_correct: "wf_effect_impl ty_ent = wf_effect ty_ent"
+    unfolding wf_effect_impl_def
+    apply (rule ext)
+    subgoal for x
+      apply (cases x)
+      by (simp add: wf_predicate_impl_correct[simplified wf_predicate_impl_def]
+                        wf_of_upd_impl_correct[simplified wf_of_upd_impl_def]
+                        wf_nf_upd_impl_correct[simplified wf_nf_upd_impl_def])
+    done
+  
+  definition "wf_cond_effect_impl = wf_cond_effect' (of_type_impl STG) (Mapping.lookup num_fun_sig_impl)"
+  
+  lemma wf_cond_effect_impl_correct: "wf_cond_effect_impl ty_ent = wf_cond_effect ty_ent"
+    unfolding wf_cond_effect_impl_def
+    apply (rule ext)
+    subgoal for x
+      apply (cases x)
+      unfolding wf_cond_effect'_def wf_cond_effect_def 
+        wf_fmla_impl_correct[simplified wf_fmla_impl_def]
+        wf_effect_impl_correct[simplified wf_effect_impl_def]
+      by simp
+    done
+
+  definition "wf_cond_effect_list_impl = wf_cond_effect_list' (of_type_impl STG) (Mapping.lookup num_fun_sig_impl)"
+  
+  lemma wf_cond_effect_list_impl_correct: "wf_cond_effect_list_impl ty_ent = wf_cond_effect_list ty_ent"
+    unfolding wf_cond_effect_list_impl_def wf_cond_effect_list_def wf_cond_effect_list'_def
+    by (simp add: wf_cond_effect_impl_correct[simplified wf_cond_effect_impl_def])
+
+  definition "wf_of_arg_r_map_impl = wf_of_arg_r_map' (of_type_impl STG) (Mapping.lookup obj_fun_sig_impl)"
+  
+  lemma wf_of_arg_r_map_impl_correct: "wf_of_arg_r_map_impl ty_ent = wf_of_arg_r_map ty_ent"
+    unfolding wf_of_arg_r_map_impl_def
+    apply (intro ext)
+    subgoal for f f'
+      unfolding wf_of_arg_r_map_def wf_of_arg_r_map'_def
+       ofs_impl_correct is_of_type_impl_correct
+      by auto
+    done
+
+  definition "wf_of_int_impl = wf_of_int' (of_type_impl STG) (Mapping.lookup obj_fun_sig_impl)"
+  
+  lemma wf_of_int_impl_correct: "wf_of_int_impl ty_ent = wf_of_int ty_ent"
+    unfolding wf_of_int_impl_def
+      wf_of_int'_def wf_of_int_def
+      wf_of_arg_r_map_impl_correct[simplified wf_of_arg_r_map_impl_def]
+    by simp
+  
+  definition "wf_nf_int_map_impl = wf_nf_int_map' (of_type_impl STG) (Mapping.lookup num_fun_sig_impl)"
+
+  lemma wf_nf_int_map_impl_correct: "wf_nf_int_map_impl ty_ent = wf_nf_int_map ty_ent"
+    unfolding wf_nf_int_map_impl_def
+    apply (rule ext)
+    subgoal for x
+      unfolding wf_nf_int_map'_def wf_nf_int_map_def 
+        is_of_type_impl_correct nfs_impl_correct
+      by simp
+    done
+
+  definition "wf_nf_int_impl = wf_nf_int' (of_type_impl STG) (Mapping.lookup num_fun_sig_impl)"
+  
+  lemma wf_nf_int_impl_correct: "wf_nf_int_impl ty_ent = wf_nf_int ty_ent"
+    unfolding wf_nf_int_impl_def  wf_nf_int'_def wf_nf_int_def
+    apply (subst wf_nf_int_map_impl_correct[simplified wf_nf_int_map_impl_def])
+    by simp
 end \<comment> \<open>Context of \<open>ast_domain\<close>\<close>
 
 subsubsection \<open>Well-Formedness\<close>
@@ -310,86 +632,124 @@ context ast_problem_decs begin
     unfolding mp_objT_def objT_alt
     by transfer (simp add: Map_To_Mapping.map_apply_def)
 
-
   text \<open>We refine the well-formedness checks to use the mapping\<close>
-
-  definition wf_fact' :: "objT \<Rightarrow> _ \<Rightarrow> fact \<Rightarrow> bool"
-    where
-    "wf_fact' ot stg \<equiv> wf_pred_atom' (Mapping.lookup ot) stg"
-
-  lemma wf_fact'_correct[simp]: "wf_fact' mp_objT STG = wf_fact"
-    by (auto simp: wf_fact'_def wf_fact_def wf_pred_atom'_correct[abs_def])
-
-
-  definition "wf_fmla_atom2' mp stg f
-    = (case f of formula.Atom (predAtm p vs) \<Rightarrow> (wf_fact' mp stg (p,vs)) | _ \<Rightarrow> False)"
-
-  lemma wf_fmla_atom2'_correct[simp]:
-    "wf_fmla_atom2' mp_objT STG \<phi> = wf_fmla_atom objT \<phi>"
-    apply (cases \<phi> rule: wf_fmla_atom.cases)
-    by (auto simp: wf_fmla_atom2'_def wf_fact_def split: option.splits)
-
-  definition "wf_problem_decs' stg conT mp \<equiv>
-      wf_domain_decs' stg conT
-    \<and> distinct (map fst (objects PD) @ map fst (consts DD))
-    \<and> (\<forall>(n,T)\<in>set (objects PD). wf_type T)"
-
-  lemma wf_problem_decs'_correct:
-    "wf_problem_decs' STG mp_constT mp_objT = wf_problem_decs"
-    unfolding wf_problem_decs_def wf_problem_decs'_def 
-    by (auto simp: wf_domain_decs'_correct wf_fmla'_correct)
   
-  fun wf_action_schema' :: "_ \<Rightarrow> _ \<Rightarrow> ast_action_schema \<Rightarrow> bool" where
-    "wf_action_schema' stg obT (Action_Schema n params pre eff) \<longleftrightarrow> (
-      let
-        tyv = ty_sym' (map_of params) obT
-      in
-        distinct (map fst params)
-      \<and> wf_fmla' tyv stg pre
-      \<and> wf_effect' tyv stg eff)"
+  fun wf_action_schema' :: "(type \<Rightarrow> type \<Rightarrow> bool) 
+    \<Rightarrow> (func \<rightharpoonup> (type list \<times> type))
+    \<Rightarrow> (func \<rightharpoonup> type list) 
+    \<Rightarrow> (object \<rightharpoonup> type) \<Rightarrow> ast_action_schema \<Rightarrow> bool" where
+      "wf_action_schema' ot ofs nfs obT (Action_Schema n params pre eff) \<longleftrightarrow> (
+        let
+          tyt = ty_term' ot ofs (ty_sym (map_of params) obT)
+        in
+          distinct (map fst params)
+        \<and> wf_fmla' ot nfs tyt pre
+        \<and> wf_cond_effect_list' ot nfs tyt eff)"
+  
+  definition "wf_action_schema_impl = wf_action_schema' (of_type_impl STG) (Mapping.lookup obj_fun_sig_impl) (Mapping.lookup num_fun_sig_impl) (Mapping.lookup mp_objT)"
+  
+  lemma wf_action_schema_impl_correct: "wf_action_schema_impl = wf_action_schema"
+    unfolding wf_action_schema_impl_def
+    apply (intro ext)
+    subgoal for a
+      apply (induction a)
+      subgoal for n params pre effs
+        unfolding wf_action_schema.simps wf_action_schema'.simps
+          ty_term_impl_correct[simplified ty_term_impl_def]
+          wf_fmla_impl_correct[simplified wf_fmla_impl_def]
+          wf_cond_effect_list_impl_correct[simplified wf_cond_effect_list_impl_def]
+          mp_objT_correct
+        by simp
+      done    
+    done
 
-  lemma wf_action_schema'_correct: "wf_action_schema' STG mp_objT s = wf_action_schema s"
-    by (cases s) (auto simp: wf_fmla'_correct wf_effect'_correct)
+    definition "wf_goal' ot ofs nfs = wf_fmla' ot nfs (ty_term' ot ofs (ty_sym Map.empty (Mapping.lookup mp_objT)))"
 
-  fun wf_goal' where
-    "wf_goal' obT stg \<phi> \<longleftrightarrow> wf_fmla' (ty_sym' (Map.empty) obT)  stg \<phi>"
+    definition "wf_goal_impl = wf_goal' (of_type_impl STG) (Mapping.lookup obj_fun_sig_impl) (Mapping.lookup num_fun_sig_impl)"
 
+    lemma wf_goal_impl_correct: "wf_goal_impl = wf_goal"
+      unfolding wf_goal_impl_def wf_goal'_def wf_goal_def
+        ty_term_impl_correct[simplified ty_term_impl_def]
+        wf_fmla_impl_correct[simplified wf_fmla_impl_def]
+        mp_objT_correct
+      by simp
 end
 
 context ast_domain
 begin
-  definition wf_domain' :: "_ \<Rightarrow> _ \<Rightarrow> _ \<Rightarrow> bool" where
-    "wf_domain' stg conT mp \<equiv>
-      wf_problem_decs' stg conT mp
-    \<and> distinct (map ast_action_schema.name (actions D))
-    \<and> (\<forall>a\<in>set (actions D). wf_action_schema' stg mp a)
-    "
+  definition wf_domain' :: "(type \<Rightarrow> type \<Rightarrow> bool) 
+    \<Rightarrow> (func \<rightharpoonup> (type list \<times> type)) \<Rightarrow> (func \<rightharpoonup> type list) 
+    \<Rightarrow> (object \<rightharpoonup> type) \<Rightarrow> bool" where
+  "wf_domain' ot ofs nfs obT \<equiv>
+    wf_problem_decs 
+  \<and> distinct (map ast_action_schema.name (actions D))
+  \<and> (\<forall>a\<in>set (actions D). wf_action_schema' ot ofs nfs obT a)
+  "
 
-  lemma wf_domain'_correct:
-    "wf_domain' STG mp_constT mp_objT = wf_domain"
-    unfolding wf_domain_def wf_domain'_def 
-    by (auto simp: wf_problem_decs'_correct wf_action_schema'_correct wf_fmla'_correct)
+  definition "wf_domain_impl \<equiv> wf_domain' (of_type_impl STG) 
+    (Mapping.lookup obj_fun_sig_impl) (Mapping.lookup num_fun_sig_impl) (Mapping.lookup mp_objT)"
+
+  lemma wf_domain_impl_correct: "wf_domain_impl = wf_domain"
+    unfolding wf_domain_impl_def wf_domain'_def wf_domain_def
+    apply (subst wf_action_schema_impl_correct[simplified wf_action_schema_impl_def])
+    by simp
+  
+  definition wf_world_model'::"(type \<Rightarrow> type \<Rightarrow> bool) 
+    \<Rightarrow> (func \<rightharpoonup> (type list \<times> type))
+    \<Rightarrow> (func \<rightharpoonup> (type list))
+    \<Rightarrow> (object \<rightharpoonup> type) 
+    \<Rightarrow> world_model \<Rightarrow> bool" where
+    "wf_world_model' ot ofs nfs obT M \<equiv> 
+      (\<forall>p \<in> preds M. wf_predicate' ot obT p)
+      \<and> wf_of_int' ot ofs obT (of_int M)
+      \<and> wf_nf_int' ot nfs obT (nf_int M)"
+  
+  definition "wf_world_model_impl = 
+    wf_world_model' 
+      (of_type_impl STG) 
+      (Mapping.lookup obj_fun_sig_impl)
+      (Mapping.lookup num_fun_sig_impl)
+      (Mapping.lookup mp_objT)"
+  
+  lemma wf_world_model_impl_correct: "wf_world_model_impl = wf_world_model"
+    unfolding wf_world_model_impl_def wf_world_model_def wf_world_model'_def
+     mp_objT_correct 
+     wf_predicate_impl_correct[simplified wf_predicate_impl_def]
+     wf_of_int_impl_correct[simplified wf_of_int_impl_def]
+     wf_nf_int_impl_correct[simplified wf_nf_int_impl_def]
+    by simp
+
 end
 
 context ast_problem
 begin
 
-  definition "wf_problem' stg conT mp \<equiv>
-      wf_domain' stg conT mp
-    \<and> wf_goal' mp stg (goal P)
-    \<and> distinct (init P)
-    \<and> (\<forall>f\<in>set (init P). wf_fmla_atom2' mp stg f)"
+  definition "wf_problem' ot ofs nfs obT\<equiv>
+      wf_domain' ot ofs nfs obT
+    \<and> wf_goal' ot ofs nfs (goal P)
+    \<and> wf_world_model' ot ofs nfs obT (init P)"
 
-  lemma wf_problem'_correct:
-    "wf_problem' STG mp_constT mp_objT = wf_problem"
-    unfolding wf_problem_def wf_problem'_def wf_goal_def wf_world_model_def
-    by (auto simp: wf_domain'_correct wf_fmla'_correct)
+definition "wf_problem_impl = 
+  wf_problem' 
+    (of_type_impl STG) 
+    (Mapping.lookup obj_fun_sig_impl) 
+    (Mapping.lookup num_fun_sig_impl) 
+    (Mapping.lookup mp_objT)"
+
+lemma wf_problem_impl_correct: "wf_problem_impl = wf_problem"
+  unfolding wf_problem_impl_def wf_problem'_def wf_problem_def
+  wf_domain_impl_correct[simplified wf_domain_impl_def]
+  wf_world_model_impl_correct[simplified wf_world_model_impl_def]
+  wf_goal_impl_correct[simplified wf_goal_impl_def]
+  by blast
 end
 subsubsection \<open>Implementation of the quantifier macros\<close>
 
 derive ceq variable
 derive ccompare variable
-derive (rbt) set_impl variable
+derive (rbt) set_impl variable 
+
+(* this syntax also works for Mapping *)
 
 context ast_problem_decs begin
 

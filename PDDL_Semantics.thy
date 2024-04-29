@@ -756,12 +756,12 @@ begin
 
   context 
     fixes ty_ent::"'ent \<rightharpoonup> type"
-begin
-text \<open>We fix a type-environment, which assigns types to the entities in a term.\<close>
-
-text \<open>These two functions compute the type of a term. For a functinal term to
-    have a type, we must also check that its parameters are well-typed with respect
-    to its signature.\<close>
+  begin
+  text \<open>We fix a type-environment, which assigns types to the entities in a term.\<close>
+  
+  text \<open>These two functions compute the type of a term. For a functinal term to
+      have a type, we must also check that its parameters are well-typed with respect
+      to its signature.\<close>
     fun is_term_of_type :: "'ent term \<Rightarrow> type \<Rightarrow> bool" and
         ty_term::"'ent term \<Rightarrow> type option" where
       "is_term_of_type v T = (case ty_term v of
@@ -772,8 +772,6 @@ text \<open>These two functions compute the type of a term. For a functinal term
         Some (Ts, T) \<Rightarrow> (if (list_all2 is_term_of_type as Ts) 
           then Some T else None)
       | None \<Rightarrow> None)"
-
-    thm is_term_of_type_ty_term.induct
 
     text \<open>When a term has a type, then all of the entities within it must
           be in the domain of the type environment.\<close>
@@ -905,15 +903,11 @@ text \<open>These two functions compute the type of a term. For a functinal term
         \<and> wf_num_fluent v
     )"
 
-    fun wf_pred_upd where
-      "wf_pred_upd (Eq _ _) = False" |
-      "wf_pred_upd p = wf_pred_eq p"
-
     text \<open>An effect is well-formed if its constituent parts are well-formed\<close>
     fun wf_effect where
       "wf_effect (Effect a d tu nu) \<longleftrightarrow>
-          (\<forall>u \<in> set a. wf_pred_upd u)
-        \<and> (\<forall>u \<in> set d. wf_pred_upd u)
+          (\<forall>u \<in> set a. wf_predicate u)
+        \<and> (\<forall>u \<in> set d. wf_predicate u)
         \<and> (\<forall>u \<in> set tu. wf_of_upd u)
         \<and> (\<forall>u \<in> set nu. wf_nf_upd u)
         "
@@ -924,7 +918,7 @@ text \<open>These two functions compute the type of a term. For a functinal term
     definition wf_cond_effect_list where
       "wf_cond_effect_list \<equiv> list_all wf_cond_effect"
 
-    abbreviation wf_of_arg_r_map::"func \<Rightarrow> ('ent list \<rightharpoonup> 'ent) \<Rightarrow> bool" where
+  definition wf_of_arg_r_map::"func \<Rightarrow> ('ent list \<rightharpoonup> 'ent) \<Rightarrow> bool" where
       "wf_of_arg_r_map f f' \<equiv> (case obj_fun_sig f of 
         None \<Rightarrow> False 
       | Some (Ts, T) \<Rightarrow> 
@@ -1063,9 +1057,11 @@ begin
   \<close>
   fun wf_action_schema :: "ast_action_schema \<Rightarrow> bool" where
     "wf_action_schema (Action_Schema n params pre effs) \<longleftrightarrow> (
+        let tyt = ty_term (ty_sym (map_of params) objT)
+        in
         distinct (map fst params)
-      \<and> wf_fmla (ty_term (ty_sym (map_of params) objT)) pre
-      \<and> wf_cond_effect_list (ty_term (ty_sym (map_of params) objT)) effs)"
+      \<and> wf_fmla tyt pre
+      \<and> wf_cond_effect_list tyt effs)"
 
   definition wf_goal::"schematic_formula \<Rightarrow> bool" where
     "wf_goal \<equiv> wf_fmla (ty_term (ty_sym Map.empty objT))"
@@ -1126,6 +1122,10 @@ end
 subsection \<open>Semantics of actions in dynamic world state.\<close>
 context ast_domain
 begin
+
+text \<open>Important: thinking in terms of conditional lists of effects vs filtering by enabledness:
+      - Pros: 
+      - Cons: \<close>
     
   fun inst_of_upd::"world_model 
     \<Rightarrow> object term of_upd 
@@ -1293,7 +1293,7 @@ begin
     "non_int_effs e1 e2 \<equiv> 
       non_int_nf_upd_lists (nus e1) (nus e2)
     \<and> non_int_of_upd_lists (ous e1) (ous e2)"
-
+  
   definition non_int_cond_effs where
     "non_int_cond_effs M e1 e2 \<equiv> (valuation M \<Turnstile> fst e1 \<and> valuation M \<Turnstile> fst e2) \<longrightarrow> (non_int_effs (inst_effect M (snd e1)) (inst_effect M (snd e2)))"
 
@@ -1352,9 +1352,6 @@ begin
   definition well_inst_cond_effect_list::"world_model \<Rightarrow> world_model \<Rightarrow> (ground_formula \<times> ground_effect) list \<Rightarrow> bool" where
     "well_inst_cond_effect_list eM M effs \<equiv> list_all (well_inst_cond_effect eM M) effs"
 
-  definition active_effects::"world_model \<Rightarrow> (ground_formula \<times> ground_effect) list \<Rightarrow> (ground_formula \<times> ground_effect) list" where
-    "active_effects M effs = (filter (\<lambda>(pre, eff). valuation M \<Turnstile> pre) effs)"
-
 
   text \<open>Before a ground effect is applied, it must be fully instantiated. 
         That the fully instantiated effect is well-formed is only necessary
@@ -1412,9 +1409,13 @@ begin
   | "ground_action_path M (\<alpha>#\<alpha>s) M' \<longleftrightarrow> valid_ground_action \<alpha> M
     \<and> ground_action_path (execute_ground_action \<alpha> M) \<alpha>s M'"
 
+  definition active_effects::"world_model \<Rightarrow> (ground_formula \<times> ground_effect) list \<Rightarrow> (ground_formula \<times> ground_effect) list" where
+    "active_effects M effs = (filter (\<lambda>(pre, eff). valuation M \<Turnstile> pre) effs)"
+
+
   lemma inst_apply_cond_fold_alt: "foldr (inst_apply_conditional_effect M') effs M 
     = foldr apply_effect (map (inst_effect M' \<circ> snd) (active_effects M' effs)) M"
-    sorry (* To do: fix later *)
+    sorry (* To do: fix later. Not necessary for implementation *)
 
   text \<open>Unfolded definition of ground_action_path. 
       The precondition of the action is well-formed.
@@ -1434,9 +1435,7 @@ begin
     \<and> well_inst_cond_effect_list M (effects \<alpha>)
     \<and> non_int_cond_eff_list M (effects \<alpha>)
     \<and> ground_action_path (apply_conditional_effect_list (effects \<alpha>) M) \<alpha>s M'"
-    apply (auto simp: valid_ground_action_def execute_ground_action_def ground_action_enabled_def
-            wf_ground_action_def valid_effects_def apply_conditional_effect_list_def)
-    sorry (* TODO: fix later *)
+    sorry (* TODO: fix later -- not necessary for implementation *)
 end
 
 subsection \<open>Conditions for the preservation of well-formedness\<close>
@@ -1540,18 +1539,18 @@ begin
     by (induction \<phi>; auto simp: f_ent_def intro: ent_type_imp_wf_atom)
 
 
-  lemma ent_type_imp_wf_pred_upd:
+  lemma ent_type_imp_wf_predicate:
     assumes "\<forall>e \<in> pred.ent upd. \<forall>T. is_of_type Q e T \<longrightarrow> is_of_type R (f e) T"
-        and "wf_pred_upd Q upd"
-      shows "wf_pred_upd R (map_pred f upd)"
+        and "wf_predicate Q upd"
+      shows "wf_predicate R (map_pred f upd)"
       using assms 
       by (induction upd; auto split: option.splits simp: list_all2_is_of_type)
 
-  lemma ent_type_imp_wf_pred_upds:
+  lemma ent_type_imp_wf_predicates:
     assumes "\<forall>e \<in> \<Union>(pred.ent ` set upd). \<forall>T. is_of_type Q e T \<longrightarrow> is_of_type R (f e) T"
-        and "\<forall>u \<in> set upd. wf_pred_upd Q u"
-      shows "\<forall>u \<in> set (map (map_pred f) upd). wf_pred_upd R u"
-    using assms ent_type_imp_wf_pred_upd by fastforce
+        and "\<forall>u \<in> set upd. wf_predicate Q u"
+      shows "\<forall>u \<in> set (map (map_pred f) upd). wf_predicate R u"
+    using assms ent_type_imp_wf_predicate by fastforce
 
   lemma ent_type_imp_wf_of_upd:
     assumes "\<forall>e \<in> of_upd.ent tu. \<forall>T. is_of_type Q e T \<longrightarrow> is_of_type R (f e) T"
@@ -1600,12 +1599,12 @@ begin
   proof (cases eff)
     case [simp]: (Effect a d tu nu)
     from assms(2)
-    have "\<forall>u \<in> set a. (wf_pred_upd Q) u" 
-         "\<forall>u \<in> set d. (wf_pred_upd Q) u"
+    have "\<forall>u \<in> set a. (wf_predicate Q) u" 
+         "\<forall>u \<in> set d. (wf_predicate Q) u"
          "\<forall>u \<in> set tu. (wf_of_upd Q) u"
          "\<forall>u \<in> set nu. (wf_nf_upd Q) u" by simp_all
     with assms(1)[simplified Effect ast_effect.set ball_Un] 
-        ent_type_imp_wf_pred_upds ent_type_imp_wf_of_upds ent_type_imp_wf_nf_upds
+        ent_type_imp_wf_predicates ent_type_imp_wf_of_upds ent_type_imp_wf_nf_upds
     show ?thesis 
       apply (subst Effect; subst ast_effect.map; subst wf_effect.simps)
       apply (elim conjE; intro conjI)
@@ -1917,8 +1916,9 @@ text \<open>A well-formed goal is a well-formed formula without any free variabl
             map_le_restr[OF assms(1)] by simp
   qed
 
-theorem wf_goal_alt: "wf_goal \<phi> \<longleftrightarrow> wf_fmla (ty_term (ty_sym Q objT)) \<phi> \<and> f_vars \<phi> = {}"
-  using wf_fmla_alt_lemma[where Q = Map.empty] unfolding wf_goal_def by simp
+  text \<open>An alternative definition for the well-formedness of a goal\<close>
+  theorem wf_goal_alt: "wf_goal \<phi> \<longleftrightarrow> wf_fmla (ty_term (ty_sym Q objT)) \<phi> \<and> f_vars \<phi> = {}"
+    using wf_fmla_alt_lemma[where Q = Map.empty] unfolding wf_goal_def by simp
 
 
  lemma is_of_type_eff_vars_restr:
@@ -1940,13 +1940,13 @@ theorem wf_goal_alt: "wf_goal \<phi> \<longleftrightarrow> wf_fmla (ty_term (ty_
     using ent_type_imp_wf_effect_weak[OF _ assms] 
         is_of_type_eff_vars_restr by blast
 
-lemma wf_effect_restr_vars:
-  "wf_effect (ty_term (ty_sym Q S)) eff 
-  \<longleftrightarrow> wf_effect (ty_term (ty_sym (Q |` (eff_vars eff)) S)) eff"
-  using wf_effect_restr_vars' 
-    wf_effect_mono[OF 
-      ty_term_mono[OF 
-        ty_sym_mono[OF map_restrict_less[of Q "eff_vars eff"] map_le_refl]]] by blast
+  lemma wf_effect_restr_vars:
+    "wf_effect (ty_term (ty_sym Q S)) eff 
+    \<longleftrightarrow> wf_effect (ty_term (ty_sym (Q |` (eff_vars eff)) S)) eff"
+    using wf_effect_restr_vars' 
+      wf_effect_mono[OF 
+        ty_term_mono[OF 
+          ty_sym_mono[OF map_restrict_less[of Q "eff_vars eff"] map_le_refl]]] by blast
 end
 
 subsection \<open>Quantifiers\<close>
@@ -2336,7 +2336,7 @@ begin
     unfolding univ_effect_def wf_cond_effect_list_def
     by (cases "v \<notin> cond_effect_vars ce"; auto)
   
-  lemma wf_univ_effect_inst: (* The second Q should be an arbitrary R which is a larger map than Q *)
+  lemma wf_univ_effect_inst: (* The second Q could be an arbitrary R which is a larger map than Q *)
     assumes "wf_cond_effect (ty_term (ty_sym (Q(v \<mapsto> ty)) objT)) ce"
     shows "wf_cond_effect_list (ty_term (ty_sym Q objT)) (univ_effect v ty ce)"
     using wf_univ_effect_inst'[OF assms]
@@ -2727,12 +2727,13 @@ begin
         have "wf_of_arg_r_map objT f' (the (ti f'))" unfolding wf_of_int_def by fast
         with \<open>as' \<in> dom (the (ti f'))\<close> \<open>obj_fun_sig f' = Some (Ts, T)\<close>
         have "list_all2 (is_of_type objT) as' Ts 
-          \<and> is_of_type objT (the (the (ti f') as')) T" by simp
+          \<and> is_of_type objT (the (the (ti f') as')) T"
+          unfolding wf_of_arg_r_map_def by simp
         with \<open>fn as' = the (ti f') as'\<close>
         show ?thesis by presburger
       qed
       with \<open>obj_fun_sig f' = Some (Ts, T)\<close> \<open>?ti' f' = Some fn\<close>
-      show ?thesis by (auto split: option.splits)
+      show ?thesis by (auto split: option.splits prod.splits simp: wf_of_arg_r_map_def)
     next
       case False
       hence "the (apply_of_upd (OFU f as v) ti f') = the (ti f')"
@@ -3112,7 +3113,7 @@ proof -
     if "wf_world_model M"
        "wf_inst_cond_effect_list eM effs"
        "well_inst_cond_effect_list eM M effs" 
-        for eM M effs eff
+        for eM M effs
     using that
     apply (induction effs arbitrary: M)
      apply auto[1]
@@ -3318,6 +3319,12 @@ qed
 
   (* TODO: semantics of universal effects with lists of arguments *)
 
+  (* TODO: Since we know that effects must be non-interfering, the order of application does not 
+            matter. Once the semantics of effects with quantifiers in them have been defined,
+            prove that the order of application of the resulting list of effects is irrelevant *)
+
+
+text \<open>High priority to do: define the semantics of effect lists which are non-interfering\<close>
 
   text \<open>Applying a list of conditional effects means filtering them, instantiating them, and then
         applying them one by one.\<close>
