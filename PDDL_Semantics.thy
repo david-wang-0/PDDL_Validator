@@ -361,8 +361,8 @@ definition nf_vars where
   "nf_vars nf \<equiv> \<Union> (term_vars ` num_fluent.ent nf)"
 
 text \<open>A numeric comparison contains variables\<close>
-definition sym_term_nc_vars::"symbol term num_comp \<Rightarrow> variable set" where
-  "sym_term_nc_vars nc \<equiv> \<Union> (term_vars ` num_comp.ent nc)"
+definition nc_vars::"symbol term num_comp \<Rightarrow> variable set" where
+  "nc_vars nc \<equiv> \<Union> (term_vars ` num_comp.ent nc)"
 
 text \<open>Etc.\<close>
 definition pred_vars where
