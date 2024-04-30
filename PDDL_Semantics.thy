@@ -145,9 +145,6 @@ datatype (ent: 'ent) pred =
     Pred (predicate: predicate) (arguments: "'ent list")
     | Eq (lhs: 'ent) (rhs: 'ent)
 
-text \<open>Within Isabelle, the \<close>
-
-
 text \<open>An atom is either a predicate with arguments, or an equality statement.\<close>
 
 datatype (ent: 'ent) atom = 
@@ -263,13 +260,13 @@ text \<open>A world model is required to interpret the value of functions and pr
       name to a valuation for argument lists. Numeric functions return rational numbers.\<close>
 
 
-type_synonym object_interpretation = "func \<rightharpoonup> (object list \<rightharpoonup> object)"
+type_synonym object_function_interpretation = "func \<rightharpoonup> (object list \<rightharpoonup> object)"
 
 type_synonym numeric_function_interpretation = "func \<rightharpoonup> (object list \<rightharpoonup> rat)"
 
 datatype world_model = World_Model 
   (preds: "object pred set")
-  (of_int: "object_interpretation")
+  (of_int: "object_function_interpretation")
   (nf_int: "numeric_function_interpretation")
 
 
@@ -320,7 +317,9 @@ text \<open>A problem consists of a domain, a list of objects,
   a description of the initial state, and a description of the goal state.\<close>
 datatype ast_problem = Problem
   (domain: ast_domain)
-  (init: "world_model")
+  (init_ps: "object pred set")
+  (init_ofs: "(func \<times> object list \<times> object) list")
+  (init_nfs: "(func \<times> object list \<times> rat) list")
   (goal: "schematic_formula")
 
 subsubsection \<open>Plans\<close>
@@ -670,7 +669,7 @@ text \<open>Here, we evaluate an {@typ object term} against world-model to
   
   fun pred_val::"world_model \<Rightarrow> (object term) pred \<Rightarrow> bool" where
     "pred_val M p = (case pred_inst M p of 
-      Some (Pred p as)  \<Rightarrow> (Pred p as) \<in> preds M
+      Some (Pred p as)  \<Rightarrow> (Pred p as) \<in> world_model.preds M
     | Some (Eq x y)     \<Rightarrow> x = y
     | None              \<Rightarrow> False)"
   
@@ -918,23 +917,6 @@ begin
     definition wf_cond_effect_list where
       "wf_cond_effect_list \<equiv> list_all wf_cond_effect"
 
-  definition wf_of_arg_r_map::"func \<Rightarrow> ('ent list \<rightharpoonup> 'ent) \<Rightarrow> bool" where
-      "wf_of_arg_r_map f f' \<equiv> (case obj_fun_sig f of 
-        None \<Rightarrow> False 
-      | Some (Ts, T) \<Rightarrow> 
-          (\<forall>as \<in> dom f'. list_all2 is_of_type as Ts 
-          \<and> is_of_type (the (f' as)) T))"
-  
-    definition wf_of_int::"(func \<rightharpoonup> 'ent list \<rightharpoonup> 'ent) \<Rightarrow> bool" where
-      "wf_of_int ti \<equiv> (\<forall>f \<in> dom ti. wf_of_arg_r_map f (the (ti f)))"
-
-    definition wf_nf_int_map::"func \<Rightarrow> ('ent list \<rightharpoonup> rat) \<Rightarrow> bool" where
-      "wf_nf_int_map n f' \<equiv> (case num_fun_sig n of 
-        None \<Rightarrow> False 
-      | Some Ts \<Rightarrow> \<forall>as \<in> dom f'. list_all2 is_of_type as Ts)"
-  
-    definition wf_nf_int::"(func \<rightharpoonup> 'ent list \<rightharpoonup> rat) \<Rightarrow> bool" where
-      "wf_nf_int ni \<equiv> (\<forall>(f, m) \<in> Map.graph ni. wf_nf_int_map f m)"
 
     lemma list_all2_is_of_type_imp_set_in_ty_env:
       assumes "list_all2 is_of_type args Ts"
@@ -1079,16 +1061,6 @@ locale ast_domain = ast_problem_decs "problem_decs D"
 begin
 abbreviation "PD \<equiv> problem_decs D"
 
-  text \<open>This definition is needed for well-formedness of the initial model,
-    and forward-references to the concept of world model.
-  \<close>
-  text \<open>The predicates are well-formed, i.e. well-typed. The interpretations of 
-        fluents are also well-formed, i.e. well-typed and only defined for those
-        functions which have been declared in the domain or problem.\<close>
-  definition wf_world_model::"world_model \<Rightarrow> bool" where
-    "wf_world_model M \<equiv> (\<forall>p \<in> preds M. wf_predicate objT p) 
-                      \<and> wf_of_int objT (of_int M)
-                      \<and> wf_nf_int objT (nf_int M)"
   
   text \<open>A domain is well-formed if in addition to the declarations being well-formed
     \<^item> there are no duplicate declared actions,
@@ -1109,11 +1081,54 @@ locale ast_problem = ast_domain "domain P"
   for P::ast_problem
 begin
   abbreviation "D \<equiv> domain P"
+  text \<open>This definition is needed for well-formedness of the initial model,
+    and forward-references to the concept of world model.
+  \<close>
+
+  
+  definition wf_of_arg_r_map::"func \<Rightarrow> (object list \<rightharpoonup> object) \<Rightarrow> bool" where
+    "wf_of_arg_r_map f f' \<equiv> (case obj_fun_sig f of 
+      None \<Rightarrow> False 
+    | Some (Ts, T) \<Rightarrow> 
+        (\<forall>(as, v) \<in> Map.graph f'. list_all2 (is_of_type objT) as Ts 
+        \<and> is_of_type objT v T))"
+
+    definition wf_of_int::"(func \<rightharpoonup> object list \<rightharpoonup> object) \<Rightarrow> bool" where
+      "wf_of_int oi \<equiv> (\<forall>(f, m) \<in> Map.graph oi. wf_of_arg_r_map f m)"
+
+    definition wf_nf_int_map::"func \<Rightarrow> (object list \<rightharpoonup> rat) \<Rightarrow> bool" where
+      "wf_nf_int_map n f' \<equiv> (case num_fun_sig n of 
+        None \<Rightarrow> False 
+      | Some Ts \<Rightarrow> \<forall>as \<in> dom f'. list_all2 (is_of_type objT) as Ts)"
+  
+    definition wf_nf_int::"(func \<rightharpoonup> object list \<rightharpoonup> rat) \<Rightarrow> bool" where
+      "wf_nf_int ni \<equiv> (\<forall>(f, m) \<in> Map.graph ni. wf_nf_int_map f m)"
+
+  text \<open>The predicates are well-formed, i.e. well-typed. The interpretations of 
+        fluents are also well-formed, i.e. well-typed and only defined for those
+        functions which have been declared in the domain or problem.\<close>
+  definition wf_world_model::"world_model \<Rightarrow> bool" where
+    "wf_world_model M \<equiv> (\<forall>p \<in> preds M. wf_predicate objT p) 
+                      \<and> wf_of_int (of_int M)
+                      \<and> wf_nf_int (nf_int M)"
+
+  fun wf_init_of_a::"(func \<times> object list \<times> object) \<Rightarrow> bool" where
+    "wf_init_of_a (f, as, v) = (case obj_fun_sig f of 
+      Some (Ts, T) \<Rightarrow> list_all2 (is_of_type objT) as Ts \<and> is_of_type objT v T
+    | None \<Rightarrow> False)"
+  
+  fun wf_init_nf_a::"(func \<times> object list \<times> rat) \<Rightarrow> bool" where
+    "wf_init_nf_a (f, as, v) = (case num_fun_sig f of
+      Some Ts \<Rightarrow> list_all2 (is_of_type objT) as Ts
+    | None \<Rightarrow> False)"
+
   text \<open>A problem is well-formed if in addition to the domain being well-formed, the goal is\<close>
   definition wf_problem where
     "wf_problem \<equiv>
       wf_domain
-    \<and> wf_world_model (init P)
+    \<and> (\<forall>p \<in> (init_ps P). wf_predicate objT p)
+    \<and> (\<forall>a \<in> set (init_ofs P). wf_init_of_a a)
+    \<and> (\<forall>a \<in> set (init_nfs P). wf_init_nf_a a)
     \<and> wf_goal (goal P)
     "
 end
@@ -1152,8 +1167,8 @@ text \<open>Important: thinking in terms of conditional lists of effects vs filt
   text \<open>When we apply an update that returns undefined, we can either unassign the interpretation
         or update it to Undefined. In both cases, term_val will return Undefined.\<close>
   fun apply_of_upd::"instantiated_of_upd
-    \<Rightarrow> (object_interpretation) 
-    \<Rightarrow> (object_interpretation)" where
+    \<Rightarrow> (object_function_interpretation) 
+    \<Rightarrow> (object_function_interpretation)" where
     "apply_of_upd (OFU f as v) ti = (
       case (ti f) of
         Some ti1 \<Rightarrow> (ti(f \<mapsto> (ti1((map the as) := v))))
@@ -2431,9 +2446,24 @@ subsection \<open>Instantiation\<close>
 
 context ast_problem begin
 
+  fun add_init_int::"(func \<times> 'b list \<times> 'c) 
+    \<Rightarrow> (func \<rightharpoonup> ('b list \<rightharpoonup> 'c))
+    \<Rightarrow> (func \<rightharpoonup> ('b list \<rightharpoonup> 'c))" where
+  "add_init_int (f, as, v) fun_int = (
+    case (fun_int f) of 
+      Some fun_int' \<Rightarrow> (fun_int(f \<mapsto> (fun_int'(as \<mapsto> v))))
+    | None          \<Rightarrow> (fun_int(f \<mapsto> [as \<mapsto> v]))
+  )"
+  
+  definition ofi::"object_function_interpretation" where
+    "ofi = fold add_init_int (init_ofs P) Map.empty"
+  
+  definition nfi::"numeric_function_interpretation" where
+    "nfi = fold add_init_int (init_nfs P) Map.empty"
+
   text \<open>Initial model\<close>
   definition I :: "world_model" where
-    "I \<equiv> init P"
+    "I \<equiv> (World_Model (init_ps P) ofi nfi)"
 
   text \<open>Resolve a plan action and instantiate the referenced action schema.\<close>
   fun resolve_instantiate :: "plan_action \<Rightarrow> ground_action" where
@@ -2441,6 +2471,7 @@ context ast_problem begin
       instantiate_action_schema
         (the (resolve_action_schema n))
         as"
+
 
   text \<open>HOL encoding of matching an action's formal parameters against an
     argument list.
@@ -2661,16 +2692,204 @@ begin
     apply unfold_locales
     using wf_problem
     unfolding wf_problem_def wf_domain_def by blast
+
+
+  lemma wf_add_one_init_oi:
+    assumes "wf_of_int oi"
+        and "wf_init_of_a a"
+      shows "wf_of_int (add_init_int a oi)" (is "wf_of_int ?oi'")
+  proof (cases a)
+    case a [simp]: (fields f as v)
+    have "wf_of_arg_r_map f' m"
+      if "(f', m) \<in> Map.graph ?oi'" for f' m
+    proof (cases "f = f'")
+      case True
+      show ?thesis
+      proof (cases "oi f")
+        case None
+        from that[simplified a add_init_int.simps True this[simplified True]]
+        have "(f', m) \<in> Map.graph (oi(f' \<mapsto> [as \<mapsto> v]))" by simp
+        hence "m = [as \<mapsto> v]" using in_graphD by fastforce
+        moreover
+        have "wf_of_arg_r_map f [as \<mapsto> v]"
+          unfolding wf_of_arg_r_map_def
+          using assms(2)[simplified a wf_init_of_a.simps]
+          by (cases "obj_fun_sig f"; auto)
+        ultimately
+        show ?thesis using True by simp
+      next
+        case (Some a)
+        with that[simplified a add_init_int.simps]
+        obtain fun_int' where
+          fun_int': "oi f = Some fun_int'"
+          "(f', m) \<in> Map.graph (oi(f \<mapsto> fun_int'(as \<mapsto> v)))"
+          by simp
+        moreover
+        with \<open>f = f'\<close>
+        have m: "m = fun_int'(as \<mapsto> v)" by (metis fun_upd_same in_graphD option.sel)
+        moreover
+        from assms(2)[simplified a wf_init_of_a.simps]
+        obtain Ts T where
+          Ts: "obj_fun_sig f = Some (Ts, T)" by fastforce
+        moreover
+        have "list_all2 (is_of_type objT) as' Ts \<and> is_of_type objT v' T"
+          if "(as', v') \<in> Map.graph (fun_int'(as \<mapsto> v))" for as' v'
+        proof (cases "as = as'")
+          case True
+          with that
+          have "v = v'" using in_graphD by fastforce
+          with assms(2)[simplified a wf_init_of_a.simps Ts True this]
+          show ?thesis by auto
+        next
+          case False
+          with that 
+          have "(as', v') \<in> Map.graph fun_int'"
+            by (metis fun_upd_other in_graphD in_graphI)
+          with assms(1) fun_int'(1) Ts
+          show "list_all2 (is_of_type objT) as' Ts \<and> is_of_type objT v' T"
+            unfolding wf_of_int_def wf_of_arg_r_map_def 
+            apply -
+            apply (drule bspec[where x = "(f, fun_int')"])
+             apply (rule in_graphI, assumption)
+            by (auto split: option.splits prod.splits)
+        qed
+        ultimately
+        show ?thesis using \<open>f = f'\<close> wf_of_arg_r_map_def by auto
+      qed
+    next
+      case False
+      from that
+      have "(f', m) \<in> Map.graph oi" 
+        apply -
+        apply (subst (asm) a)
+        apply (subst (asm) add_init_int.simps)
+        apply (cases "oi f")
+        subgoal 
+          apply (simp) 
+          by (metis fun_upd_triv False)
+        subgoal for a
+          using False
+          by (auto simp: graph_fun_upd_None)
+        done
+      with assms(1)
+      show ?thesis unfolding wf_of_int_def by blast 
+    qed
+    then show "wf_of_int (add_init_int a oi)" unfolding wf_of_int_def by blast
+  qed
   
-  text \<open>We start by defining two shorthands for enabledness and execution of
-    a plan action.\<close>
+  lemma wf_ofi: "wf_of_int ofi"
+  proof -
+    have "\<And>a. a \<in> set (init_ofs P) \<Longrightarrow> wf_init_of_a a"
+      using wf_problem unfolding wf_problem_def by simp
+    moreover
+    have "wf_of_int Map.empty" unfolding wf_of_int_def using in_graphD by auto
+    ultimately
+    show "wf_of_int ofi" 
+      unfolding ofi_def
+      using fold_invariant[where xs = "init_ofs P" and Q = wf_init_of_a and P = wf_of_int
+          and f = add_init_int] wf_add_one_init_oi
+      by blast
+  qed
+  
+  lemma wf_add_one_init_ni:
+    assumes "wf_nf_int ni"
+        and "wf_init_nf_a a"
+      shows "wf_nf_int (add_init_int a ni)" (is "wf_nf_int ?ni'")
+  proof (cases a)
+    case a [simp]: (fields f as v)
+    have "wf_nf_int_map f' m"
+      if "(f', m) \<in> Map.graph ?ni'" for f' m
+    proof (cases "f = f'")
+      case True
+      show ?thesis
+      proof (cases "ni f")
+        case None
+        from that[simplified a add_init_int.simps True this[simplified True]]
+        have "(f', m) \<in> Map.graph (ni(f' \<mapsto> [as \<mapsto> v]))" by simp
+        hence "m = [as \<mapsto> v]" using in_graphD by fastforce
+        moreover
+        have "wf_nf_int_map f [as \<mapsto> v]"
+          unfolding wf_nf_int_map_def
+          using assms(2)[simplified a wf_init_of_a.simps]
+          by (cases "num_fun_sig f"; auto)
+        ultimately
+        show ?thesis using True by simp
+      next
+        case (Some a)
+        with that[simplified a add_init_int.simps]
+        obtain fun_int' where
+          fun_int': "ni f = Some fun_int'"
+          "(f', m) \<in> Map.graph (ni(f \<mapsto> fun_int'(as \<mapsto> v)))"
+          by simp
+        moreover
+        with \<open>f = f'\<close>
+        have m: "m = fun_int'(as \<mapsto> v)" by (metis fun_upd_same in_graphD option.sel)
+        moreover
+        from assms(2)[simplified a wf_init_of_a.simps]
+        obtain Ts where
+          Ts: "num_fun_sig f = Some Ts" by fastforce
+        moreover
+        have "list_all2 (is_of_type objT) as' Ts"
+          if "as' \<in> dom (fun_int'(as \<mapsto> v))" for as'
+        proof (cases "as = as'")
+          case True
+          from assms(2)[simplified a wf_init_nf_a.simps Ts this]
+          show ?thesis by auto
+        next
+          case False
+          with that 
+          have "as'\<in> dom fun_int'" by simp
+          with assms(1) fun_int'(1) Ts
+          show "list_all2 (is_of_type objT) as' Ts"
+            unfolding wf_nf_int_def wf_nf_int_map_def 
+            apply -
+            apply (drule bspec[where x = "(f, fun_int')"])
+             apply (rule in_graphI, assumption)
+            by simp
+        qed
+        ultimately
+        show ?thesis using \<open>f = f'\<close> wf_nf_int_map_def by auto
+      qed
+    next
+      case False
+      from that
+      have "(f', m) \<in> Map.graph ni" 
+        apply -
+        apply (subst (asm) a)
+        apply (subst (asm) add_init_int.simps)
+        apply (cases "ni f")
+        subgoal 
+          apply (simp) 
+          by (metis fun_upd_triv False)
+        subgoal for a
+          using False
+          by (auto simp: graph_fun_upd_None)
+        done
+      with assms(1)
+      show ?thesis unfolding wf_nf_int_def by blast 
+    qed
+    then show "wf_nf_int (add_init_int a ni)" unfolding wf_nf_int_def by blast
+  qed
 
 
-  text \<open>The initial world model is well-formed\<close>
+  lemma wf_nfi: "wf_nf_int nfi"
+  proof -
+    have "\<And>a. a \<in> set (init_nfs P) \<Longrightarrow> wf_init_nf_a a"
+      using wf_problem unfolding wf_problem_def by simp
+    moreover
+    have "wf_nf_int Map.empty" unfolding wf_nf_int_def using in_graphD by auto
+    ultimately
+    show "wf_nf_int nfi" 
+      unfolding nfi_def
+      using fold_invariant[where xs = "init_nfs P" and Q = wf_init_nf_a and P = wf_nf_int
+          and f = add_init_int] wf_add_one_init_ni
+      by blast
+  qed
+  
   lemma wf_I: "wf_world_model I"
-    using wf_problem
-    unfolding I_def wf_world_model_def wf_problem_def wf_problem_decs_def wf_domain_def wf_domain_decs_def
-    by safe
+    unfolding wf_world_model_def
+    using wf_ofi wf_nfi I_def wf_problem[simplified wf_problem_def]
+    by simp
 
   lemma wf_apply_pred_upd:
     assumes "wf_app_pred_upd u"
@@ -2682,12 +2901,12 @@ begin
     done
 
   lemma wf_apply_of_upd: 
-      assumes "wf_of_int objT ti" 
+      assumes "wf_of_int ti" 
               "wf_app_of_upd tu"
-        shows "wf_of_int objT (apply_of_upd tu ti)" (is "wf_of_int objT ?ti'")
+        shows "wf_of_int (apply_of_upd tu ti)" (is "wf_of_int ?ti'")
   proof (cases tu)
     case [simp]: (OFU f as v)
-    have "wf_of_arg_r_map objT f' (the (?ti' f'))"
+    have "wf_of_arg_r_map f' (the (?ti' f'))"
       if "f' \<in> dom ?ti'" for f'
     proof (cases "f = f'")
       case True
@@ -2723,8 +2942,8 @@ begin
              "fn as' = the (ti f') as'" 
              "f' \<in> dom ti"
           by (auto split: option.splits if_splits)
-        from \<open>wf_of_int objT ti\<close> \<open>f' \<in> dom ti\<close> 
-        have "wf_of_arg_r_map objT f' (the (ti f'))" unfolding wf_of_int_def by fast
+        from \<open>wf_of_int ti\<close> \<open>f' \<in> dom ti\<close> 
+        have "wf_of_arg_r_map f' (the (ti f'))" unfolding wf_of_int_def by fast
         with \<open>as' \<in> dom (the (ti f'))\<close> \<open>obj_fun_sig f' = Some (Ts, T)\<close>
         have "list_all2 (is_of_type objT) as' Ts 
           \<and> is_of_type objT (the (the (ti f') as')) T"
@@ -2740,7 +2959,7 @@ begin
         by (auto split: option.splits)
       with \<open>f' \<in> dom ?ti'\<close> \<open>wf_app_of_upd tu\<close> \<open>f \<noteq> f'\<close>
       have "f' \<in> dom ti" by (auto split: option.splits)
-      with \<open>wf_of_int objT ti\<close> \<open>the (apply_of_upd (OFU f as v) ti f') = the (ti f')\<close>
+      with \<open>wf_of_int ti\<close> \<open>the (apply_of_upd (OFU f as v) ti f') = the (ti f')\<close>
       show ?thesis unfolding wf_of_int_def by (auto split: option.splits)
     qed
     then show ?thesis unfolding wf_of_int_def by blast
@@ -2748,15 +2967,15 @@ begin
 
   lemma wf_apply_of_upds: 
       assumes "\<forall>u \<in> set tu. wf_app_of_upd u"
-              "wf_of_int objT ti" 
-        shows "wf_of_int objT (fold apply_of_upd tu ti)"
+              "wf_of_int ti" 
+        shows "wf_of_int (fold apply_of_upd tu ti)"
   using assms by (induction tu arbitrary: ti; auto simp: wf_apply_of_upd)
   
   lemma wf_apply_nf_upd: (* TODO: clean up? *)
-        assumes "wf_nf_int objT ni" 
+        assumes "wf_nf_int ni" 
                 "wf_app_nf_upd nu"
                 "nf_upd_defined' ni nu"
-          shows "wf_nf_int objT (apply_nf_upd nu ni)" (is "wf_nf_int objT ?ni'")
+          shows "wf_nf_int (apply_nf_upd nu ni)" (is "wf_nf_int ?ni'")
   proof (cases nu)
     case [simp]: (NFU n op as v)
     consider "op = Assign" 
@@ -2768,7 +2987,7 @@ begin
       "num_fun_sig n = Some Ts" 
       using nf_args_well_typed_def by fastforce
 
-    have "wf_nf_int_map objT n' m" 
+    have "wf_nf_int_map n' m" 
       if "(n', m) \<in> Map.graph ?ni'" for n' m
     proof cases
       assume "n' = n"
@@ -2804,10 +3023,10 @@ begin
             have "as' \<in> dom m'" by auto
             from \<open>ni n = Some m'\<close> 
             have "(n, m') \<in> Map.graph ni" using in_graphI by fast
-            with \<open>wf_nf_int objT ni\<close>
-            have "wf_nf_int_map objT n m'" unfolding wf_nf_int_def by blast
+            with \<open>wf_nf_int ni\<close>
+            have "wf_nf_int_map n m'" unfolding wf_nf_int_def by blast
             with \<open>n' = n\<close>
-            have "wf_nf_int_map objT n' m'" by blast
+            have "wf_nf_int_map n' m'" by blast
             with \<open>as' \<in> dom m'\<close> \<open>num_fun_sig n = Some Ts\<close> \<open>n' = n\<close>
             show ?thesis unfolding wf_nf_int_map_def by auto
           qed
@@ -2835,10 +3054,10 @@ begin
           have "as' \<in> dom m'" by (cases op; auto split: option.splits)
           from \<open>ni n = Some m'\<close> 
           have "(n, m') \<in> Map.graph ni" using in_graphI by fast
-          with \<open>wf_nf_int objT ni\<close>
-          have "wf_nf_int_map objT n m'" unfolding wf_nf_int_def by blast
+          with \<open>wf_nf_int ni\<close>
+          have "wf_nf_int_map n m'" unfolding wf_nf_int_def by blast
           with \<open>n' = n\<close>
-          have "wf_nf_int_map objT n' m'" by blast
+          have "wf_nf_int_map n' m'" by blast
           with \<open>as' \<in> dom m'\<close> \<open>num_fun_sig n = Some Ts\<close> \<open>n' = n\<close>
           show ?thesis unfolding wf_nf_int_map_def by auto
         qed
@@ -2852,7 +3071,7 @@ begin
       have "\<exists>f. ?ni' = ni(n \<mapsto> upd_nf_int f op (map the as) (the (f (map the as))) (the v))" by (auto split: option.splits)
       ultimately
       have "(n', m) \<in> Map.graph ni" by (metis fun_upd_other in_graphD in_graphI that)
-      with \<open>wf_nf_int objT ni\<close>
+      with \<open>wf_nf_int ni\<close>
       show ?thesis unfolding wf_nf_int_def by fast
     qed
     then
@@ -2906,8 +3125,8 @@ begin
   lemma wf_apply_nf_upds: 
     assumes "\<forall>u \<in> set upds. wf_app_nf_upd u"
             "\<forall>u \<in> set upds. nf_upd_defined' ni u"
-            "wf_nf_int objT ni" 
-      shows "wf_nf_int objT (fold apply_nf_upd upds ni)"
+            "wf_nf_int ni" 
+      shows "wf_nf_int (fold apply_nf_upd upds ni)"
     using assms
     by (induction upds arbitrary: ni; auto simp: wf_apply_nf_upd nf_upd_defined_inv)
 
@@ -2952,11 +3171,11 @@ begin
       show "wf_predicate objT p" by (auto simp: sym[OF Ball_set]) 
     qed 
     moreover
-    have "wf_of_int objT (fold apply_of_upd ous' oi)"
+    have "wf_of_int (fold apply_of_upd ous' oi)"
       using assms(1)[simplified M wf_world_model_def] assms(3)[simplified eff']
         wf_apply_of_upds by simp
     moreover
-    have "wf_nf_int objT (fold apply_nf_upd nus' ni)"
+    have "wf_nf_int (fold apply_nf_upd nus' ni)"
     proof -
       from eff'
       have "nus' = map (inst_nf_upd eM) (nf_upds eff)"
@@ -2973,9 +3192,9 @@ begin
         by (simp add: Ball_set)
       moreover
       from assms(1)[simplified M]
-      have "wf_nf_int objT ni" by (simp add: wf_world_model_def)
+      have "wf_nf_int ni" by (simp add: wf_world_model_def)
       ultimately
-      show "wf_nf_int objT (fold apply_nf_upd nus' ni)" using wf_apply_nf_upds by (simp add: Ball_set)
+      show "wf_nf_int (fold apply_nf_upd nus' ni)" using wf_apply_nf_upds by (simp add: Ball_set)
     qed
     ultimately
     show "wf_world_model (inst_apply_effect eM eff M)"

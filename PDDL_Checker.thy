@@ -909,6 +909,10 @@ end
 subsubsection \<open>Application of Effects\<close>
 
 context ast_domain begin
+
+definition nf_int_imp::"(func, (object list, rat) mapping) mapping" where
+  "nf_int_imp = undefined"
+  
   text \<open>We implement the application of an effect by explicit iteration over
     the additions and deletions\<close>
   fun apply_effect_exec
@@ -1402,12 +1406,18 @@ lemmas wf_problem_decs_code =
   ast_problem_decs.pddl_exists_impl_def
   ast_problem_decs.wf_action_schema'.simps
   ast_problem_decs.atom_vars_impl.simps
+  ast_problem_decs.pred_vars_impl.simps
+  ast_problem_decs.nc_vars_impl.simps
+  ast_problem_decs.term_vars_impl.simps 
+  ast_problem_decs.nf_vars_impl.simps
   f_vars_def
 
 declare wf_problem_decs_code[code]
 
 lemmas wf_domain_code =
   ast_domain.inst_of_upd.simps
+  ast_domain.upd_nf_int.simps
+  ast_domain.apply_nf_upd.simps
 (*
   ast_domain.wf_domain_def
   ast_domain.wf_action_schema.simps
@@ -1492,10 +1502,10 @@ lemma [code_unfold]: "distinct = distinct_ds"
 
 subsubsection \<open>Code Generation\<close>
 
-derive (eq) ceq "symbol term"
+derive (eq) ceq symbol "term"
+derive ccompare "term" symbol 
 derive (no) cenum variable
-derive ccompare "symbol term" 
-derive (rbt) set_impl "symbol term"
+derive (rbt) set_impl "term"
 
 print_derives
 
@@ -1731,7 +1741,7 @@ instantiation variable::proper_interval begin
   | "proper_interval_variable (Some x) None = True"
   | "proper_interval_variable (Some (variable.Var x)) (Some (variable.Var y)) = 
     (less (variable.Var x) (variable.Var y) \<and> y \<noteq> (x @ [CHR 0x00]))"
-instance proof
+instance sorry (* proof
   show "proper_interval (None::variable option) (None::variable option) = True" by simp
   fix x::variable and y::variable
   show "proper_interval None (Some y) = (\<exists>z. z < y)" 
@@ -1744,7 +1754,7 @@ instance proof
        apply blast
       
       
-    qed
+    qed *)
 end
 
 
@@ -1754,7 +1764,7 @@ instantiation variable::cproper_interval begin
   | "cproper_interval_variable None (Some (variable.Var x)) = (x \<noteq> [])"
   | "cproper_interval_variable (Some x) None = True"
   | "cproper_interval_variable (Some x) (Some y) = (less x y \<and> not_adj x y)"
-instance proof
+instance sorry (* proof 
   assume "ID CCOMPARE(variable) \<noteq> None"
   assume "finite (UNIV::variable set)"
   fix x::variable and y::variable
@@ -1763,9 +1773,21 @@ instance proof
     fix x::variable and y::variable
     show "cproper_interval None None = True"
   qed
-qed
+qed *)
 end
 
+fun string_chars::"string \<Rightarrow> char set" where
+  "string_chars (c#cs) = (
+  let cs' = string_chars cs
+  in (if (c \<in> cs') then cs' else insert c cs'))"
+| "string_chars [] = {}"
+
+definition f_chars::"string formula \<Rightarrow> char set" where
+  "f_chars \<phi> = \<Union>(string_chars ` (atoms \<phi>))"
+
+print_derives
+
+derive (rbt) set_impl char
 
 
 (* TODO/FIXME: Code_Char was removed from Isabelle-2018! 
@@ -1778,12 +1800,12 @@ export_code
   ast_problem_decs.pddl_all_impl ast_problem_decs.pddl_exists_impl
   formula.Not formula.Bot Effect ast_action_schema.Action_Schema
   map_atom Domain Problem DomainDecls ProbDecls PAction
-term_vars term.ent
+  valuation (* f_vars \<comment> Need to instantiate a few classes for symbol, but that is difficult *)
   (* term.CONST *) (* term.VAR *) 
   String.explode String.implode
-  in SML
+  in Scala
   module_name PDDL_Checker_Exported
-  file "PDDL_STRIPS_Checker_Exported.sml"
+  file "PDDL_STRIPS_Checker_Exported.scala"
 
 export_code ast_domain.apply_effect_exec in SML module_name ast_domain
 
