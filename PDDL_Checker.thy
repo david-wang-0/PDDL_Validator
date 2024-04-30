@@ -13,6 +13,7 @@ imports
   "HOL-Library.Cardinality"
 
   "Containers.Containers"
+  "Containers.Set_Linorder"
 begin
 
 subsection \<open>Generic DFS Reachability Checker\<close>
@@ -1491,7 +1492,8 @@ lemma [code_unfold]: "distinct = distinct_ds"
 
 subsubsection \<open>Code Generation\<close>
 
-derive (eq) ceq  "symbol term" 
+derive (eq) ceq "symbol term"
+derive (no) cenum variable
 derive ccompare "symbol term" 
 derive (rbt) set_impl "symbol term"
 
@@ -1504,19 +1506,265 @@ lemma "CARD(variable) = 0"
   using card_eq_0_iff
   using [[simp_trace_new]]
   apply simp
+  sorry
+find_theorems name: "nat*inf"
+
+datatype test = Test1 | Test2
+
+lemma "UNIV = {Test1, Test2}"
+  apply (rule UNIV_eq_I)
+  subgoal for x
+    apply (cases x)
+    by simp+
+  done
+
+value "UNIV::string set"
+
+find_theorems name: "String*UNIV"
+
+thm UNIV_eq_I insert_iff
+
+lemma [simp]: "CARD(test) = 2"
+  by (meson UNIV_I card_2_iff' test.distinct(2) test.exhaust)
+
+value "length (replicate 4 CHR ''A'')"
+
+lemma "infinite (range (\<lambda>n. replicate n CHR ''A''))"
+  thm finite_range_imageI [of _ length]
+  apply (auto dest: finite_range_imageI [of _ length])
+  done
+
+lemma "infinite (range (\<lambda>n. length (replicate n CHR ''B'')))"
+  apply (subst length_replicate)
+  using [[simp_trace]]
+  by simp
+
+thm Finite_Set.infinite_UNIV_nat
+
+thm surj_def
+
+lemma endo_inj_surj: "finite A \<Longrightarrow> f ` A \<subseteq> A \<Longrightarrow> inj_on f A \<Longrightarrow> f ` A = A"
+  by (simp add: card_seteq card_image)
+
+lemma finite_UNIV_inj_surj: "finite(UNIV:: 'a set) \<Longrightarrow> inj f \<Longrightarrow> surj f"
+  for f :: "'a \<Rightarrow> 'a"
+  by (fastforce simp:surj_def dest!: endo_inj_surj)
+
+lemma infinite_UNIV_nat [iff]: "infinite (UNIV :: nat set)"
+proof
+  thm endo_inj_surj
+  assume "finite (UNIV :: nat set)" 
+    (* given a finite universal set, any function from the set to itself
+       is surjective (\<forall>y. \<exists>x . f(x) = y) 
+        if it is injective (f(a) = f(b) \<Longrightarrow> a = b)*)
+  with finite_UNIV_inj_surj [of Suc] show False
+    by simp (blast dest: Suc_neq_Zero surjD)
+qed
+
+lemma "range (\<lambda>n. n) \<equiv> UNIV"
+  using [[simp_trace]]
+  by simp
+find_theorems name: "length*rep"
+
+thm ex_new_if_finite finite.emptyI finite_insert insert_iff test.exhaust UNIV_I finite_maxlen length_replicate less_irrefl
+lemma infinite_literal:
+  "infinite (UNIV :: String.literal set)"
+proof -
+  define S where "S = range (\<lambda>n. replicate n CHR ''A'')"
+  have "inj_on String.implode S"
+  proof (rule inj_onI)
+    fix cs ds
+    assume "String.implode cs = String.implode ds"
+    then have "String.explode (String.implode cs) = String.explode (String.implode ds)"
+      by simp
+    moreover assume "cs \<in> S" and "ds \<in> S"
+    ultimately show "cs = ds"
+      by (auto simp add: S_def)
+  qed
+  thm finite_range_imageI [of _ length]
+  moreover have "infinite S"
+    by (auto simp add: S_def dest: finite_range_imageI [of _ length])
+  ultimately have "infinite (String.implode ` S)"
+    thm finite_image_iff
+    by (simp add: finite_image_iff)
+  then show ?thesis
+    thm finite_subset
+    by (auto intro: finite_subset)
+qed
+
+axiomatization a::bool and b::bool
+  where R1: "a \<Longrightarrow> b"
+
+
+lemma "a \<Longrightarrow> b"
+  by (rule R1)
+
+lemma "\<not>b \<Longrightarrow> \<not>a"
+  by (auto intro: R1)
+
+
+thm finite_subset
+
+  
+
+instantiation test :: card_UNIV begin 
+definition "finite_UNIV = Phantom(test) True"
+definition "card_UNIV = Phantom(test) 2"
+instance 
+  apply (intro_classes)
+   apply (simp_all add: finite_UNIV_test_def card_UNIV_test_def)
+  by (metis ex_new_if_finite finite.emptyI finite_insert insert_iff test.exhaust)
+end
+
 
 (* is it possible to get the original definition of f_vars working? *)
 instantiation variable::finite_UNIV 
 begin
 definition "finite_UNIV = Phantom(variable) False"
+lemma "infinite (UNIV::string set)"
+  by (rule infinite_UNIV_listI)
+
+lemma UNIV_var_def: "(UNIV::variable set) = variable.Var ` (UNIV::string set)"
+  apply (rule UNIV_eq_I)
+  subgoal for x
+    apply (cases x)
+    subgoal for s
+      by blast
+    done
+  done
+
+
+lemma inf: "infinite (UNIV::variable set)"
+  unfolding UNIV_var_def
+  find_theorems name: "finite*ran"
+  thm finite_imageD
+  apply (auto dest: finite_range_imageI)
+  apply (drule finite_imageD)
+  using inj_def apply blast
+  by (simp add: infinite_UNIV_listI)
+  find_theorems name: finite_range
 instance 
-  apply (intro_classes; simp_all add: finite_UNIV_variable_def)
+  by (intro_classes; simp_all add: finite_UNIV_variable_def inf)
 end
 
-instantiation "term"::(type) finite_UNIV
-begin
+find_theorems name: "String*co"
 
+value "STR ''abc''"
+
+value "STR ''abc'' < STR ''bcd''"
+
+find_theorems name: "proper_interval*char"
+                         
+instantiation variable::ord begin
+  fun less_eq_variable::"variable \<Rightarrow> variable \<Rightarrow> bool" where
+    "less_eq_variable (variable.Var x) (variable.Var y) = (String.implode x \<le> String.implode y)"
+  
+  fun less_variable::"variable \<Rightarrow> variable \<Rightarrow> bool" where
+    "less_variable (variable.Var x) (variable.Var y) = (String.implode x < String.implode y)"
+instance proof
 qed
+end
+
+lemma "String.implode x < String.implode y \<longleftrightarrow> variable.Var x < variable.Var y"
+  by simp
+
+lemma "x < y \<longleftrightarrow> variable.Var (literal.explode x) < variable.Var (literal.explode y)"
+  by simp
+
+lemma variable_bot: "variable.Var [] \<le> y"
+proof -
+  have "(0::String.literal) \<le> s" for s
+    apply (induction s)
+    subgoal for l
+      find_theorems name: "less*eq*li"
+      unfolding String.less_eq_literal_def
+      by (simp add: zero_literal.rep_eq)
+    done
+  moreover
+  have "literal.explode 0 = []" by (rule zero_literal.rep_eq)
+  ultimately
+  have "\<forall>y. variable.Var [] \<le> variable.Var y"
+    by (metis String.implode_explode_eq less_eq_variable.simps)
+  thus "variable.Var [] \<le> y"
+    by (cases y; auto)
+qed
+
+lemma var_le_not_less: "(x::variable) \<le> y \<Longrightarrow> \<not>(y < x)"
+  by (metis leD less_eq_variable.elims(2) less_variable.elims(2) variable.inject)
+
+lemma inj_var: "inj variable.Var"
+  using inj_def by blast
+lemma surj_var: "surj variable.Var"
+  unfolding surj_def
+  by (rule variable.nchotomy)
+lemma bij_var: "bij variable.Var"
+  using inj_var surj_var bij_def
+  by blast
+
+value "String.implode [CHR 0x21]"
+
+lemma "(x::variable) < y \<longleftrightarrow> x \<le> y \<and> x \<noteq> y"
+  apply (cases x; cases y)
+  subgoal for x' y'
+    apply (rule ssubst[of x], assumption)
+    apply (rule ssubst[of y], assumption)
+    
+
+lemma "x \<noteq> [] \<Longrightarrow> \<exists>y. y < variable.Var x"
+proof -
+  assume a: "x \<noteq> []"
+  have "variable.Var [] \<le> variable.Var x"
+    using variable_bot by blast
+  moreover
+  have "variable.Var [] \<noteq> variable.Var x"
+    using bij_var a by blast
+  ultimately
+  have "variable.Var [] < variable.Var x"
+    
+qed
+
+instantiation variable::proper_interval begin
+  (* To do: redefine considering that the 7th bit cannot be set *)
+  fun proper_interval_variable::"variable proper_interval" where
+    "proper_interval_variable None None = True"
+  | "proper_interval_variable None (Some (variable.Var x)) = (x \<noteq> [])"
+  | "proper_interval_variable (Some x) None = True"
+  | "proper_interval_variable (Some (variable.Var x)) (Some (variable.Var y)) = 
+    (less (variable.Var x) (variable.Var y) \<and> y \<noteq> (x @ [CHR 0x00]))"
+instance proof
+  show "proper_interval (None::variable option) (None::variable option) = True" by simp
+  fix x::variable and y::variable
+  show "proper_interval None (Some y) = (\<exists>z. z < y)" 
+    apply (cases y)
+    subgoal for v
+      apply (rule ssubst[of y], assumption)
+      apply (subst proper_interval_variable.simps(2))
+      using variable_bot[THEN var_le_not_less]
+      apply (cases v)
+       apply blast
+      
+      
+    qed
+end
+
+
+instantiation variable::cproper_interval begin
+  fun cproper_interval_variable::"variable proper_interval" where
+    "cproper_interval_variable None None = True"
+  | "cproper_interval_variable None (Some (variable.Var x)) = (x \<noteq> [])"
+  | "cproper_interval_variable (Some x) None = True"
+  | "cproper_interval_variable (Some x) (Some y) = (less x y \<and> not_adj x y)"
+instance proof
+  assume "ID CCOMPARE(variable) \<noteq> None"
+  assume "finite (UNIV::variable set)"
+  fix x::variable and y::variable
+  show "class.proper_interval cless (cproper_interval :: variable proper_interval)"
+  proof
+    fix x::variable and y::variable
+    show "cproper_interval None None = True"
+  qed
+qed
+end
 
 
 
