@@ -1085,7 +1085,6 @@ begin
     and forward-references to the concept of world model.
   \<close>
 
-  
   definition wf_of_arg_r_map::"func \<Rightarrow> (object list \<rightharpoonup> object) \<Rightarrow> bool" where
     "wf_of_arg_r_map f f' \<equiv> (case obj_fun_sig f of 
       None \<Rightarrow> False 
@@ -2871,7 +2870,6 @@ begin
     qed
     then show "wf_nf_int (add_init_int a ni)" unfolding wf_nf_int_def by blast
   qed
-
 
   lemma wf_nfi: "wf_nf_int nfi"
   proof -
