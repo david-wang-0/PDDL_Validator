@@ -976,8 +976,8 @@ begin
         using assms wf_fmla_as_wf_atoms 
             wf_atom_imp_ent_in_ty_env f_ent_def by fast
     
-    end \<comment> \<open>Context fixing \<open>ty_ent\<close>\<close>
-
+end \<comment> \<open>Context fixing \<open>ty_ent\<close>\<close>
+  
   definition constT :: "object \<rightharpoonup> type" where
     "constT \<equiv> map_of (consts DD)"
              
@@ -1190,6 +1190,7 @@ text \<open>Important: thinking in terms of conditional lists of effects vs filt
     "apply_nf_upd (NFU n op as v) ni = (
       let f' = (case ni n of Some f' \<Rightarrow> f' | None \<Rightarrow> Map.empty)
       in ni(n \<mapsto> (upd_nf_int f' op (map the as) (the (f' (map the as))) (the v))))"
+
 
   text \<open>It seems to be agreed upon that, in case of a contradictory effect,
     addition overrides deletion. We model this behaviour by first executing
@@ -2901,65 +2902,79 @@ begin
     done
 
   lemma wf_apply_of_upd: 
-      assumes "wf_of_int ti" 
-              "wf_app_of_upd tu"
-        shows "wf_of_int (apply_of_upd tu ti)" (is "wf_of_int ?ti'")
-  proof (cases tu)
-    case [simp]: (OFU f as v)
-    have "wf_of_arg_r_map f' (the (?ti' f'))"
-      if "f' \<in> dom ?ti'" for f'
+      assumes "wf_of_int oi" 
+              "wf_app_of_upd ou"
+        shows "wf_of_int (apply_of_upd ou oi)" (is "wf_of_int ?oi'")
+ proof (cases ou)
+    case upd [simp]: (OFU f as v)
+    have "wf_of_arg_r_map f' fn"
+      if 1: "(f', fn) \<in> Map.graph ?oi'" for f' fn
     proof (cases "f = f'")
       case True
-      with \<open>wf_app_of_upd tu\<close>
+      with \<open>wf_app_of_upd ou\<close>
       obtain Ts T where 
-        "obj_fun_sig f' = Some (Ts, T)" by (auto split: option.splits)
-      from True \<open>f' \<in> dom ?ti'\<close>
-      obtain fn where
-        "?ti' f' = Some fn"
-        "fn (map the as) = v" by (auto split: option.splits)
+        Ts: "obj_fun_sig f' = Some (Ts, T)" by (auto split: option.splits)
+      have "fn (map the as) = v"
+        apply (insert that[simplified upd apply_of_upd.simps]) 
+        by (drule in_graphD, cases "oi f", auto simp: True)
       have "list_all2 (is_of_type objT) as' Ts 
-          \<and> is_of_type objT (the (fn as')) T"
-        if "as' \<in> dom fn" for as'
+          \<and> is_of_type objT v' T"
+        if "(as', v') \<in> Map.graph fn" for as' v'
       proof (cases "map the as = as'")
         case True
-        with \<open>wf_app_of_upd tu\<close> \<open>obj_fun_sig f' = Some (Ts, T)\<close> \<open>f = f'\<close>
+        with \<open>wf_app_of_upd ou\<close> \<open>obj_fun_sig f' = Some (Ts, T)\<close> \<open>f = f'\<close>
         have "list_all2 ((is_of_type objT) o the) as Ts " by (auto split: option.splits)
         with \<open>map the as = as'\<close>
         have "list_all2 (is_of_type objT) as' Ts" 
           by (auto split: option.splits simp: list_all2_conv_all_nth)
         with \<open>map the as = as'\<close> \<open>fn (map the as) = v\<close>
         have "fn as' = v" by blast
-        with \<open>as' \<in> dom fn\<close>
-        have "v \<noteq> None" by fast
-        with \<open>wf_app_of_upd tu\<close> \<open>f = f'\<close> \<open>obj_fun_sig f' = Some (Ts, T)\<close>
+        with that True
+        have "v \<noteq> None" using in_graphD by fast
+        with \<open>wf_app_of_upd ou\<close> \<open>f = f'\<close> \<open>obj_fun_sig f' = Some (Ts, T)\<close>
         have "is_of_type objT (the v) T" by auto
-        with \<open>fn as' = v\<close> \<open>list_all2 (is_of_type objT) as' Ts\<close>
-        show ?thesis by blast
+        with \<open>fn as' = v\<close> \<open>list_all2 (is_of_type objT) as' Ts\<close> that[THEN in_graphD]
+        show ?thesis by fastforce
       next
         case False
-        with \<open>?ti' f' = Some fn\<close> \<open>f' \<in> dom ?ti'\<close> \<open>as' \<in> dom fn\<close>
-        have "as' \<in> dom (the (ti f'))" 
-             "fn as' = the (ti f') as'" 
-             "f' \<in> dom ti"
-          by (auto split: option.splits if_splits)
-        from \<open>wf_of_int ti\<close> \<open>f' \<in> dom ti\<close> 
-        have "wf_of_arg_r_map f' (the (ti f'))" unfolding wf_of_int_def by fast
-        with \<open>as' \<in> dom (the (ti f'))\<close> \<open>obj_fun_sig f' = Some (Ts, T)\<close>
-        have "list_all2 (is_of_type objT) as' Ts 
-          \<and> is_of_type objT (the (the (ti f') as')) T"
-          unfolding wf_of_arg_r_map_def by simp
-        with \<open>fn as' = the (ti f') as'\<close>
-        show ?thesis by presburger
+        with 1 \<open>(as', v') \<in> Map.graph fn\<close>
+        have "\<exists>fn'. (f', fn') \<in> Map.graph oi \<and> fn as' = fn' as'"
+          apply -
+          apply (drule in_graphD)
+          apply (drule in_graphD)
+          apply (subst (asm) upd)
+          apply (subst (asm) apply_of_upd.simps)
+          apply (cases "oi f")
+          subgoal by (auto simp: \<open>f = f'\<close>)
+          subgoal for fn'
+            apply (simp add: \<open>f = f'\<close>)
+            apply (rule exI[of _ fn'])
+            apply (drule in_graphI[of oi])
+            by auto
+          done
+        then obtain fn' where
+          "(f', fn') \<in> Map.graph oi"
+          "(as', v') \<in> Map.graph fn'"
+          by (metis \<open>(as', v') \<in> Map.graph fn\<close> in_graphD in_graphI)
+        then show ?thesis using assms(1) 
+          unfolding wf_of_int_def wf_of_arg_r_map_def
+          apply -
+          apply (drule bspec, assumption)
+          by (auto simp: Ts)
       qed
-      with \<open>obj_fun_sig f' = Some (Ts, T)\<close> \<open>?ti' f' = Some fn\<close>
+      with \<open>obj_fun_sig f' = Some (Ts, T)\<close>
       show ?thesis by (auto split: option.splits prod.splits simp: wf_of_arg_r_map_def)
     next
       case False
-      hence "the (apply_of_upd (OFU f as v) ti f') = the (ti f')"
+      hence "apply_of_upd (OFU f as v) oi f' = oi f'"
         by (auto split: option.splits)
-      with \<open>f' \<in> dom ?ti'\<close> \<open>wf_app_of_upd tu\<close> \<open>f \<noteq> f'\<close>
-      have "f' \<in> dom ti" by (auto split: option.splits)
-      with \<open>wf_of_int ti\<close> \<open>the (apply_of_upd (OFU f as v) ti f') = the (ti f')\<close>
+      with \<open>(f', fn) \<in> Map.graph ?oi'\<close>
+      have "(f', fn) \<in> Map.graph oi" apply - 
+        unfolding upd 
+        apply (drule in_graphD)
+        apply (rule in_graphI)
+        by auto
+      with \<open>wf_of_int oi\<close>
       show ?thesis unfolding wf_of_int_def by (auto split: option.splits)
     qed
     then show ?thesis unfolding wf_of_int_def by blast
@@ -2971,17 +2986,13 @@ begin
         shows "wf_of_int (fold apply_of_upd tu ti)"
   using assms by (induction tu arbitrary: ti; auto simp: wf_apply_of_upd)
   
-  lemma wf_apply_nf_upd: (* TODO: clean up? *)
+  lemma wf_apply_nf_upd:
         assumes "wf_nf_int ni" 
                 "wf_app_nf_upd nu"
                 "nf_upd_defined' ni nu"
           shows "wf_nf_int (apply_nf_upd nu ni)" (is "wf_nf_int ?ni'")
   proof (cases nu)
     case [simp]: (NFU n op as v)
-    consider "op = Assign" 
-      | "op = ScaleDown" 
-      | "op \<noteq> ScaleDown \<and> op \<noteq> Assign" by blast
-    note c = this
     from \<open>wf_app_nf_upd nu\<close>
     obtain Ts where
       "num_fun_sig n = Some Ts" 
@@ -3634,8 +3645,7 @@ lemma conditional_effect_list_sem:
       and "active = active_effects M inst_ces"
       and "applicable = map ((inst_effect M) o snd) active"
     shows "foldr apply_effect applicable M = apply_conditional_effect_list inst_ces M"
-  using assms unfolding apply_conditional_effect_list_def
-  by (auto simp: Let_def)
+  
 
 lemma apply_conditional_effects_in_action_schema_sem:
   assumes "a = (Action_Schema n params pre ces)"
