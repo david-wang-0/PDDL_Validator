@@ -181,6 +181,7 @@ datatype exec_world_model =
 definition to_nested_map::"('a, ('b, 'c) mapping) mapping \<Rightarrow> 'a \<rightharpoonup> 'b \<rightharpoonup> 'c" where
   "to_nested_map = Mapping.lookup o (Mapping.map_values (\<lambda>k v. Mapping.lookup v))"
 
+
 fun exec_wm_to_wm::"exec_world_model \<Rightarrow> world_model" where
   "exec_wm_to_wm (EWM p oi ni) = World_Model p (to_nested_map oi) (to_nested_map ni)"
 
@@ -249,27 +250,40 @@ proof (induction x)
   qed
 qed auto
 
-fun nc_val_impl::"exec_world_model \<Rightarrow> object term num_comp \<Rightarrow> bool" where
-  "nc_val_impl M (Num_Eq x y) = (case (nf_val_impl M x, nf_val_impl M y) of
+context
+  fixes term_val::"object term \<rightharpoonup> object"
+    and nf_val::"object term num_fluent \<rightharpoonup> rat"
+begin
+
+fun nc_val'::"object term num_comp \<Rightarrow> bool" where
+  "nc_val' (Num_Eq x y) = (case (nf_val x, nf_val y) of
       (Some x, Some y)  \<Rightarrow> x = y | _ \<Rightarrow> False)"
-  | "nc_val_impl M (num_comp.Le x y) = (case (nf_val_impl M x, nf_val_impl M y) of
+  | "nc_val'(num_comp.Le x y) = (case (nf_val x, nf_val y) of
       (Some x, Some y)  \<Rightarrow> x \<le> y | _ \<Rightarrow> False)"
-  | "nc_val_impl M (num_comp.Lt x y) = (case (nf_val_impl M x, nf_val_impl M y) of
+  | "nc_val'(num_comp.Lt x y) = (case (nf_val x, nf_val y) of
       (Some x, Some y)  \<Rightarrow> x < y | _ \<Rightarrow> False)"
 
-lemma nc_val_impl_correct: "nc_val_impl M x = nc_val (exec_wm_to_wm M) x"
-  by (cases x; auto simp: nf_val_impl_correct)
-
-fun pred_inst_impl::"exec_world_model \<Rightarrow> object term pred \<Rightarrow> object pred option" where
-  "pred_inst_impl M (Pred p as) = (let arg_vals = map (\<lambda>t. term_val_impl M t) as
+fun pred_inst'::"object term pred \<Rightarrow> object pred option" where
+  "pred_inst' (Pred p as) = (let arg_vals = map (\<lambda>t. term_val t) as
         in (if (list_all (\<lambda>x. x \<noteq> None) arg_vals) 
             then Some (Pred p (map the arg_vals)) 
             else None))"
-  | "pred_inst_impl M (pred.Eq t1 t2) = (case (term_val_impl M t1, term_val_impl M t2) of
+  | "pred_inst' (pred.Eq t1 t2) = (case (term_val t1, term_val t2) of
       (Some x, Some y) \<Rightarrow> Some (pred.Eq x y)
     | _                \<Rightarrow> None)"
 
+end
+
+definition "nc_val_impl M = nc_val' (nf_val_impl M)"
+
+lemma nc_val_impl_correct: "nc_val_impl M x = nc_val (exec_wm_to_wm M) x"
+  unfolding nc_val_impl_def
+  by (cases x; auto simp: nf_val_impl_correct)
+
+definition "pred_inst_impl M = pred_inst' (term_val_impl M)"
+
 lemma pred_inst_impl_correct: "pred_inst_impl M x = pred_inst (exec_wm_to_wm M) x"
+  unfolding pred_inst_impl_def
   by (induction x; auto simp: term_val_impl_correct[THEN ext])
 
 fun pred_val_impl::"exec_world_model \<Rightarrow> object term pred \<Rightarrow> bool" where
@@ -986,12 +1000,12 @@ qed
   definition pddl_exists_impl::"(variable \<times> type) list \<Rightarrow> schematic_formula \<Rightarrow> schematic_formula" where
     "pddl_exists_impl vts \<phi> = foldr (\<lambda>(v, t) f. exists_impl v t f) vts \<phi>"
 
-  lemma pddl_all_impl_correct': "pddl_all_impl ps \<phi> = pddl_all ps \<phi>"
+  lemma pddl_all_impl_correct: "pddl_all_impl vts \<phi> = pddl_all vts \<phi>"
     unfolding pddl_all_def pddl_all_impl_def
     using all_impl_correct
     by presburger
 
-  lemma pddl_exists_impl_correct': "pddl_exists_impl ps \<phi> = pddl_exists ps \<phi>"
+  lemma pddl_exists_impl_correct: "pddl_exists_impl vts \<phi> = pddl_exists vts \<phi>"
     unfolding pddl_exists_def pddl_exists_impl_def
     using exists_impl_correct
     by presburger
@@ -999,11 +1013,307 @@ qed
 end
 
 
-subsubsection \<open>Application of Effects\<close>
+subsection \<open>Semantics of actions in dynamic world state.\<close>
 
 context ast_domain begin
 
-  
+context 
+  fixes term_val::"object term \<rightharpoonup> object"
+  fixes nf_val::"object term num_fluent \<rightharpoonup> rat"
+  fixes pred_inst::"object term pred \<rightharpoonup> object pred"
+begin
+
+fun inst_of_upd'::"object term of_upd \<Rightarrow> instantiated_of_upd" where
+  "inst_of_upd' (OF_Upd f args r) = (OFU f (map term_val args) (term_val (the r)))"
+
+fun inst_nf_upd'::"object term nf_upd \<Rightarrow> instantiated_nf_upd" where
+  "inst_nf_upd' (NF_Upd f op args r) = (
+    let args' = map term_val args
+    in NFU f op args' (nf_val r))"
+
+fun inst_effect'::" ground_effect \<Rightarrow> fully_instantiated_effect" where
+    "inst_effect' (Effect a d tu nu) = (
+      Eff (map pred_inst a) 
+          (map pred_inst d) 
+          (map inst_of_upd' tu) 
+          (map inst_nf_upd' nu))"
+end
+
+definition "inst_of_upd_impl M = inst_of_upd' (term_val_impl M)"
+
+lemma inst_of_upd_impl_correct: "inst_of_upd_impl M u = inst_of_upd (exec_wm_to_wm M) u"
+  unfolding inst_of_upd_impl_def
+  by (cases u; auto simp: term_val_impl_correct)
+
+definition "inst_nf_upd_impl M = inst_nf_upd' (term_val_impl M) (nf_val_impl M)"
+
+lemma inst_nf_upd_impl_correct: "inst_nf_upd_impl M u = inst_nf_upd (exec_wm_to_wm M) u"
+  unfolding inst_nf_upd_impl_def
+  by (cases u; auto simp: term_val_impl_correct nf_val_impl_correct)
+
+definition "inst_effect_impl M = inst_effect' (term_val_impl M) (nf_val_impl M) (pred_inst_impl M)"
+
+lemma inst_effect_impl_correct: "inst_effect_impl M eff = inst_effect (exec_wm_to_wm M) eff"
+  unfolding inst_effect_impl_def
+  by (cases eff; auto simp:
+      inst_nf_upd_impl_correct[simplified inst_nf_upd_impl_def] 
+      inst_of_upd_impl_correct[simplified inst_of_upd_impl_def]
+      pred_inst_impl_correct)
+
+
+
+fun apply_of_upd_impl::"instantiated_of_upd \<Rightarrow> mp_ofi \<Rightarrow> mp_ofi" where
+  "apply_of_upd_impl (OFU f as v) oi = (
+      let m' = case (Mapping.lookup oi f) of Some m' \<Rightarrow> m' | None \<Rightarrow> Mapping.empty
+      in case v of 
+        Some v \<Rightarrow> Mapping.update f (Mapping.update (map the as) v m') oi
+      | None   \<Rightarrow> Mapping.update f (Mapping.delete (map the as) m') oi
+    )"
+
+lemma to_nested_map_None: "to_nested_map M x = None \<longleftrightarrow> Mapping.lookup M x = None"
+  unfolding to_nested_map_def
+  by (simp add: lookup_map_values)
+
+lemma to_nested_map_NoneE: "to_nested_map M x = None \<Longrightarrow> Mapping.lookup M x = None"
+  using to_nested_map_None
+  by fastforce
+
+lemma to_nested_map_NoneI: "Mapping.lookup M x = None \<Longrightarrow> to_nested_map M x = None"
+  using to_nested_map_None
+  by fastforce
+
+lemma to_nested_map_alt: "Mapping.lookup M x = Some v \<Longrightarrow> to_nested_map M x = Some (Mapping.lookup v)"
+  unfolding to_nested_map_def
+  by (metis Mapping.map_values_def comp_apply lookup_map_values option.simps(9))
+
+lemma apply_of_update_impl_correct: "to_nested_map (apply_of_upd_impl u ofi) = apply_of_upd u (to_nested_map ofi)"
+proof (rule ext; induction u)
+  fix x::func
+  and f::func
+  and as::"object option list"
+  and v::"object option"
+  let ?m1 = "to_nested_map (apply_of_upd_impl (OFU f as v) ofi)"
+  let ?m2 = "apply_of_upd (OFU f as v) (to_nested_map ofi)"
+  have case_None: "?m1 x = None \<longleftrightarrow> ?m2 x = None"
+  proof
+    assume "?m1 x = None"
+    hence 1: "Mapping.lookup (apply_of_upd_impl (OFU f as v) ofi) x = None"
+      by (subst (asm) to_nested_map_None)
+    hence 2: "f \<noteq> x"
+      by (cases "Mapping.lookup ofi f"; cases v; auto)
+    show "?m2 x = None" 
+      apply (insert 1 2)
+      apply (subst apply_of_upd.simps, subst (asm) apply_of_upd_impl.simps)
+      apply (subst (3) to_nested_map_def)
+      by (cases "Mapping.lookup ofi f"; simp add: Let_def lookup_map_values; cases v; simp add: to_nested_map_None)  
+  next
+    assume a: "?m2 x = None"
+    hence "f \<noteq> x" 
+      by (cases "to_nested_map ofi f"; auto)
+    with a
+    have "to_nested_map ofi x = None"
+      by (cases "to_nested_map ofi f"; auto)
+    hence "Mapping.lookup ofi x = None"
+      using to_nested_map_None by fastforce
+    with \<open>f \<noteq> x\<close>
+    have "Mapping.lookup (apply_of_upd_impl (OFU f as v) ofi) x = None" 
+      apply (subst apply_of_upd_impl.simps)
+      apply (cases "Mapping.lookup ofi f"; cases v)
+      by auto
+    then 
+    show "?m1 x = None" by (subst to_nested_map_None)
+  qed
+
+  show "?m1 x = ?m2 x"
+  proof (cases "?m1 x")
+    case None
+    then show ?thesis using case_None by auto
+  next
+    case m: (Some m)
+    then obtain m' where
+      m': "?m2 x = Some m'"
+      using case_None by auto
+    have "m as' = m' as'" for as'
+    proof (cases "f = x")
+      case True
+      show ?thesis
+      proof (cases "Mapping.lookup ofi f")
+        case None
+        hence "to_nested_map ofi f = None"
+          by (simp add: to_nested_map_None)
+        hence 1: "?m2 f = Some (Map.empty ((map the as) := v))"
+          by auto
+        show ?thesis
+        proof (cases v)
+          case None
+          have "Mapping.lookup (apply_of_upd_impl (OFU f as v) ofi) f = Some Mapping.empty"
+            using None \<open>Mapping.lookup ofi f = None\<close>
+            by auto
+          hence "?m1 f = Some Map.empty"
+            using to_nested_map_alt by fastforce
+          moreover
+          from None 1
+          have "?m2 f = Some Map.empty"
+            by simp 
+          ultimately
+          show ?thesis using m m' \<open>f = x\<close> by simp
+        next
+          case (Some v')
+          with 1
+          have "?m2 f = Some (Map.empty ((map the as) := v))"
+            by simp 
+          moreover
+          have "Mapping.lookup (apply_of_upd_impl (OFU f as v) ofi) f = Some (Mapping.update (map the as) v' Mapping.empty)"
+            using Some \<open>Mapping.lookup ofi f = None\<close>
+            by auto
+          hence "?m1 f = Some (Map.empty ((map the as) := v))"
+            using to_nested_map_alt Some by fastforce
+          ultimately 
+          show ?thesis using m m' \<open>f = x\<close> by simp
+        qed
+      next
+        case (Some a)
+        then obtain a' where
+         a': "to_nested_map ofi f = Some a'"
+          "a' = Mapping.lookup a"
+          using to_nested_map_alt by fast
+        hence 1: "?m2 f = Some (a' ((map the as) := v))"
+          by auto
+        show ?thesis
+        proof (cases v)
+          case None
+          have "Mapping.lookup (apply_of_upd_impl (OFU f as v) ofi) f = Some (Mapping.delete (map the as) a)"
+            using None \<open>Mapping.lookup ofi f = Some a\<close>
+            by auto
+          hence 2: "?m1 f = Some (Mapping.lookup (Mapping.delete (map the as) a))"
+            using to_nested_map_alt by fastforce
+          
+          from None 1
+          have "?m2 f = Some (a' ((map the as) := None))"
+            by simp 
+          from this 2
+          show ?thesis 
+            apply -
+            apply (subst (asm) (2) \<open>f = x\<close>)
+            apply (subst (asm) (3) \<open>f = x\<close>)
+            apply (subst (asm) m, subst (asm) m')
+            by (auto simp: a')
+        next
+          case (Some v')
+          have "Mapping.lookup (apply_of_upd_impl (OFU f as v) ofi) f = Some (Mapping.update (map the as) v' a)"
+            using Some \<open>Mapping.lookup ofi f = Some a\<close>
+            by auto
+          hence 2: "?m1 f = Some (Mapping.lookup (Mapping.update (map the as) v' a))"
+            using to_nested_map_alt by fastforce
+          
+          from Some 1
+          have "?m2 f = Some (a' ((map the as) := v))"
+            by simp 
+          from this 2
+          show ?thesis 
+            apply -
+            apply (subst (asm) (2) \<open>f = x\<close>)
+            apply (subst (asm) (3) \<open>f = x\<close>)
+            apply (subst (asm) m, subst (asm) m')
+            by (auto simp: a' Some)
+        qed
+      qed
+    next
+      case False
+      then have "Mapping.lookup (apply_of_upd_impl (OFU f as v) ofi) x = Mapping.lookup ofi x"
+        by (cases "Mapping.lookup ofi f"; cases v; auto)
+      then have "?m1 x = to_nested_map ofi x"
+        unfolding to_nested_map_def by (simp add: lookup_map_values)
+      moreover
+      from False
+      have "?m2 x = to_nested_map ofi x"
+        by (cases "to_nested_map ofi f"; cases v; auto)
+      ultimately
+      show ?thesis using m' m by simp
+    qed
+    with m m'
+    show ?thesis by auto
+  qed
+qed
+
+
+  fun upd_nf_int_impl::"(object list, rat) mapping \<Rightarrow> upd_op \<Rightarrow> object list \<Rightarrow> rat \<Rightarrow> rat \<Rightarrow> (object list, rat) mapping" where
+    "upd_nf_int_impl m Assign args old n = (Mapping.update args n m)"
+  | "upd_nf_int_impl m ScaleUp args old n = (Mapping.update args (old * n) m)"
+  | "upd_nf_int_impl m ScaleDown args old n = (Mapping.update args (old / n) m)"
+  | "upd_nf_int_impl m Increase args old n = (Mapping.update args (old + n) m)"
+  | "upd_nf_int_impl m Decrease args old n = (Mapping.update args (old - n) m)"
+
+  fun apply_nf_upd_impl::"instantiated_nf_upd \<Rightarrow> mp_nfi \<Rightarrow> mp_nfi" where
+    "apply_nf_upd_impl (NFU n op as v) ni = (
+      let f' = (case Mapping.lookup ni n of Some f' \<Rightarrow> f' | None \<Rightarrow> Mapping.empty)
+      in Mapping.update n (upd_nf_int_impl f' op (map the as) (the (Mapping.lookup f' (map the as))) (the v)) ni)"
+
+fun nf_upd_defined'_impl::"mp_nfi \<Rightarrow> instantiated_nf_upd \<Rightarrow> bool" where
+  "nf_upd_defined'_impl _ (NFU _ Assign _ _) = True"
+| "nf_upd_defined'_impl ni (NFU n _ args _) = (
+    case (Mapping.lookup ni n) of
+      Some f' \<Rightarrow> Mapping.lookup f' (map the args) \<noteq> None
+    | None \<Rightarrow> False
+)"
+
+lemma nf_upd_defined'_impl_correct: "nf_upd_defined'_impl ni x = nf_upd_defined' (to_nested_map ni) x"
+  apply (induction x)
+  subgoal for n op as v
+    apply (cases "op = Assign")
+    subgoal by simp
+    subgoal apply (cases "Mapping.lookup ni n")
+       apply (auto)
+
+lemma apply_nf_upd_impl_correct: 
+  assumes "wf_app_nf_upd u"
+      and "nf_upd_defined' (to_nested_map nfi) u"
+    shows "to_nested_map (apply_nf_upd_impl u nfi) = apply_nf_upd u (to_nested_map nfi)"
+proof (rule ext; induction u)
+  fix x::func
+  and n::func
+  and op::upd_op
+  and as::"object option list"
+  and v::"rat option"
+  let ?m1 = "to_nested_map (apply_nf_upd_impl (NFU n op as v) nfi)"
+  let ?m2 = "apply_nf_upd (NFU n op as v) (to_nested_map nfi)"
+
+  show "?m1 x = ?m2 x"
+  proof (cases "?m1 x")
+    case None
+    hence 1: "Mapping.lookup (apply_nf_upd_impl (NFU n op as v) nfi) x = None"
+      by (simp add: to_nested_map_None)
+    hence "n \<noteq> x"
+      by (cases "Mapping.lookup nfi n"; auto)
+    with 1
+    have "Mapping.lookup nfi x = None"
+      by (cases "Mapping.lookup nfi n"; auto)
+    hence "to_nested_map nfi x = None" by (simp add: to_nested_map_None)
+    with 1
+    have "apply_nf_upd (NFU n op as v) (to_nested_map nfi) x = None"
+      by (auto simp: Let_def)
+    with None
+    show ?thesis by simp
+  next
+    case (Some a)
+    then show ?thesis
+    proof (cases "n = x")
+      case True
+      have "?m1 n = ?m2 n"
+      proof 
+
+      qed
+      then show ?thesis sorry
+    next
+      case False
+      hence "Mapping.lookup (apply_nf_upd_impl (NFU n op as v) nfi) x = Mapping.lookup nfi x"
+        by (cases "Mapping.lookup nfi n"; auto)
+      hence "?m1 x = to_nested_map nfi x" by (simp add: lookup_map_values to_nested_map_def)      
+      with False
+      show ?thesis by (cases "to_nested_map nfi n"; auto)
+    qed
+  qed
+qed
   text \<open>We implement the application of an effect by explicit iteration over
     the additions and deletions\<close>
   fun apply_effect_exec
@@ -1020,7 +1330,7 @@ end \<comment> \<open>Context of \<open>ast_domain\<close>\<close>
 context ast_problem
 begin
 
-    (* 
+  
   context 
     fixes of_type:: "type \<Rightarrow> type \<Rightarrow> bool"
       and ofs:: "func \<rightharpoonup> (type list \<times> type)"
@@ -1127,7 +1437,7 @@ lemma wf_of_int_impl_correct
      wf_of_int_refine_correct[simplified wf_of_int_refine_def]
      wf_nf_int_refine_correct[simplified wf_nf_int_refine_def]
       apply (subst objT_impl_correct)
-    .. *)
+    ..
 (* 
   text \<open>We refine the typecheck to use the mapping\<close>
 
