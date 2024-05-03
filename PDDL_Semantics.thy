@@ -1357,14 +1357,13 @@ text \<open>Important: thinking in terms of conditional lists of effects vs filt
         Some f' \<Rightarrow> f' (map the args) \<noteq> None
       | None \<Rightarrow> False)"
 
-  definition wm_defines_nf_upd::"world_model \<Rightarrow> world_model \<Rightarrow> object term nf_upd \<Rightarrow> bool" where
-    "wm_defines_nf_upd eM M upd = int_defines_nf_upd (nf_int M) (inst_nf_upd eM upd)"
-
+  definition nf_upd_defined::"world_model \<Rightarrow> world_model \<Rightarrow> object term nf_upd \<Rightarrow> bool" where
+    "nf_upd_defined eM M upd = int_defines_nf_upd (nf_int M) (inst_nf_upd eM upd)"
 
   text \<open>The names here are weird, but the necessary information exists. Maybe I will
         clean this up later. TODO?\<close>
   definition well_inst_effect::"world_model \<Rightarrow> ground_effect \<Rightarrow> world_model \<Rightarrow> bool" where
-    "well_inst_effect eM eff M \<equiv> list_all (of_upd_rv_corr eM) (of_upds eff) \<and> list_all (wm_defines_nf_upd eM M) (nf_upds eff)"
+    "well_inst_effect eM eff M \<equiv> list_all (of_upd_rv_corr eM) (of_upds eff) \<and> list_all (nf_upd_defined eM M) (nf_upds eff)"
 
   definition well_inst_cond_effect::"world_model \<Rightarrow> world_model \<Rightarrow> (ground_formula \<times> ground_effect) \<Rightarrow> bool" where
     "well_inst_cond_effect eM M eff\<equiv> (valuation eM \<Turnstile> (fst eff)) \<longrightarrow> (well_inst_effect eM (snd eff) M)"
@@ -3092,7 +3091,7 @@ begin
     show ?thesis unfolding wf_nf_int_def by blast
   qed
   
-  lemma wm_defines_nf_upd_inv:
+  lemma nf_upd_defined_inv:
     assumes "int_defines_nf_upd ni nu"
         and "wf_app_nf_upd nu"
         and "int_defines_nf_upd ni nu'"
@@ -3142,7 +3141,7 @@ begin
             "wf_nf_int ni" 
       shows "wf_nf_int (fold apply_nf_upd upds ni)"
     using assms
-    by (induction upds arbitrary: ni; auto simp: wf_apply_nf_upd wm_defines_nf_upd_inv)
+    by (induction upds arbitrary: ni; auto simp: wf_apply_nf_upd nf_upd_defined_inv)
 
 
   text \<open>Application of a well-formed effect preserves well-formedness
@@ -3196,7 +3195,7 @@ begin
         by (cases eff; auto)
       with assms(2)[simplified M]
       have "list_all (int_defines_nf_upd ni) nus'" 
-        unfolding well_inst_effect_def wm_defines_nf_upd_def int_defines_nf_upd'_def
+        unfolding well_inst_effect_def nf_upd_defined_def int_defines_nf_upd'_def
         apply simp
         apply (drule conjunct2)
         by (simp add: list_all_length)
@@ -3250,7 +3249,7 @@ begin
       by (cases eff; auto)
     with assms(3)[simplified M]
     have "list_all (int_defines_nf_upd ni) nu'" 
-      unfolding well_inst_effect_def wm_defines_nf_upd_def
+      unfolding well_inst_effect_def nf_upd_defined_def
       apply simp
       apply (drule conjunct2)
       by (simp add: list_all_length)
@@ -3264,7 +3263,7 @@ begin
       by (cases eff1; auto)
     with assms(5)[simplified M]
     have "list_all (int_defines_nf_upd ni) nu1'" 
-      unfolding well_inst_effect_def wm_defines_nf_upd_def 
+      unfolding well_inst_effect_def nf_upd_defined_def 
       apply simp
       apply (drule conjunct2)
       by (simp add: list_all_length)
@@ -3282,13 +3281,13 @@ begin
       using that
       apply (induction upds arbitrary: ni)
        apply simp
-      using wm_defines_nf_upd_inv
+      using nf_upd_defined_inv
       by (metis Ball_set fold_simps(2) list_all_simps(1))
     ultimately
     have "list_all (int_defines_nf_upd ni') nu'"
       by (induction nu'; auto simp: ni')
-    hence "list_all (wm_defines_nf_upd eM (inst_apply_effect eM eff1 M)) (nf_upds eff)"
-      unfolding nu' M' wm_defines_nf_upd_def
+    hence "list_all (nf_upd_defined eM (inst_apply_effect eM eff1 M)) (nf_upds eff)"
+      unfolding nu' M' nf_upd_defined_def
       by (simp add: list_all_length)
     with assms(3)
     show "well_inst_effect eM eff (inst_apply_effect eM eff1 M)"

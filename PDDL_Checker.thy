@@ -1094,8 +1094,13 @@ lemma lookup_inj: "inj Mapping.lookup"
   by (simp add: injI mapping_eqI)
 
 lemma lookup_surj: "surj Mapping.lookup"
-  try
+  apply (subst surj_def)
+  by (metis Mapping.lookup.abs_eq)
 
+lemma lookup_bij: "bij Mapping.lookup"
+  using lookup_inj lookup_surj bij_def
+  by blast
+  
 
 lemma to_nested_map_inj: "inj to_nested_map"
 proof (rule injI)
@@ -1114,8 +1119,7 @@ proof (rule injI)
       apply (drule to_nested_map_SomeE1[where thesis = "\<exists>v'. Mapping.lookup x a = Some v' \<and> b = Mapping.lookup v'"])
       apply simp
       apply (drule to_nested_map_SomeE1[where thesis = "\<exists>v'. Mapping.lookup y a = Some v' \<and> b = Mapping.lookup v'"])
-       apply simp
-      
+       apply (simp add: lookup_inj)
       
   show "x = y" sorry
 qed
