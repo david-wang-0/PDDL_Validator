@@ -1081,9 +1081,61 @@ lemma to_nested_map_SomeE: "to_nested_map M x = Some (Mapping.lookup v) \<Longri
   unfolding to_nested_map_def
   by (metis Some_eq_map_option comp_apply lookup_map_values mapping_eqI)
 
+lemma to_nested_map_SomeE1: assumes "to_nested_map M x = Some v"
+  obtains v' where "Mapping.lookup M x = Some v' \<and> v = Mapping.lookup v'"
+  using assms
+  by (metis Mapping.lookup.abs_eq to_nested_map_SomeE)
+
 lemma to_nested_map_Some: "to_nested_map M x = Some (Mapping.lookup v) \<longleftrightarrow> Mapping.lookup M x = Some v"
   using to_nested_map_SomeE to_nested_map_SomeI
   by fast
+
+lemma lookup_inj: "inj Mapping.lookup"
+  by (simp add: injI mapping_eqI)
+
+lemma lookup_surj: "surj Mapping.lookup"
+  try
+
+
+lemma to_nested_map_inj: "inj to_nested_map"
+proof (rule injI)
+  fix x y
+  assume a: "to_nested_map x = to_nested_map y" 
+  have b: "to_nested_map x a = b \<Longrightarrow> to_nested_map y a = b" 
+       "to_nested_map y a = b \<Longrightarrow> to_nested_map x a = b" for a b
+    using a by simp_all
+  
+  have "Mapping.lookup x a = Mapping.lookup y a" for a
+    apply (cases "to_nested_map x a")
+     apply (frule b(1))
+     apply (drule to_nested_map_NoneE)+ 
+     apply simp
+    subgoal for b apply (frule b(1))
+      apply (drule to_nested_map_SomeE1[where thesis = "\<exists>v'. Mapping.lookup x a = Some v' \<and> b = Mapping.lookup v'"])
+      apply simp
+      apply (drule to_nested_map_SomeE1[where thesis = "\<exists>v'. Mapping.lookup y a = Some v' \<and> b = Mapping.lookup v'"])
+       apply simp
+      
+      
+  show "x = y" sorry
+qed
+
+lemma exec_wm_to_wm_inj: "inj exec_wm_to_wm"
+proof (rule injI)
+  fix x y
+  assume a[simp]: "exec_wm_to_wm x = exec_wm_to_wm y"
+  show "x = y"
+  proof (induction x; induction y)
+    fix ps ps' ofi ofi' nfi nfi'
+    assume xy[simp]: "x = EWM ps ofi nfi"
+           "y = EWM ps' ofi' nfi'"
+    have 1: "exec_wm_to_wm (EWM ps ofi nfi) = exec_wm_to_wm (EWM ps' ofi' nfi')" using a xy by fast
+    hence "ps = ps'" by simp
+    have "ofi = ofi'" using 1 
+    
+    show "EWM ps ofi nfi = EWM ps' ofi' nfi'" sorry
+  qed
+qed
 
 lemma to_nested_map_upd_other: "x \<noteq> k \<Longrightarrow> to_nested_map (Mapping.update k v M) x = to_nested_map M x"
   unfolding to_nested_map_def by (simp add: lookup_map_values)
@@ -1677,10 +1729,6 @@ lemma valid_ground_action_impl_correct: "valid_ground_action_impl a M = valid_gr
   | "ground_action_path_impl M (\<alpha>#\<alpha>s) M' \<longleftrightarrow> valid_ground_action_impl \<alpha> M
     \<and> ground_action_path_impl (execute_ground_action_impl \<alpha> M) \<alpha>s M'"
 
-
-
-
-definition "wm_to_exec_wm (World_Model p nfi ofi) = "
 
 lemma ground_action_path_impl_correct: "ground_action_path_impl M as M' = ground_action_path (exec_wm_to_wm M) as (exec_wm_to_wm M')"
   using valid_ground_action_impl_correct execute_ground_action_impl_correct
