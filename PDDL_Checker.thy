@@ -185,8 +185,14 @@ definition to_nested_map::"('a, ('b, 'c) mapping) mapping \<Rightarrow> 'a \<rig
 fun exec_wm_to_wm::"exec_world_model \<Rightarrow> world_model" where
   "exec_wm_to_wm (EWM p oi ni) = World_Model p (to_nested_map oi) (to_nested_map ni)"
 
-lemma exec_wm_pred_is_wm_pred: "ps M = preds (exec_wm_to_wm M)"
-  by (cases M; auto)
+lemma enfi_nf_int[simp]: "to_nested_map (enfi M) = world_model.nf_int (exec_wm_to_wm M)"
+  by (cases M; simp)
+
+lemma ps_preds[simp]: "ps M = preds (exec_wm_to_wm M)"
+  by (cases M; simp)
+
+lemma eofi_of_int[simp]: "to_nested_map (eofi M) = world_model.of_int (exec_wm_to_wm M)"
+  by (cases M; simp)
 
 fun term_val_impl::"exec_world_model \<Rightarrow> object term \<Rightarrow> object option" where
   "term_val_impl M (Ent obj) = Some obj"
@@ -295,7 +301,7 @@ fun pred_val_impl::"exec_world_model \<Rightarrow> object term pred \<Rightarrow
 lemma pred_val_impl_correct: "pred_val_impl M x = pred_val (exec_wm_to_wm M) x"
   apply (cases "pred_inst_impl M x")
   subgoal by (simp add: pred_inst_impl_correct)
-  subgoal for a by (cases a; auto simp: exec_wm_pred_is_wm_pred pred_inst_impl_correct)
+  subgoal for a by (cases a; auto simp: pred_inst_impl_correct)
   done
 
 fun valuation_impl::"exec_world_model \<Rightarrow> object term atom valuation" where
@@ -402,14 +408,13 @@ context ast_domain_decs begin
 
   (* This definition is a workaround, since the usage of 
       of_type and obj_fun_sig are hardcoded in ty_term *)
-  definition ty_term_impl::"('ent \<rightharpoonup> type) \<Rightarrow> 'ent term \<rightharpoonup> type" where
+  abbreviation ty_term_impl::"('ent \<rightharpoonup> type) \<Rightarrow> 'ent term \<rightharpoonup> type" where
     "ty_term_impl ty_ent \<equiv> (ty_term' of_type_impl ofs_impl ty_ent)"
 
   abbreviation is_term_of_type_impl::"('ent \<rightharpoonup> type) \<Rightarrow> 'ent term \<Rightarrow> type \<Rightarrow> bool" where
     "is_term_of_type_impl ty_ent \<equiv> (is_term_of_type' of_type_impl ofs_impl ty_ent)"
 
   lemma ty_term_impl_correct: "ty_term_impl ty_ent = ty_term ty_ent"
-    unfolding ty_term_impl_def
     apply (rule ext)
     subgoal for x
     apply (induction x rule: is_term_of_type_ty_term.induct(2)[
@@ -447,15 +452,19 @@ context ast_domain_decs begin
         case ty_ent v of
           Some vT \<Rightarrow> of_type vT T
         | None \<Rightarrow> False)"
-end
-  
+  end
+
+
+  text \<open>It would be nice, if we could remove the ty_ent call in wf_pred_eq'.
+        If we could, we could pass is_term_of_type/is_object_of_type/etc.
+        rather than of_type and ty_ent.\<close>
   context 
     fixes of_type:: "type \<Rightarrow> type \<Rightarrow> bool"
       and ofs:: "func \<rightharpoonup> (type list \<times> type)"
       and nfs:: "func \<rightharpoonup> type list"
       and ty_ent:: "'ent \<rightharpoonup> type"
   begin
-    definition "is_of_type'' = is_of_type' of_type ty_ent"
+    abbreviation "is_of_type'' \<equiv> is_of_type' of_type ty_ent"
 
     fun wf_pred'::"predicate \<times> 'ent list \<Rightarrow> bool" where
       "wf_pred' (p,vs) \<longleftrightarrow> (
@@ -556,14 +565,14 @@ end
   abbreviation "is_of_type_impl \<equiv> is_of_type'' of_type_impl"
   
   lemma is_of_type_impl_correct: "is_of_type_impl ty_ent = is_of_type ty_ent"
-    unfolding  is_of_type_def is_of_type''_def is_of_type'_def
+    unfolding is_of_type_def is_of_type'_def
     using of_type_impl_correct
     by (auto split: option.splits)
 
-  definition "wf_pred_impl \<equiv> wf_pred' of_type_impl"
+  (* To do: maybe replace definitions by abbreviations *)
+abbreviation "wf_pred_impl \<equiv> wf_pred' of_type_impl"
 
   lemma wf_pred_impl_correct: "wf_pred_impl ty_ent = wf_pred ty_ent"
-    unfolding wf_pred_impl_def
     apply (rule ext)
     subgoal for x
     apply (cases x)
@@ -574,28 +583,25 @@ end
       done
     done 
   
-  definition "wf_pred_eq_impl = wf_pred_eq' of_type_impl"
+  abbreviation "wf_pred_eq_impl \<equiv> wf_pred_eq' of_type_impl"
   
   lemma wf_pred_eq_impl_correct: "wf_pred_eq_impl ty_ent = wf_pred_eq ty_ent"
-    unfolding wf_pred_eq_impl_def
     apply (intro ext)
     subgoal for x
-      by (cases x; simp add: wf_pred_impl_correct[simplified wf_pred_impl_def])
+      by (cases x; simp add: wf_pred_impl_correct)
     done
     
-    definition "wf_predicate_impl = wf_predicate' of_type_impl"
+  abbreviation "wf_predicate_impl \<equiv> wf_predicate' of_type_impl"
                                            
     lemma wf_predicate_impl_correct: "wf_predicate_impl ty_ent = wf_predicate ty_ent"
-      unfolding wf_predicate_impl_def
       apply (intro ext)
       subgoal for x
-        by (cases x; simp add: wf_pred_impl_correct[simplified wf_pred_impl_def])
+        by (cases x; simp add: wf_pred_impl_correct)
       done
   
-  definition "wf_num_func_impl = wf_num_func' of_type_impl nfs_impl"
+  abbreviation "wf_num_func_impl \<equiv> wf_num_func' of_type_impl nfs_impl"
   
   lemma wf_num_func_impl_correct: "wf_num_func_impl ty_ent = wf_num_func ty_ent"
-    unfolding wf_num_func_impl_def
     apply (rule ext)
     subgoal for x 
       apply (cases x)
@@ -606,52 +612,46 @@ end
       done
     done
   
-  definition "wf_num_fluent_impl = wf_num_fluent' of_type_impl nfs_impl"
+  abbreviation "wf_num_fluent_impl \<equiv> wf_num_fluent' of_type_impl nfs_impl"
   
   lemma wf_num_fluent_impl_correct: "wf_num_fluent_impl ty_ent = wf_num_fluent ty_ent"
-    unfolding wf_num_fluent_impl_def
     apply (rule ext)
     subgoal for x
       apply (induction x)
-      subgoal by (simp add: wf_num_func_impl_correct[simplified wf_num_func_impl_def])
+      subgoal by (simp add: wf_num_func_impl_correct)
       subgoal by simp
       by auto
     done
     
-  definition "wf_num_comp_impl = wf_num_comp' of_type_impl nfs_impl"
+  abbreviation "wf_num_comp_impl \<equiv> wf_num_comp' of_type_impl nfs_impl"
   
   lemma wf_num_comp_impl_correct: "wf_num_comp_impl ty_ent = wf_num_comp ty_ent"
-    unfolding wf_num_comp_impl_def
     apply (rule ext)
     subgoal for x
-      by (induction x; simp add: wf_num_fluent_impl_correct[simplified wf_num_fluent_impl_def])+
+      by (induction x; simp add: wf_num_fluent_impl_correct)+
     done
   
-  definition "wf_atom_impl = wf_atom' of_type_impl nfs_impl"
+  abbreviation "wf_atom_impl \<equiv> wf_atom' of_type_impl nfs_impl"
   
   lemma wf_atom_impl_correct: "wf_atom_impl ty_ent = wf_atom ty_ent"
-    unfolding wf_atom_impl_def
     apply (rule ext)
     subgoal for x 
-      by (cases x; simp add: wf_num_comp_impl_correct[simplified wf_num_comp_impl_def]
-                        wf_pred_eq_impl_correct[simplified wf_pred_eq_impl_def])
+      by (cases x; simp add: wf_num_comp_impl_correct wf_pred_eq_impl_correct)
     done
 
-  definition "wf_fmla_impl = wf_fmla' of_type_impl nfs_impl"
+  abbreviation "wf_fmla_impl \<equiv> wf_fmla' of_type_impl nfs_impl"
   
   lemma wf_fmla_impl_correct: "wf_fmla_impl ty_ent = wf_fmla ty_ent"
-    unfolding wf_fmla_impl_def
     apply (rule ext)
     subgoal for x
       apply (induction x)
-      subgoal by (simp add: wf_atom_impl_correct[simplified wf_atom_impl_def])
+      subgoal by (simp add: wf_atom_impl_correct)
       by auto
     done
 
-  definition "wf_of_upd_impl = wf_of_upd' of_type_impl"
+  abbreviation "wf_of_upd_impl \<equiv> wf_of_upd' of_type_impl"
   
   lemma wf_of_upd_impl_correct: "wf_of_upd_impl ty_ent = wf_of_upd ty_ent"
-    unfolding wf_of_upd_impl_def
     apply (rule ext)
     subgoal for x
       apply (cases x)
@@ -662,53 +662,50 @@ end
       done
     done
   
-  definition "wf_nf_upd_impl = wf_nf_upd' of_type_impl nfs_impl"
+  abbreviation "wf_nf_upd_impl \<equiv> wf_nf_upd' of_type_impl nfs_impl"
   
   lemma wf_nf_upd_impl_correct: "wf_nf_upd_impl ty_ent = wf_nf_upd ty_ent"
-    unfolding wf_nf_upd_impl_def
     apply (rule ext)
     subgoal for x
       apply (cases x)
       subgoal for f op as v
         apply (rule ssubst[of x], assumption)
         apply (subst wf_nf_upd'.simps, subst wf_nf_upd.simps)
-        apply (subst wf_num_fluent_impl_correct[simplified wf_num_fluent_impl_def])
+        apply (subst wf_num_fluent_impl_correct)
         apply (subst nfs_impl_correct)
         apply (subst is_of_type_impl_correct)
         ..
       done
     done
   
-  definition "wf_effect_impl = wf_effect' of_type_impl nfs_impl"
+  abbreviation "wf_effect_impl \<equiv> wf_effect' of_type_impl nfs_impl"
   
   lemma wf_effect_impl_correct: "wf_effect_impl ty_ent = wf_effect ty_ent"
-    unfolding wf_effect_impl_def
     apply (rule ext)
     subgoal for x
       apply (cases x)
-      by (simp add: wf_predicate_impl_correct[simplified wf_predicate_impl_def]
-                        wf_of_upd_impl_correct[simplified wf_of_upd_impl_def]
-                        wf_nf_upd_impl_correct[simplified wf_nf_upd_impl_def])
+      by (simp add: wf_predicate_impl_correct 
+          wf_of_upd_impl_correct
+          wf_nf_upd_impl_correct)
     done
   
-  definition "wf_cond_effect_impl = wf_cond_effect' of_type_impl nfs_impl"
+  abbreviation "wf_cond_effect_impl \<equiv> wf_cond_effect' of_type_impl nfs_impl"
   
   lemma wf_cond_effect_impl_correct: "wf_cond_effect_impl ty_ent = wf_cond_effect ty_ent"
-    unfolding wf_cond_effect_impl_def
     apply (rule ext)
     subgoal for x
       apply (cases x)
       unfolding wf_cond_effect'_def wf_cond_effect_def 
-        wf_fmla_impl_correct[simplified wf_fmla_impl_def]
-        wf_effect_impl_correct[simplified wf_effect_impl_def]
+        wf_fmla_impl_correct
+        wf_effect_impl_correct
       ..
     done
 
-  definition "wf_cond_effect_list_impl = wf_cond_effect_list' of_type_impl nfs_impl"
+  abbreviation "wf_cond_effect_list_impl \<equiv> wf_cond_effect_list' of_type_impl nfs_impl"
   
   lemma wf_cond_effect_list_impl_correct: "wf_cond_effect_list_impl ty_ent = wf_cond_effect_list ty_ent"
-    unfolding wf_cond_effect_list_impl_def wf_cond_effect_list_def wf_cond_effect_list'_def
-    by (simp add: wf_cond_effect_impl_correct[simplified wf_cond_effect_impl_def])
+    unfolding wf_cond_effect_list_def wf_cond_effect_list'_def
+    by (simp add: wf_cond_effect_impl_correct)
 
 end \<comment> \<open>Context of \<open>ast_domain\<close>\<close>
 
@@ -743,18 +740,17 @@ context ast_problem_decs begin
         \<and> wf_fmla' ot nfs tyt pre
         \<and> wf_cond_effect_list' ot nfs tyt eff)"
   
-  definition "wf_action_schema_impl = wf_action_schema' of_type_impl ofs_impl nfs_impl objT_impl"
+  abbreviation "wf_action_schema_impl \<equiv> wf_action_schema' of_type_impl ofs_impl nfs_impl objT_impl"
   
   lemma wf_action_schema_impl_correct: "wf_action_schema_impl = wf_action_schema"
-    unfolding wf_action_schema_impl_def
     apply (intro ext)
     subgoal for a
       apply (induction a)
       subgoal for n params pre effs
         unfolding wf_action_schema.simps wf_action_schema'.simps
-          ty_term_impl_correct[simplified ty_term_impl_def]
-          wf_fmla_impl_correct[simplified wf_fmla_impl_def]
-          wf_cond_effect_list_impl_correct[simplified wf_cond_effect_list_impl_def]
+          ty_term_impl_correct
+          wf_fmla_impl_correct
+          wf_cond_effect_list_impl_correct
           objT_impl_correct
         ..
       done
@@ -762,12 +758,12 @@ context ast_problem_decs begin
 
     definition "wf_goal' ot ofs nfs = wf_fmla' ot nfs (ty_term' ot ofs (ty_sym Map.empty objT_impl))"
 
-    definition "wf_goal_impl = wf_goal' of_type_impl ofs_impl nfs_impl"
+definition "wf_goal_impl \<equiv> wf_goal' of_type_impl ofs_impl nfs_impl"
 
     lemma wf_goal_impl_correct: "wf_goal_impl = wf_goal"
-      unfolding wf_goal_impl_def wf_goal'_def wf_goal_def
-        ty_term_impl_correct[simplified ty_term_impl_def]
-        wf_fmla_impl_correct[simplified wf_fmla_impl_def]
+      unfolding wf_goal'_def wf_goal_def wf_goal_impl_def
+        ty_term_impl_correct
+        wf_fmla_impl_correct
         objT_impl_correct
       ..
 end
@@ -783,12 +779,12 @@ begin
   \<and> (\<forall>a\<in>set (actions D). wf_action_schema' ot ofs nfs obT a)
   "
 
-  definition "wf_domain_impl \<equiv> wf_domain' of_type_impl 
+  abbreviation "wf_domain_impl \<equiv> wf_domain' of_type_impl 
     ofs_impl nfs_impl objT_impl"
 
   lemma wf_domain_impl_correct: "wf_domain_impl = wf_domain"
-    unfolding wf_domain_impl_def wf_domain'_def wf_domain_def
-      wf_action_schema_impl_correct[simplified wf_action_schema_impl_def]
+    unfolding wf_domain'_def wf_domain_def
+      wf_action_schema_impl_correct
     ..
   
 end
@@ -812,28 +808,26 @@ begin
       | None \<Rightarrow> False)"
   end
 
-  definition "wf_init_of_a_impl = wf_init_of_a' of_type_impl ofs_impl objT_impl"
+  abbreviation "wf_init_of_a_impl \<equiv> wf_init_of_a' of_type_impl ofs_impl objT_impl"
   
   lemma wf_init_of_a_impl_correct: "wf_init_of_a_impl = wf_init_of_a"
-    unfolding wf_init_of_a_impl_def
     apply (rule ext)
     subgoal for x
       apply (cases x, rule ssubst[of x], assumption)
       unfolding wf_init_of_a'.simps wf_init_of_a.simps
-        is_of_type_impl_correct[simplified is_of_type''_def]
+        is_of_type_impl_correct
         objT_impl_correct ofs_impl_correct
       ..
     done
 
-  definition "wf_init_nf_a_impl = wf_init_nf_a' of_type_impl nfs_impl objT_impl"
+  abbreviation "wf_init_nf_a_impl \<equiv> wf_init_nf_a' of_type_impl nfs_impl objT_impl"
   
   lemma wf_init_nf_a_impl_correct: "wf_init_nf_a_impl = wf_init_nf_a"
-    unfolding wf_init_nf_a_impl_def
     apply (rule ext)
     subgoal for x
       apply (cases x, rule ssubst[of x], assumption)
       unfolding wf_init_nf_a'.simps wf_init_nf_a.simps
-        is_of_type_impl_correct[simplified is_of_type''_def]
+        is_of_type_impl_correct
         objT_impl_correct nfs_impl_correct
       ..
     done
@@ -845,17 +839,14 @@ begin
     \<and> (\<forall>a \<in> set (init_nfs P). wf_init_nf_a' ot nfs obT a)
     \<and> wf_goal' ot ofs nfs (goal P)"
 
-  definition "wf_problem_impl = 
+definition "wf_problem_impl \<equiv>
     wf_problem' of_type_impl ofs_impl nfs_impl  objT_impl"
 
   lemma wf_problem_impl_correct: "wf_problem_impl = wf_problem"
     unfolding wf_problem_impl_def wf_problem'_def wf_problem_def
-    wf_domain_impl_correct[simplified wf_domain_impl_def]
-    wf_predicate_impl_correct[simplified wf_predicate_impl_def]
-    wf_init_of_a_impl_correct[simplified wf_init_of_a_impl_def]
-    wf_init_nf_a_impl_correct[simplified wf_init_nf_a_impl_def]
-    wf_goal_impl_correct[simplified wf_goal_impl_def]
-    apply (subst objT_impl_correct)
+     wf_domain_impl_correct wf_predicate_impl_correct
+      wf_init_of_a_impl_correct wf_init_nf_a_impl_correct
+      wf_goal_impl_correct[simplified wf_goal_impl_def] apply (subst objT_impl_correct)
     ..
 end
 subsubsection \<open>Implementation of the quantifier macros\<close>
@@ -1039,24 +1030,24 @@ fun inst_effect'::" ground_effect \<Rightarrow> fully_instantiated_effect" where
           (map inst_nf_upd' nu))"
 end
 
-definition "inst_of_upd_impl M = inst_of_upd' (term_val_impl M)"
+definition "inst_of_upd_impl M \<equiv> inst_of_upd' (term_val_impl M)"
 
 lemma inst_of_upd_impl_correct: "inst_of_upd_impl M u = inst_of_upd (exec_wm_to_wm M) u"
   unfolding inst_of_upd_impl_def
   by (cases u; auto simp: term_val_impl_correct)
 
-definition "inst_nf_upd_impl M = inst_nf_upd' (term_val_impl M) (nf_val_impl M)"
+definition "inst_nf_upd_impl M \<equiv> inst_nf_upd' (term_val_impl M) (nf_val_impl M)"
 
 lemma inst_nf_upd_impl_correct: "inst_nf_upd_impl M u = inst_nf_upd (exec_wm_to_wm M) u"
   unfolding inst_nf_upd_impl_def
   by (cases u; auto simp: term_val_impl_correct nf_val_impl_correct)
 
-definition "inst_effect_impl M = inst_effect' (term_val_impl M) (nf_val_impl M) (pred_inst_impl M)"
+definition "inst_effect_impl M \<equiv> inst_effect' (term_val_impl M) (nf_val_impl M) (pred_inst_impl M)"
 
 lemma inst_effect_impl_correct: "inst_effect_impl M eff = inst_effect (exec_wm_to_wm M) eff"
   unfolding inst_effect_impl_def
   by (cases eff; auto simp:
-      inst_nf_upd_impl_correct[simplified inst_nf_upd_impl_def] 
+      inst_nf_upd_impl_correct[simplified inst_nf_upd_impl_def]
       inst_of_upd_impl_correct[simplified inst_of_upd_impl_def]
       pred_inst_impl_correct)
 
@@ -1082,11 +1073,41 @@ lemma to_nested_map_NoneI: "Mapping.lookup M x = None \<Longrightarrow> to_neste
   using to_nested_map_None
   by fastforce
 
-lemma to_nested_map_alt: "Mapping.lookup M x = Some v \<Longrightarrow> to_nested_map M x = Some (Mapping.lookup v)"
+lemma to_nested_map_SomeI: "Mapping.lookup M x = Some v \<Longrightarrow> to_nested_map M x = Some (Mapping.lookup v)"
   unfolding to_nested_map_def
   by (metis Mapping.map_values_def comp_apply lookup_map_values option.simps(9))
 
-lemma apply_of_update_impl_correct: "to_nested_map (apply_of_upd_impl u ofi) = apply_of_upd u (to_nested_map ofi)"
+lemma to_nested_map_SomeE: "to_nested_map M x = Some (Mapping.lookup v) \<Longrightarrow> Mapping.lookup M x = Some v"
+  unfolding to_nested_map_def
+  by (metis Some_eq_map_option comp_apply lookup_map_values mapping_eqI)
+
+lemma to_nested_map_Some: "to_nested_map M x = Some (Mapping.lookup v) \<longleftrightarrow> Mapping.lookup M x = Some v"
+  using to_nested_map_SomeE to_nested_map_SomeI
+  by fast
+
+lemma to_nested_map_upd_other: "x \<noteq> k \<Longrightarrow> to_nested_map (Mapping.update k v M) x = to_nested_map M x"
+  unfolding to_nested_map_def by (simp add: lookup_map_values)
+
+lemma to_nested_map_del_other: "x \<noteq> k \<Longrightarrow> to_nested_map (Mapping.delete k M) x = to_nested_map M x"
+  unfolding to_nested_map_def by (simp add: lookup_map_values)
+
+lemma to_nested_map_upd: "to_nested_map M = M' \<Longrightarrow> to_nested_map (Mapping.update k v M) = M'(k \<mapsto> (Mapping.lookup v))"
+  apply (rule ext)
+  subgoal for x
+    apply (cases "x = k")
+    subgoal by (simp add: to_nested_map_SomeI)
+    subgoal by (auto simp: fun_upd_other to_nested_map_upd_other)
+    done
+  done
+
+lemma to_nested_map_del: "to_nested_map M = M' \<Longrightarrow> to_nested_map (Mapping.delete k M) = M'(k := None)"
+  apply (rule ext)
+  subgoal for x
+    by (cases "x = k"; auto simp: to_nested_map_NoneI fun_upd_other to_nested_map_del_other)
+  done
+
+(* To do: clean up using above lemmas *)
+lemma apply_of_upd_impl_correct: "to_nested_map (apply_of_upd_impl u ofi) = apply_of_upd u (to_nested_map ofi)"
 proof (rule ext; induction u)
   fix x::func
   and f::func
@@ -1150,7 +1171,7 @@ proof (rule ext; induction u)
             using None \<open>Mapping.lookup ofi f = None\<close>
             by auto
           hence "?m1 f = Some Map.empty"
-            using to_nested_map_alt by fastforce
+            using to_nested_map_SomeI by fastforce
           moreover
           from None 1
           have "?m2 f = Some Map.empty"
@@ -1167,7 +1188,7 @@ proof (rule ext; induction u)
             using Some \<open>Mapping.lookup ofi f = None\<close>
             by auto
           hence "?m1 f = Some (Map.empty ((map the as) := v))"
-            using to_nested_map_alt Some by fastforce
+            using to_nested_map_SomeI Some by fastforce
           ultimately 
           show ?thesis using m m' \<open>f = x\<close> by simp
         qed
@@ -1176,7 +1197,7 @@ proof (rule ext; induction u)
         then obtain a' where
          a': "to_nested_map ofi f = Some a'"
           "a' = Mapping.lookup a"
-          using to_nested_map_alt by fast
+          using to_nested_map_SomeI by fast
         hence 1: "?m2 f = Some (a' ((map the as) := v))"
           by auto
         show ?thesis
@@ -1186,7 +1207,7 @@ proof (rule ext; induction u)
             using None \<open>Mapping.lookup ofi f = Some a\<close>
             by auto
           hence 2: "?m1 f = Some (Mapping.lookup (Mapping.delete (map the as) a))"
-            using to_nested_map_alt by fastforce
+            using to_nested_map_SomeI by fastforce
           
           from None 1
           have "?m2 f = Some (a' ((map the as) := None))"
@@ -1204,7 +1225,7 @@ proof (rule ext; induction u)
             using Some \<open>Mapping.lookup ofi f = Some a\<close>
             by auto
           hence 2: "?m1 f = Some (Mapping.lookup (Mapping.update (map the as) v' a))"
-            using to_nested_map_alt by fastforce
+            using to_nested_map_SomeI by fastforce
           
           from Some 1
           have "?m2 f = Some (a' ((map the as) := v))"
@@ -1257,18 +1278,10 @@ fun nf_upd_defined'_impl::"mp_nfi \<Rightarrow> instantiated_nf_upd \<Rightarrow
     | None \<Rightarrow> False
 )"
 
-lemma nf_upd_defined'_impl_correct: "nf_upd_defined'_impl ni x = nf_upd_defined' (to_nested_map ni) x"
-  apply (induction x)
-  subgoal for n op as v
-    apply (cases "op = Assign")
-    subgoal by simp
-    subgoal apply (cases "Mapping.lookup ni n")
-       apply (auto)
+lemma upd_nf_int_impl_correct: "Mapping.lookup (upd_nf_int_impl m op args old new) = upd_nf_int (Mapping.lookup m) op args old new"
+  by (cases op; auto)
 
-lemma apply_nf_upd_impl_correct: 
-  assumes "wf_app_nf_upd u"
-      and "nf_upd_defined' (to_nested_map nfi) u"
-    shows "to_nested_map (apply_nf_upd_impl u nfi) = apply_nf_upd u (to_nested_map nfi)"
+lemma apply_nf_upd_impl_correct: "to_nested_map (apply_nf_upd_impl u nfi) = apply_nf_upd u (to_nested_map nfi)"
 proof (rule ext; induction u)
   fix x::func
   and n::func
@@ -1278,9 +1291,9 @@ proof (rule ext; induction u)
   let ?m1 = "to_nested_map (apply_nf_upd_impl (NFU n op as v) nfi)"
   let ?m2 = "apply_nf_upd (NFU n op as v) (to_nested_map nfi)"
 
-  show "?m1 x = ?m2 x"
-  proof (cases "?m1 x")
-    case None
+  have case_None: "?m1 x = None \<longleftrightarrow> ?m2 x = None"
+  proof
+    assume "?m1 x = None"
     hence 1: "Mapping.lookup (apply_nf_upd_impl (NFU n op as v) nfi) x = None"
       by (simp add: to_nested_map_None)
     hence "n \<noteq> x"
@@ -1290,20 +1303,64 @@ proof (rule ext; induction u)
       by (cases "Mapping.lookup nfi n"; auto)
     hence "to_nested_map nfi x = None" by (simp add: to_nested_map_None)
     with 1
-    have "apply_nf_upd (NFU n op as v) (to_nested_map nfi) x = None"
+    show "?m2 x = None"
       by (auto simp: Let_def)
-    with None
-    show ?thesis by simp
+  next
+    assume a: "?m2 x = None"
+    hence n: "n \<noteq> x"
+      by (cases "to_nested_map nfi n"; auto)
+    with a
+    have "to_nested_map nfi x = None"
+      by (cases "to_nested_map nfi n"; auto)
+    with n
+    have "Mapping.lookup (apply_nf_upd_impl (NFU n op as v) nfi) x = None"
+      by (cases "Mapping.lookup nfi n"; auto elim: to_nested_map_NoneE)
+    thus "?m1 x = None"
+      by (auto intro: to_nested_map_NoneI)
+  qed 
+
+  show "?m1 x = ?m2 x"
+  proof (cases "?m1 x")
+    case None
+    thus ?thesis using case_None by presburger
   next
     case (Some a)
-    then show ?thesis
+    then obtain a' where
+      "?m2 x = a'" using case_None by blast
+    
+    show ?thesis
     proof (cases "n = x")
       case True
       have "?m1 n = ?m2 n"
-      proof 
-
+      proof (cases "Mapping.lookup nfi n")
+        case None
+        hence "?m1 n = Some (Mapping.lookup (upd_nf_int_impl Mapping.empty op (map the as) (the (Mapping.lookup Mapping.empty (map the as))) (the v)))"
+          using to_nested_map_Some by fastforce
+        hence "?m1 n = Some (Mapping.lookup (upd_nf_int_impl Mapping.empty op (map the as) (the None) (the v)))"
+          by simp
+        moreover
+        from None
+        have "to_nested_map nfi n = None" by (rule to_nested_map_NoneI)
+        hence "?m2 n = Some (upd_nf_int Map.empty op (map the as) (the (Map.empty (map the as))) (the v))"
+          by auto
+        hence "?m2 n = Some (upd_nf_int (Mapping.lookup Mapping.empty) op (map the as) (the None) (the v))"
+          by (simp add: Mapping.empty_def Mapping.lookup.abs_eq)
+        ultimately 
+        show ?thesis using  upd_nf_int_impl_correct by presburger
+      next
+        case (Some a)
+        hence "?m1 n = Some (Mapping.lookup (upd_nf_int_impl a op (map the as) (the (Mapping.lookup a (map the as))) (the v)))"
+          using to_nested_map_Some by fastforce
+        moreover
+        from Some
+        have "to_nested_map nfi n = Some (Mapping.lookup a)" by (rule to_nested_map_SomeI)
+        hence "?m2 n = Some (upd_nf_int (Mapping.lookup a) op (map the as) (the (Mapping.lookup a (map the as))) (the v))"
+          by (auto simp: Let_def)
+        ultimately
+        show ?thesis using upd_nf_int_impl_correct by presburger
       qed
-      then show ?thesis sorry
+      with \<open>n = x\<close> 
+      show ?thesis by simp
     next
       case False
       hence "Mapping.lookup (apply_nf_upd_impl (NFU n op as v) nfi) x = Mapping.lookup nfi x"
@@ -1314,14 +1371,321 @@ proof (rule ext; induction u)
     qed
   qed
 qed
+
+lemma apply_of_upd_impl_correct': "to_nested_map (fold apply_of_upd_impl upds oi) = fold apply_of_upd upds (to_nested_map oi)"
+  by (induction upds arbitrary: oi; auto simp: apply_of_upd_impl_correct)
+
+lemma apply_nf_upd_impl_correct': "to_nested_map (fold apply_nf_upd_impl upds ni) = fold apply_nf_upd upds (to_nested_map ni)"
+  using apply_nf_upd_impl_correct
+  by (induction upds arbitrary: ni, auto)
+
+
   text \<open>We implement the application of an effect by explicit iteration over
     the additions and deletions\<close>
-  fun apply_effect_exec
-    :: "object ast_effect \<Rightarrow> world_model \<Rightarrow> world_model"
+  fun apply_effect_impl
+    :: "fully_instantiated_effect \<Rightarrow> exec_world_model \<Rightarrow> exec_world_model"
   where
-    "apply_effect_exec (Effect a d) s
-      = fold (\<lambda>add s. Set.insert add s) a
-          (fold (\<lambda>del s. Set.remove del s) d s)"
+    "apply_effect_impl (Eff a d ou nu) (EWM p ofi nfi)
+      = EWM (fold (\<lambda>add s. Set.insert (the add) s) a
+          (fold (\<lambda>del s. Set.remove (the del) s) d p)) 
+          (fold apply_of_upd_impl ou ofi)
+          (fold apply_nf_upd_impl nu nfi)"
+
+lemma fold_comp: "fold (f o g) = (fold f) o (map g)"
+  apply (rule ext)
+  subgoal for xs
+    by (induction xs, auto)
+  done
+
+lemma apply_effect_impl_correct: "exec_wm_to_wm (apply_effect_impl e wm) = apply_effect e (exec_wm_to_wm wm)"
+  apply (induction e; induction wm)
+  subgoal for ps ofi nfi a d ous nus
+    unfolding apply_effect_impl.simps apply_effect.simps exec_wm_to_wm.simps
+    apply (subst apply_nf_upd_impl_correct', subst apply_of_upd_impl_correct')
+    apply (subst sym[OF comp_def[of insert the]])
+    apply (subst sym[OF comp_def[of Set.remove the]])
+    apply (subst fold_comp[of insert the])
+    apply (subst fold_comp[of Set.remove the])
+    by (metis Un_commute comp_apply minus_set_fold union_set_fold)
+  done
+
+definition inst_apply_effect_impl::"exec_world_model \<Rightarrow> ground_effect \<Rightarrow> exec_world_model \<Rightarrow> exec_world_model" where
+  "inst_apply_effect_impl eM eff M = (apply_effect_impl (inst_effect_impl eM eff) M)"
+
+lemma inst_apply_effect_impl_correct:
+  assumes "exec_wm_to_wm eM = eM'"
+      and "exec_wm_to_wm M = M'"
+    shows "exec_wm_to_wm (inst_apply_effect_impl eM eff M) = inst_apply_effect eM' eff M'"
+  using assms apply_effect_impl_correct inst_effect_impl_correct inst_apply_effect_def inst_apply_effect_impl_def
+  by simp
+
+definition inst_apply_conditional_effect_impl::"exec_world_model \<Rightarrow> (ground_formula \<times> ground_effect) 
+  \<Rightarrow> exec_world_model \<Rightarrow> exec_world_model" where
+  "inst_apply_conditional_effect_impl eM eff M = (
+    if (valuation_impl eM \<Turnstile> (fst eff))
+    then (inst_apply_effect_impl eM (snd eff) M)
+    else M)"
+
+lemma inst_apply_conditional_effect_impl_correct: 
+  assumes "exec_wm_to_wm eM = eM'"
+      and "exec_wm_to_wm M = M'"
+    shows "exec_wm_to_wm (inst_apply_conditional_effect_impl eM eff M) = inst_apply_conditional_effect eM' eff M'"
+  using assms inst_apply_conditional_effect_def inst_apply_conditional_effect_impl_def valuation_impl_correct inst_apply_effect_impl_correct
+  by presburger
+
+definition apply_conditional_effect_list_impl where
+  "apply_conditional_effect_list_impl effs M = foldr (inst_apply_conditional_effect_impl M) effs M"
+
+lemma apply_conditional_effect_list_impl_correct: 
+  "exec_wm_to_wm (apply_conditional_effect_list_impl effs M) 
+    = apply_conditional_effect_list effs (exec_wm_to_wm M)"
+  unfolding apply_conditional_effect_list_impl_def apply_conditional_effect_list_def
+  by (induction effs arbitrary: M; auto simp: inst_apply_conditional_effect_impl_correct)
+
+definition execute_ground_action_impl::"ground_action \<Rightarrow> exec_world_model \<Rightarrow> exec_world_model" where
+  "execute_ground_action_impl a M = apply_conditional_effect_list_impl (effects a) M"
+
+lemma execute_ground_action_impl_correct: 
+  "exec_wm_to_wm (execute_ground_action_impl a M) 
+    = execute_ground_action a (exec_wm_to_wm M)"
+  using execute_ground_action_def execute_ground_action_impl_def
+  apply_conditional_effect_list_impl_correct by simp
+
+context 
+  fixes of_type::"type \<Rightarrow> type \<Rightarrow> bool"
+    and ofs::"func \<rightharpoonup> (type list \<times> type)"
+    and nfs::"func \<rightharpoonup> type list"
+    and obT::"object \<rightharpoonup> type"
+begin
+  abbreviation "is_obj_of_type' \<equiv> is_of_type' of_type obT"
+
+  fun wf_app_pred_upd' where
+    "wf_app_pred_upd' None = False"
+  | "wf_app_pred_upd' (Some (pred.Eq _ _)) = False"
+  | "wf_app_pred_upd' (Some (Pred p as)) = wf_pred_eq' of_type obT (Pred p as)" 
+
+  fun wf_app_of_upd'::"instantiated_of_upd \<Rightarrow> bool" where
+      "wf_app_of_upd' (OFU f as v) = (case ofs f of 
+            None \<Rightarrow> False
+          | Some (Ts, T) \<Rightarrow>
+                list_all is_some as
+              \<and> list_all2 (is_obj_of_type' o the) as Ts 
+              \<and> (v = None \<or> is_obj_of_type' (the v) T))"
+  
+  definition nf_args_well_typed'::"func \<Rightarrow> object list \<Rightarrow> bool" where
+    "nf_args_well_typed' f args = (case nfs f of None \<Rightarrow> False | Some Ts \<Rightarrow> list_all2 is_obj_of_type' args Ts)"
+
+  fun wf_app_nf_upd'::"instantiated_nf_upd \<Rightarrow> bool" where
+      "wf_app_nf_upd' (NFU f op args v) = (
+          list_all is_some args 
+        \<and> is_some v \<and> (op = ScaleDown \<longrightarrow> the v \<noteq> (of_rat 0))
+        \<and> nf_args_well_typed' f (map the args))"
+
+  fun wf_fully_instantiated_effect' where
+    "wf_fully_instantiated_effect' (Eff a d tu nu) \<longleftrightarrow> 
+        (\<forall>ae \<in> set a. wf_app_pred_upd' ae)
+      \<and> (\<forall>de \<in> set d. wf_app_pred_upd' de)
+      \<and> (\<forall>u \<in> set tu. wf_app_of_upd' u)     
+      \<and> (\<forall>u \<in> set nu. wf_app_nf_upd' u)"
+
+end
+
+abbreviation "wf_app_pred_upd_impl \<equiv> wf_app_pred_upd' of_type_impl objT_impl"
+
+lemma wf_app_pred_upd_impl_correct: "wf_app_pred_upd_impl x = wf_app_pred_upd x"
+  apply (cases x)
+  subgoal by simp
+  subgoal for p
+    apply (cases p)
+    subgoal using wf_pred_eq_impl_correct[of objT] 
+          objT_impl_correct[THEN arg_cong[of _ _ wf_pred_eq_impl]] by auto
+    subgoal by auto
+    done
+  done
+
+abbreviation "wf_app_of_upd_impl \<equiv> wf_app_of_upd' of_type_impl ofs_impl objT_impl"
+
+lemma wf_app_of_upd_impl_correct: "wf_app_of_upd_impl u = wf_app_of_upd u"
+  apply (induction u)
+  unfolding wf_app_of_upd.simps wf_app_of_upd'.simps
+    ofs_impl_correct is_of_type_impl_correct objT_impl_correct 
+  ..
+
+
+abbreviation "nf_args_well_typed_impl \<equiv> nf_args_well_typed' of_type_impl nfs_impl objT_impl"
+
+lemma nf_args_well_typed_impl_correct: "nf_args_well_typed_impl f args = nf_args_well_typed f args"
+  unfolding nf_args_well_typed_def nf_args_well_typed'_def
+  apply (subst nfs_impl_correct)
+  apply (subst is_of_type_impl_correct)
+  apply (subst objT_impl_correct)
+  ..
+
+abbreviation "wf_app_nf_upd_impl \<equiv> wf_app_nf_upd' of_type_impl nfs_impl objT_impl"
+
+lemma wf_app_nf_upd_impl_correct: "wf_app_nf_upd_impl u = wf_app_nf_upd u"
+  apply (induction u)
+  unfolding wf_app_nf_upd'.simps wf_app_nf_upd.simps
+    apply (subst nf_args_well_typed_impl_correct)
+  ..
+
+abbreviation "wf_fully_instantiated_effect_impl \<equiv> wf_fully_instantiated_effect' of_type_impl ofs_impl nfs_impl objT_impl"
+
+lemma wf_fully_instantiated_effect_impl_correct: "wf_fully_instantiated_effect_impl e = wf_fully_instantiated_effect e"
+  apply (induction e)
+  unfolding wf_fully_instantiated_effect'.simps wf_fully_instantiated_effect.simps
+      wf_app_pred_upd_impl_correct wf_app_of_upd_impl_correct wf_app_nf_upd_impl_correct ..
+
+definition non_int_cond_effs_impl::"exec_world_model \<Rightarrow> (ground_formula \<times> ground_effect) 
+  \<Rightarrow> (ground_formula \<times> ground_effect) \<Rightarrow> bool" where
+  "non_int_cond_effs_impl M e1 e2 = ((valuation_impl M \<Turnstile> fst e1 \<and> valuation_impl M \<Turnstile> fst e2)
+    \<longrightarrow> (non_int_effs (inst_effect_impl M (snd e1)) (inst_effect_impl M (snd e2))))"
+
+lemma non_int_cond_effs_impl_correct: "non_int_cond_effs_impl M e1 e2 = non_int_cond_effs (exec_wm_to_wm M) e1 e2"
+  unfolding non_int_cond_effs_impl_def non_int_cond_effs_def
+    inst_effect_impl_correct valuation_impl_correct
+  ..
+
+definition "non_int_cond_eff_list_impl M xs \<equiv> pairwise (non_int_cond_effs_impl M) (set xs)"
+
+lemma non_int_cond_eff_list_impl_correct: 
+  "non_int_cond_eff_list_impl M xs = non_int_cond_eff_list (exec_wm_to_wm M) xs"
+  unfolding non_int_cond_eff_list_impl_def non_int_cond_eff_list_def
+  using non_int_cond_effs_impl_correct by presburger
+
+definition of_upd_rv_corr_impl::"exec_world_model \<Rightarrow> object term of_upd \<Rightarrow> bool" where
+  "of_upd_rv_corr_impl M u \<equiv> of_upd_rv_corr' u (inst_of_upd_impl M u)"
+
+lemma of_upd_rv_corr_impl_correct: "of_upd_rv_corr_impl M u = of_upd_rv_corr (exec_wm_to_wm M) u"
+  unfolding of_upd_rv_corr_def of_upd_rv_corr_impl_def
+  inst_of_upd_impl_correct 
+  ..
+
+fun int_defines_nf_upd_impl::"mp_nfi \<Rightarrow> instantiated_nf_upd \<Rightarrow> bool" where
+    "int_defines_nf_upd_impl _ (NFU _ Assign _ _) = True"
+  | "int_defines_nf_upd_impl ni (NFU f _ args _) = (
+      case Mapping.lookup ni f of 
+        Some f' \<Rightarrow> Mapping.lookup f' (map the args) \<noteq> None
+      | None \<Rightarrow> False)"
+
+lemma int_defines_nf_upd_impl_correct: "int_defines_nf_upd_impl nfi upd = int_defines_nf_upd (to_nested_map nfi) upd"
+  apply (cases upd)
+  subgoal for f op args
+    apply (cases "Mapping.lookup nfi f")
+    subgoal by (frule to_nested_map_NoneI; cases op; simp)
+    subgoal by (frule to_nested_map_SomeI; cases op; simp)
+    done
+  done
+
+definition nf_upd_defined_impl::"exec_world_model \<Rightarrow> exec_world_model \<Rightarrow> object term nf_upd \<Rightarrow> bool" where
+    "nf_upd_defined_impl eM M upd = int_defines_nf_upd_impl (enfi M) (inst_nf_upd_impl eM upd)"
+
+
+lemma nf_upd_defined_impl_correct: "nf_upd_defined_impl eM M upd = nf_upd_defined (exec_wm_to_wm eM) (exec_wm_to_wm M) upd"
+  unfolding nf_upd_defined_def nf_upd_defined_impl_def
+  using int_defines_nf_upd_impl_correct inst_nf_upd_impl_correct
+  by simp
+
+definition well_inst_effect_impl::"exec_world_model \<Rightarrow> ground_effect \<Rightarrow> exec_world_model \<Rightarrow> bool" where
+    "well_inst_effect_impl eM eff M \<equiv> list_all (of_upd_rv_corr_impl eM) (of_upds eff) \<and> list_all (nf_upd_defined_impl eM M) (nf_upds eff)"
+
+lemma well_inst_effect_impl_correct: "well_inst_effect_impl eM eff M = well_inst_effect (exec_wm_to_wm eM) eff (exec_wm_to_wm M)"
+  unfolding well_inst_effect_def well_inst_effect_impl_def
+  using nf_upd_defined_impl_correct of_upd_rv_corr_impl_correct
+  by presburger
+
+definition well_inst_cond_effect_impl::"exec_world_model \<Rightarrow> exec_world_model \<Rightarrow> (ground_formula \<times> ground_effect) \<Rightarrow> bool" where
+    "well_inst_cond_effect_impl eM M eff\<equiv> (valuation_impl eM \<Turnstile> (fst eff)) \<longrightarrow> (well_inst_effect_impl eM (snd eff) M)"
+
+lemma well_inst_cond_effect_impl_correct: "well_inst_cond_effect_impl eM M eff = well_inst_cond_effect (exec_wm_to_wm eM) (exec_wm_to_wm M) eff"
+  unfolding well_inst_cond_effect_impl_def well_inst_cond_effect_def
+  using well_inst_effect_impl_correct valuation_impl_correct
+  by presburger
+
+
+definition well_inst_cond_effect_list_impl::"exec_world_model \<Rightarrow> exec_world_model \<Rightarrow> (ground_formula \<times> ground_effect) list \<Rightarrow> bool" where
+  "well_inst_cond_effect_list_impl eM M effs \<equiv> list_all (well_inst_cond_effect_impl eM M) effs"
+
+lemma well_inst_cond_effect_list_impl_correct: "well_inst_cond_effect_list_impl eM M effs = well_inst_cond_effect_list (exec_wm_to_wm eM) (exec_wm_to_wm M) effs"
+  unfolding well_inst_cond_effect_list_impl_def well_inst_cond_effect_list_def
+  using well_inst_cond_effect_impl_correct
+  by presburger
+
+definition wf_inst_cond_effect_impl::"exec_world_model \<Rightarrow> (ground_formula \<times> ground_effect) \<Rightarrow> bool" where
+    "wf_inst_cond_effect_impl M eff = (valuation_impl M \<Turnstile> (fst eff) \<longrightarrow> (wf_fully_instantiated_effect_impl (inst_effect_impl M (snd eff))))"
+
+lemma wf_inst_cond_effect_impl_correct: "wf_inst_cond_effect_impl M eff = wf_inst_cond_effect (exec_wm_to_wm M) eff"
+  unfolding wf_inst_cond_effect_def wf_inst_cond_effect_impl_def
+  using valuation_impl_correct wf_fully_instantiated_effect_impl_correct inst_effect_impl_correct
+  by presburger
+
+  definition wf_inst_cond_effect_list_impl::"exec_world_model \<Rightarrow> (ground_formula \<times> ground_effect) list \<Rightarrow> bool" where
+    "wf_inst_cond_effect_list_impl M effs = list_all (wf_inst_cond_effect_impl M) effs"
+
+lemma wf_inst_cond_effect_list_impl_correct: "wf_inst_cond_effect_list_impl M effs = wf_inst_cond_effect_list (exec_wm_to_wm M) effs"
+  unfolding wf_inst_cond_effect_list_def wf_inst_cond_effect_list_impl_def
+  using wf_inst_cond_effect_impl_correct by presburger
+
+  definition valid_effects_impl::"exec_world_model \<Rightarrow> (ground_formula \<times> ground_effect) list \<Rightarrow> bool" where
+    "valid_effects_impl M effs \<equiv> 
+         (wf_inst_cond_effect_list_impl M effs)
+      \<and> (well_inst_cond_effect_list_impl M M effs)
+      \<and> (non_int_cond_eff_list_impl M effs)"
+
+lemma valid_effects_impl_correct: "valid_effects_impl M effs = valid_effects (exec_wm_to_wm M) effs"
+  unfolding valid_effects_impl_def valid_effects_def
+  using wf_inst_cond_effect_list_impl_correct
+        well_inst_cond_effect_list_impl_correct
+        non_int_cond_eff_list_impl_correct
+  by presburger
+
+
+definition ground_action_enabled_impl::"ground_action \<Rightarrow> exec_world_model \<Rightarrow> bool" where
+  "ground_action_enabled_impl \<alpha> M = valuation_impl M \<Turnstile> precondition \<alpha>"
+
+lemma ground_action_enabled_impl_correct: "ground_action_enabled_impl \<alpha> M = ground_action_enabled \<alpha> (exec_wm_to_wm M)"
+  unfolding ground_action_enabled_def ground_action_enabled_impl_def 
+  using valuation_impl_correct by presburger
+
+definition wf_ground_action_impl::"ground_action \<Rightarrow> bool" where
+  "wf_ground_action_impl \<alpha> \<equiv> (
+    wf_fmla_impl (ty_term_impl objT_impl) (precondition \<alpha>)
+    \<and> wf_cond_effect_list_impl (ty_term_impl objT_impl) (effects \<alpha>))"
+
+lemma wf_ground_action_impl_correct: "wf_ground_action_impl a = wf_ground_action a"
+  unfolding wf_ground_action_impl_def wf_ground_action_def
+    objT_impl_correct ty_term_impl_correct wf_fmla_impl_correct
+    wf_cond_effect_list_impl_correct
+  ..
+
+definition valid_ground_action_impl::"ground_action \<Rightarrow> exec_world_model \<Rightarrow> bool" where
+    "valid_ground_action_impl \<alpha> M \<equiv>
+        wf_ground_action_impl \<alpha>
+      \<and> ground_action_enabled_impl \<alpha> M 
+      \<and> valid_effects_impl M (effects \<alpha>)"
+
+lemma valid_ground_action_impl_correct: "valid_ground_action_impl a M = valid_ground_action a (exec_wm_to_wm M)"
+  unfolding valid_ground_action_def valid_ground_action_impl_def
+   wf_ground_action_impl_correct ground_action_enabled_impl_correct 
+   valid_effects_impl_correct
+  ..
+
+ fun ground_action_path_impl
+    :: "exec_world_model \<Rightarrow> ground_action list \<Rightarrow> exec_world_model \<Rightarrow> bool"
+  where
+    "ground_action_path_impl M [] M' \<longleftrightarrow> (M = M')"
+  | "ground_action_path_impl M (\<alpha>#\<alpha>s) M' \<longleftrightarrow> valid_ground_action_impl \<alpha> M
+    \<and> ground_action_path_impl (execute_ground_action_impl \<alpha> M) \<alpha>s M'"
+
+
+
+
+definition "wm_to_exec_wm (World_Model p nfi ofi) = "
+
+lemma ground_action_path_impl_correct: "ground_action_path_impl M as M' = ground_action_path (exec_wm_to_wm M) as (exec_wm_to_wm M')"
+  using valid_ground_action_impl_correct execute_ground_action_impl_correct
+  apply (induction as arbitrary: M)
+  apply (simp add: arg_cong[of M M' exec_wm_to_wm])
 
 end \<comment> \<open>Context of \<open>ast_domain\<close>\<close>
 
@@ -1363,14 +1727,13 @@ begin
 
   end
 
-  definition "wf_of_arg_r_map_refine = wf_of_arg_r_map' of_type_impl ofs_impl objT_impl"
+  abbreviation "wf_of_arg_r_map_refine \<equiv> wf_of_arg_r_map' of_type_impl ofs_impl objT_impl"
   
   lemma wf_of_arg_r_map_refine_correct: "wf_of_arg_r_map_refine = wf_of_arg_r_map"
-    unfolding wf_of_arg_r_map_refine_def
     apply (intro ext)
     subgoal for f f'
       unfolding wf_of_arg_r_map_def wf_of_arg_r_map'_def
-       ofs_impl_correct is_of_type_impl_correct[simplified is_of_type''_def]
+       ofs_impl_correct is_of_type_impl_correct
          objT_impl_correct
       ..
     done
@@ -1379,7 +1742,7 @@ begin
 
 lemma wf_of_arg_r_map_impl_correct: "wf_of_arg_r_map_impl f m = wf_of_arg_r_map f (Mapping.lookup m)"
   apply (subst wf_of_arg_r_map_impl_def)
-  apply (subst wf_of_arg_r_map_refine_correct[simplified wf_of_arg_r_map_refine_def])
+  apply (subst wf_of_arg_r_map_refine_correct)
   ..
 
   definition "wf_of_int_refine = wf_of_int' of_type_impl ofs_impl objT_impl"
@@ -1387,9 +1750,9 @@ lemma wf_of_arg_r_map_impl_correct: "wf_of_arg_r_map_impl f m = wf_of_arg_r_map 
   lemma wf_of_int_refine_correct: "wf_of_int_refine ty_ent = wf_of_int ty_ent"
     unfolding wf_of_int_refine_def
       wf_of_int'_def wf_of_int_def
-      wf_of_arg_r_map_refine_correct[simplified wf_of_arg_r_map_refine_def]
+      wf_of_arg_r_map_refine_correct
     ..
-
+(* To do: decide whether you even need these *)
 definition "wf_of_int_impl oi = wf_of_int'' of_type_impl ofs_impl objT_impl (Mapping.lookup oi)"
 
 
@@ -1402,7 +1765,7 @@ lemma wf_of_int_impl_correct
     apply (rule ext)
     subgoal for x
       unfolding wf_nf_int_map'_def wf_nf_int_map_def 
-        is_of_type_impl_correct[simplified is_of_type''_def] 
+        is_of_type_impl_correct
         objT_impl_correct nfs_impl_correct
       ..
     done
@@ -1433,7 +1796,7 @@ lemma wf_of_int_impl_correct
   
   lemma wf_world_model_refine_correct: "wf_world_model_refine = wf_world_model"
     unfolding wf_world_model_refine_def wf_world_model_def wf_world_model'_def
-     wf_predicate_impl_correct[simplified wf_predicate_impl_def]
+     wf_predicate_impl_correct
      wf_of_int_refine_correct[simplified wf_of_int_refine_def]
      wf_nf_int_refine_correct[simplified wf_nf_int_refine_def]
       apply (subst objT_impl_correct)
@@ -1877,7 +2240,7 @@ lemmas wf_domain_decs_code =
 declare wf_domain_decs_code[code]
 
 lemmas wf_problem_decs_code =
-  ast_problem_decs.wf_goal_impl_def(* 
+  ast_problem_decs.wf_goal'_def(* 
   ast_problem_decs.term_vars_impl.simps *)
   ast_problem_decs.f_vars_impl.simps
   ast_problem_decs.t_dom_impl_def
@@ -1901,6 +2264,12 @@ lemmas wf_domain_code =
   ast_domain.inst_of_upd.simps
   ast_domain.upd_nf_int.simps
   ast_domain.apply_nf_upd.simps
+  ast_domain.apply_of_upd_impl.simps
+  ast_domain.upd_nf_int_impl.simps
+  ast_domain.apply_nf_upd_impl.simps
+  ast_domain.apply_effect_impl.simps
+  ast_domain.non_int_nf_upds.simps
+  ast_domain.non_int_nf_upd_list_def
 (*
   ast_domain.wf_domain_def
   ast_domain.wf_action_schema.simps
@@ -2272,8 +2641,9 @@ definition f_chars::"string formula \<Rightarrow> char set" where
 
 print_derives
 
-derive (rbt) set_impl char
-
+derive (eq) ceq instantiated_nf_upd
+derive ccompare upd_op instantiated_nf_upd
+derive (rbt) set_impl instantiated_nf_upd
 
 (* TODO/FIXME: Code_Char was removed from Isabelle-2018! 
   Check for performance regression of generated code!
@@ -2285,9 +2655,9 @@ export_code
   ast_problem_decs.pddl_all_impl ast_problem_decs.pddl_exists_impl
   formula.Not formula.Bot Effect ast_action_schema.Action_Schema
   map_atom Domain Problem DomainDecls ProbDecls PAction
-  valuation f_chars term_val_impl (* f_vars \<comment> Need to instantiate a few classes for symbol, but that is difficult *)
+  valuation f_chars term_val_impl ast_domain.apply_effect_impl (* f_vars \<comment> Need to instantiate a few classes for symbol, but that is difficult *)
   (* term.CONST *) (* term.VAR *) 
-  String.explode String.implode
+  String.explode String.implode ast_domain.non_int_nf_upd_list
   in Scala
   module_name PDDL_Checker_Exported
   file "PDDL_STRIPS_Checker_Exported.scala"

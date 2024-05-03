@@ -1231,7 +1231,7 @@ text \<open>Important: thinking in terms of conditional lists of effects vs filt
   text \<open>We first have to filter out the inactive effects. Following that, we instantiate the 
         active effects. Then the effects are applied individually by a right fold.\<close>
   definition apply_conditional_effect_list where
-    "apply_conditional_effect_list effs M = (fold (inst_apply_conditional_effect M) effs M)"
+    "apply_conditional_effect_list effs M = (foldr (inst_apply_conditional_effect M) effs M)"
 
   text \<open>Execute a ground action\<close>
   definition execute_ground_action :: "ground_action \<Rightarrow> world_model \<Rightarrow> world_model" where
@@ -1282,12 +1282,20 @@ text \<open>Important: thinking in terms of conditional lists of effects vs filt
         of effects which make no sense.\<close>
   fun int_nf_upds where
     "int_nf_upds (NFU f op as v) (NFU f' op' as' v') =
-    ((f = f \<and> as = as') \<longrightarrow> (op = op' \<longrightarrow> (op = Assign \<longrightarrow> v \<noteq> v')))"
+    (f = f \<and> as = as' \<and> (op \<noteq> op' \<or> (op = Assign \<and> v \<noteq> v')))"
   
   fun non_int_nf_upds where
     "non_int_nf_upds (NFU f op as v) (NFU f' op' as' v') = 
-      (f \<noteq> f \<or> as \<noteq> as \<or> (op = op' \<and> (op \<noteq> Assign \<or> v = v')))"
-  
+      (f \<noteq> f \<or> as \<noteq> as' \<or> (op = op' \<and> (op \<noteq> Assign \<or> v = v')))"
+
+  lemma "(\<not>int_nf_upds n n') = non_int_nf_upds n n'"
+    apply (induction n; induction n')
+    subgoal for f as op v f' as' op' v'
+      apply (subst int_nf_upds.simps, subst non_int_nf_upds.simps)
+      apply (subst de_Morgan_conj | subst de_Morgan_disj)+
+      by simp
+    done
+
   definition non_int_nf_upd_list where
     "non_int_nf_upd_list xs \<equiv> pairwise non_int_nf_upds (set xs)"
   
@@ -1342,24 +1350,21 @@ text \<open>Important: thinking in terms of conditional lists of effects vs filt
         numbers, it cannot be unassigned. Therefore checking this before the execution
         of a list of actions is sufficient.\<close>
 
-  fun nf_upd_defined'::"numeric_function_interpretation \<Rightarrow> instantiated_nf_upd \<Rightarrow> bool" where
-    "nf_upd_defined' _ (NFU _ Assign _ _) = True"
-  | "nf_upd_defined' ni (NFU f _ args _) = (
+  fun int_defines_nf_upd::"numeric_function_interpretation \<Rightarrow> instantiated_nf_upd \<Rightarrow> bool" where
+    "int_defines_nf_upd _ (NFU _ Assign _ _) = True"
+  | "int_defines_nf_upd ni (NFU f _ args _) = (
       case ni f of 
         Some f' \<Rightarrow> f' (map the args) \<noteq> None
       | None \<Rightarrow> False)"
 
-  definition nf_upd_defined''::"world_model \<Rightarrow> instantiated_nf_upd \<Rightarrow> bool" where
-    "nf_upd_defined'' M upd = nf_upd_defined' (nf_int M) upd"
-    
-  definition nf_upd_defined::"world_model \<Rightarrow> world_model \<Rightarrow> object term nf_upd \<Rightarrow> bool" where
-    "nf_upd_defined eM M upd= nf_upd_defined'' M (inst_nf_upd eM upd)"
+  definition wm_defines_nf_upd::"world_model \<Rightarrow> world_model \<Rightarrow> object term nf_upd \<Rightarrow> bool" where
+    "wm_defines_nf_upd eM M upd = int_defines_nf_upd (nf_int M) (inst_nf_upd eM upd)"
 
 
   text \<open>The names here are weird, but the necessary information exists. Maybe I will
         clean this up later. TODO?\<close>
   definition well_inst_effect::"world_model \<Rightarrow> ground_effect \<Rightarrow> world_model \<Rightarrow> bool" where
-    "well_inst_effect eM eff M \<equiv> list_all (of_upd_rv_corr eM) (of_upds eff) \<and> list_all (nf_upd_defined eM M) (nf_upds eff)"
+    "well_inst_effect eM eff M \<equiv> list_all (of_upd_rv_corr eM) (of_upds eff) \<and> list_all (wm_defines_nf_upd eM M) (nf_upds eff)"
 
   definition well_inst_cond_effect::"world_model \<Rightarrow> world_model \<Rightarrow> (ground_formula \<times> ground_effect) \<Rightarrow> bool" where
     "well_inst_cond_effect eM M eff\<equiv> (valuation eM \<Turnstile> (fst eff)) \<longrightarrow> (well_inst_effect eM (snd eff) M)"
@@ -2987,7 +2992,7 @@ begin
   lemma wf_apply_nf_upd:
         assumes "wf_nf_int ni" 
                 "wf_app_nf_upd nu"
-                "nf_upd_defined' ni nu"
+                "int_defines_nf_upd ni nu"
           shows "wf_nf_int (apply_nf_upd nu ni)" (is "wf_nf_int ?ni'")
   proof (cases nu)
     case [simp]: (NFU n op as v)
@@ -3028,7 +3033,7 @@ begin
             show ?thesis using nf_args_well_typed_def by auto
           next
             assume "as' \<noteq> map the as" 
-            with \<open>nf_upd_defined' ni nu\<close> that m_def \<open>op = Assign\<close>
+            with \<open>int_defines_nf_upd ni nu\<close> that m_def \<open>op = Assign\<close>
             have "as' \<in> dom m'" by auto
             from \<open>ni n = Some m'\<close> 
             have "(n, m') \<in> Map.graph ni" using in_graphI by fast
@@ -3044,7 +3049,7 @@ begin
         qed
       next
         assume "op \<noteq> Assign"
-        with \<open>nf_upd_defined' ni nu\<close>
+        with \<open>int_defines_nf_upd ni nu\<close>
         obtain m' where 
           "ni n = Some m'"
           by (cases op; auto split: option.splits)
@@ -3059,7 +3064,7 @@ begin
           show ?thesis using nf_args_well_typed_def by auto
         next
           case False
-          with \<open>nf_upd_defined' ni nu\<close> that m_def \<open>op \<noteq> Assign\<close>
+          with \<open>int_defines_nf_upd ni nu\<close> that m_def \<open>op \<noteq> Assign\<close>
           have "as' \<in> dom m'" by (cases op; auto split: option.splits)
           from \<open>ni n = Some m'\<close> 
           have "(n, m') \<in> Map.graph ni" using in_graphI by fast
@@ -3076,7 +3081,7 @@ begin
     next
       assume "n' \<noteq> n"
       moreover
-      from \<open>nf_upd_defined' ni nu\<close>
+      from \<open>int_defines_nf_upd ni nu\<close>
       have "\<exists>f. ?ni' = ni(n \<mapsto> upd_nf_int f op (map the as) (the (f (map the as))) (the v))" by (auto split: option.splits)
       ultimately
       have "(n', m) \<in> Map.graph ni" by (metis fun_upd_other in_graphD in_graphI that)
@@ -3087,31 +3092,31 @@ begin
     show ?thesis unfolding wf_nf_int_def by blast
   qed
   
-  lemma nf_upd_defined_inv:
-    assumes "nf_upd_defined' ni nu"
+  lemma wm_defines_nf_upd_inv:
+    assumes "int_defines_nf_upd ni nu"
         and "wf_app_nf_upd nu"
-        and "nf_upd_defined' ni nu'"
+        and "int_defines_nf_upd ni nu'"
         and "wf_app_nf_upd nu'"
-      shows "nf_upd_defined' (apply_nf_upd nu' ni) nu" (is "nf_upd_defined' ?ni' nu")
+      shows "int_defines_nf_upd (apply_nf_upd nu' ni) nu" (is "int_defines_nf_upd ?ni' nu")
   proof -
     from assms
     obtain n op as v n' op' as' v' where
       [simp]: "nu = NFU n op as v"
       "nu' = NFU n' op' as' v'"
       by (cases nu; cases nu'; simp)
-    from \<open>nf_upd_defined' ni nu\<close>
+    from \<open>int_defines_nf_upd ni nu\<close>
     have 1: "op \<noteq> Assign \<Longrightarrow> (\<exists>f. ni n = Some f \<and> f (map the as) \<noteq> None)" by (cases op; cases "ni n"; auto)
   
     have 2: "\<exists>f'. ?ni' n = Some f' \<and> f' (map the as) \<noteq> None" 
       if "op \<noteq> Assign"
     proof (cases "n = n'")
       assume [simp]: "n = n'"
-      from \<open>nf_upd_defined' ni nu\<close> \<open>op \<noteq> Assign\<close>
+      from \<open>int_defines_nf_upd ni nu\<close> \<open>op \<noteq> Assign\<close>
       obtain f' where
         f': "ni n = Some f'"
         "f' (map the as) \<noteq> None"
         using 1 by blast
-      with \<open>wf_app_nf_upd nu'\<close> \<open>nf_upd_defined' ni nu'\<close>
+      with \<open>wf_app_nf_upd nu'\<close> \<open>int_defines_nf_upd ni nu'\<close>
       have "upd_nf_int f' op' (map the as') (the (f' (map the as'))) (the v') (map the as) \<noteq> None"
         by (cases "map the as = map the as'"; cases op'; auto)
       with f' 
@@ -3123,7 +3128,7 @@ begin
       show ?thesis by auto
     qed
   
-    show "nf_upd_defined' ?ni' nu"
+    show "int_defines_nf_upd ?ni' nu"
       apply (cases "op = Assign") 
       subgoal by (cases op; auto)
       subgoal by (drule 2; cases op; auto)
@@ -3133,11 +3138,11 @@ begin
 
   lemma wf_apply_nf_upds: 
     assumes "\<forall>u \<in> set upds. wf_app_nf_upd u"
-            "\<forall>u \<in> set upds. nf_upd_defined' ni u"
+            "\<forall>u \<in> set upds. int_defines_nf_upd ni u"
             "wf_nf_int ni" 
       shows "wf_nf_int (fold apply_nf_upd upds ni)"
     using assms
-    by (induction upds arbitrary: ni; auto simp: wf_apply_nf_upd nf_upd_defined_inv)
+    by (induction upds arbitrary: ni; auto simp: wf_apply_nf_upd wm_defines_nf_upd_inv)
 
 
   text \<open>Application of a well-formed effect preserves well-formedness
@@ -3190,8 +3195,8 @@ begin
       have "nus' = map (inst_nf_upd eM) (nf_upds eff)"
         by (cases eff; auto)
       with assms(2)[simplified M]
-      have "list_all (nf_upd_defined' ni) nus'" 
-        unfolding well_inst_effect_def nf_upd_defined_def nf_upd_defined''_def
+      have "list_all (int_defines_nf_upd ni) nus'" 
+        unfolding well_inst_effect_def wm_defines_nf_upd_def int_defines_nf_upd'_def
         apply simp
         apply (drule conjunct2)
         by (simp add: list_all_length)
@@ -3244,8 +3249,8 @@ begin
     have nu': "nu' = map (inst_nf_upd eM) (nf_upds eff)"
       by (cases eff; auto)
     with assms(3)[simplified M]
-    have "list_all (nf_upd_defined' ni) nu'" 
-      unfolding well_inst_effect_def nf_upd_defined_def nf_upd_defined''_def
+    have "list_all (int_defines_nf_upd ni) nu'" 
+      unfolding well_inst_effect_def wm_defines_nf_upd_def
       apply simp
       apply (drule conjunct2)
       by (simp add: list_all_length)
@@ -3258,8 +3263,8 @@ begin
     have "nu1' = map (inst_nf_upd eM) (nf_upds eff1)"
       by (cases eff1; auto)
     with assms(5)[simplified M]
-    have "list_all (nf_upd_defined' ni) nu1'" 
-      unfolding well_inst_effect_def nf_upd_defined_def nf_upd_defined''_def
+    have "list_all (int_defines_nf_upd ni) nu1'" 
+      unfolding well_inst_effect_def wm_defines_nf_upd_def 
       apply simp
       apply (drule conjunct2)
       by (simp add: list_all_length)
@@ -3268,22 +3273,22 @@ begin
     have "list_all wf_app_nf_upd nu1'"
       by (simp add: Ball_set)
     moreover
-    have "nf_upd_defined' (fold apply_nf_upd upds ni) nu"
-      if "nf_upd_defined' ni nu"
+    have "int_defines_nf_upd (fold apply_nf_upd upds ni) nu"
+      if "int_defines_nf_upd ni nu"
          "wf_app_nf_upd nu"
-         "list_all (nf_upd_defined' ni) upds"
+         "list_all (int_defines_nf_upd ni) upds"
          "list_all wf_app_nf_upd upds"
        for ni nu upds 
       using that
       apply (induction upds arbitrary: ni)
        apply simp
-      using nf_upd_defined_inv
+      using wm_defines_nf_upd_inv
       by (metis Ball_set fold_simps(2) list_all_simps(1))
     ultimately
-    have "list_all (nf_upd_defined' ni') nu'"
+    have "list_all (int_defines_nf_upd ni') nu'"
       by (induction nu'; auto simp: ni')
-    hence "list_all (nf_upd_defined eM (inst_apply_effect eM eff1 M)) (nf_upds eff)"
-      unfolding nu' M' nf_upd_defined_def nf_upd_defined''_def
+    hence "list_all (wm_defines_nf_upd eM (inst_apply_effect eM eff1 M)) (nf_upds eff)"
+      unfolding nu' M' wm_defines_nf_upd_def
       by (simp add: list_all_length)
     with assms(3)
     show "well_inst_effect eM eff (inst_apply_effect eM eff1 M)"
@@ -3294,16 +3299,19 @@ begin
   assumes "wf_world_model M"
           "\<forall>eff \<in> set effs. wf_fully_instantiated_effect (inst_effect M eff)"
           "\<forall>eff \<in> set effs. well_inst_effect M eff M"
-    shows "wf_world_model (fold (inst_apply_effect M) effs M)"
+    shows "wf_world_model (foldr (inst_apply_effect M) effs M)"
   proof -
-    have "wf_world_model (fold (inst_apply_effect eM) effs M)" 
+    have "wf_world_model (foldr (inst_apply_effect eM) effs M)" 
       if "wf_world_model M"
          "\<forall>eff \<in> set effs. wf_fully_instantiated_effect (inst_effect eM eff)"
          "\<forall>eff \<in> set effs. well_inst_effect eM eff M" for eM 
-      using that wf_apply_effect well_inst_effect_inv
-      by (induction effs arbitrary: M; simp)
+      using that
+      apply (induction effs arbitrary: M)
+       apply simp
+      using wf_apply_effect well_inst_effect_inv
+      sorry
     from this[OF assms]
-    show "wf_world_model (fold (inst_apply_effect M) effs M)" .
+    show "wf_world_model (foldr (inst_apply_effect M) effs M)" .
   qed
 
 
@@ -3337,7 +3345,7 @@ proof -
     unfolding inst_apply_conditional_effect_def 
       well_inst_cond_effect_def wf_inst_cond_effect_def by auto
  
-  have "wf_world_model (fold (inst_apply_conditional_effect eM) effs M)"
+  have "wf_world_model (foldr (inst_apply_conditional_effect eM) effs M)"
     if "wf_world_model M"
        "wf_inst_cond_effect_list eM effs"
        "well_inst_cond_effect_list eM M effs" 
@@ -3346,7 +3354,8 @@ proof -
     apply (induction effs arbitrary: M)
      apply auto[1]
     unfolding well_inst_cond_effect_list_def wf_inst_cond_effect_list_def
-    by (metis ce_inv fold_simps(2) list.pred_inject(2) list_all_length wf_apply_cond_effect)
+    using ce_inv
+    sorry (* the right fold should make some things easier *)
     
   from this[OF assms]
   show "wf_world_model (apply_conditional_effect_list effs M)" 
