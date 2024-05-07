@@ -3320,7 +3320,7 @@ lemma wf_execute_cond_effect_list:
     "well_inst_cond_effect_list M M effs"
   shows "wf_world_model (apply_conditional_effect_list effs M)"
 proof -
-  have wf_apply_cond_effect: 
+  have wf_apply_cond_effect:      
       "wf_world_model (inst_apply_conditional_effect eM eff M)"
     if "wf_world_model M"
        "wf_inst_cond_effect eM eff"

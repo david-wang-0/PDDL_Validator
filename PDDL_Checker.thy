@@ -178,20 +178,20 @@ datatype exec_world_model =
   (eofi: mp_ofi)
   (enfi: mp_nfi)
 
-definition to_nested_map::"('a, ('b, 'c) mapping) mapping \<Rightarrow> 'a \<rightharpoonup> 'b \<rightharpoonup> 'c" where
-  "to_nested_map = Mapping.lookup o (Mapping.map_values (\<lambda>k v. Mapping.lookup v))"
+definition to_map_map::"('a, ('b, 'c) mapping) mapping \<Rightarrow> 'a \<rightharpoonup> 'b \<rightharpoonup> 'c" where
+  "to_map_map = Mapping.lookup o (Mapping.map_values (\<lambda>k v. Mapping.lookup v))"
 
 
 fun exec_wm_to_wm::"exec_world_model \<Rightarrow> world_model" where
-  "exec_wm_to_wm (EWM p oi ni) = World_Model p (to_nested_map oi) (to_nested_map ni)"
-
-lemma enfi_nf_int[simp]: "to_nested_map (enfi M) = world_model.nf_int (exec_wm_to_wm M)"
-  by (cases M; simp)
+  "exec_wm_to_wm (EWM p oi ni) = World_Model p (to_map_map oi) (to_map_map ni)"
 
 lemma ps_preds[simp]: "ps M = preds (exec_wm_to_wm M)"
   by (cases M; simp)
 
-lemma eofi_of_int[simp]: "to_nested_map (eofi M) = world_model.of_int (exec_wm_to_wm M)"
+lemma eofi_of_int[simp]: "to_map_map (eofi M) = world_model.of_int (exec_wm_to_wm M)"
+  by (cases M; simp)
+
+lemma enfi_nf_int[simp]: "to_map_map (enfi M) = world_model.nf_int (exec_wm_to_wm M)"
   by (cases M; simp)
 
 fun term_val_impl::"exec_world_model \<Rightarrow> object term \<Rightarrow> object option" where
@@ -209,13 +209,13 @@ proof (induction x)
   proof (cases "Mapping.lookup (eofi M) f")
     case None
     then have "of_int (exec_wm_to_wm M) f = None"
-      by (cases M; simp add: eofi_def to_nested_map_def lookup_map_values)
+      by (cases M; simp add: eofi_def to_map_map_def lookup_map_values)
     with None
     show ?thesis by simp
   next
     case (Some a)
     then have 1: "of_int (exec_wm_to_wm M) f = Some (Mapping.lookup a)"
-      by (cases M; simp add: eofi_def to_nested_map_def  lookup_map_values)
+      by (cases M; simp add: eofi_def to_map_map_def  lookup_map_values)
     
     have 2: "map (term_val_impl M) as = map (term_val (exec_wm_to_wm M)) as"
       using Fun.IH by auto
@@ -243,11 +243,11 @@ proof (induction x)
   show ?case
   proof (cases "Mapping.lookup (enfi M) f")
     case None
-    then show ?thesis by (cases M; simp add: enfi_def to_nested_map_def lookup_map_values)
+    then show ?thesis by (cases M; simp add: enfi_def to_map_map_def lookup_map_values)
   next
     case (Some a)
     then have 1: "nf_int (exec_wm_to_wm M) f = Some (Mapping.lookup a)"
-      by (cases M; simp add: eofi_def to_nested_map_def  lookup_map_values)
+      by (cases M; simp add: eofi_def to_map_map_def  lookup_map_values)
     
     have 2: "map (term_val_impl M) as = map (term_val (exec_wm_to_wm M)) as"
       using term_val_impl_correct by auto
@@ -715,8 +715,6 @@ context ast_problem_decs begin
     framework will generate efficient, red-black tree based code for that
     later. \<close>
 
-  type_synonym objT = "(object, type) mapping"
-
   definition mp_objT :: "(object, type) mapping" where
     "mp_objT = Mapping.of_alist (consts DD @ objects PD)"
 
@@ -1061,33 +1059,33 @@ fun apply_of_upd_impl::"instantiated_of_upd \<Rightarrow> mp_ofi \<Rightarrow> m
       | None   \<Rightarrow> Mapping.update f (Mapping.delete (map the as) m') oi
     )"
 
-lemma to_nested_map_None: "to_nested_map M x = None \<longleftrightarrow> Mapping.lookup M x = None"
-  unfolding to_nested_map_def
+lemma to_map_map_None: "to_map_map M x = None \<longleftrightarrow> Mapping.lookup M x = None"
+  unfolding to_map_map_def
   by (simp add: lookup_map_values)
 
-lemma to_nested_map_NoneE: "to_nested_map M x = None \<Longrightarrow> Mapping.lookup M x = None"
-  using to_nested_map_None
+lemma to_map_map_NoneE: "to_map_map M x = None \<Longrightarrow> Mapping.lookup M x = None"
+  using to_map_map_None
   by fastforce
 
-lemma to_nested_map_NoneI: "Mapping.lookup M x = None \<Longrightarrow> to_nested_map M x = None"
-  using to_nested_map_None
+lemma to_map_map_NoneI: "Mapping.lookup M x = None \<Longrightarrow> to_map_map M x = None"
+  using to_map_map_None
   by fastforce
 
-lemma to_nested_map_SomeI: "Mapping.lookup M x = Some v \<Longrightarrow> to_nested_map M x = Some (Mapping.lookup v)"
-  unfolding to_nested_map_def
+lemma to_map_map_SomeI: "Mapping.lookup M x = Some v \<Longrightarrow> to_map_map M x = Some (Mapping.lookup v)"
+  unfolding to_map_map_def
   by (metis Mapping.map_values_def comp_apply lookup_map_values option.simps(9))
 
-lemma to_nested_map_SomeE: "to_nested_map M x = Some (Mapping.lookup v) \<Longrightarrow> Mapping.lookup M x = Some v"
-  unfolding to_nested_map_def
+lemma to_map_map_SomeE: "to_map_map M x = Some (Mapping.lookup v) \<Longrightarrow> Mapping.lookup M x = Some v"
+  unfolding to_map_map_def
   by (metis Some_eq_map_option comp_apply lookup_map_values mapping_eqI)
 
-lemma to_nested_map_SomeE1: assumes "to_nested_map M x = Some v"
+lemma to_map_map_SomeE1: assumes "to_map_map M x = Some v"
   obtains v' where "Mapping.lookup M x = Some v' \<and> v = Mapping.lookup v'"
   using assms
-  by (metis Mapping.lookup.abs_eq to_nested_map_SomeE)
+  by (metis Mapping.lookup.abs_eq to_map_map_SomeE)
 
-lemma to_nested_map_Some: "to_nested_map M x = Some (Mapping.lookup v) \<longleftrightarrow> Mapping.lookup M x = Some v"
-  using to_nested_map_SomeE to_nested_map_SomeI
+lemma to_map_map_Some: "to_map_map M x = Some (Mapping.lookup v) \<longleftrightarrow> Mapping.lookup M x = Some v"
+  using to_map_map_SomeE to_map_map_SomeI
   by fast
 
 lemma lookup_inj: "inj Mapping.lookup"
@@ -1100,105 +1098,108 @@ lemma lookup_surj: "surj Mapping.lookup"
 lemma lookup_bij: "bij Mapping.lookup"
   using lookup_inj lookup_surj bij_def
   by blast
-  
 
-lemma to_nested_map_inj: "inj to_nested_map"
+thm inj_on_def
+
+lemma to_map_map_inj: "inj to_map_map"
 proof (rule injI)
   fix x y
-  assume a: "to_nested_map x = to_nested_map y" 
-  have b: "to_nested_map x a = b \<Longrightarrow> to_nested_map y a = b" 
-       "to_nested_map y a = b \<Longrightarrow> to_nested_map x a = b" for a b
-    using a by simp_all
-  
-  have "Mapping.lookup x a = Mapping.lookup y a" for a
-    apply (cases "to_nested_map x a")
-     apply (frule b(1))
-     apply (drule to_nested_map_NoneE)+ 
-     apply simp
-    subgoal for b apply (frule b(1))
-      apply (drule to_nested_map_SomeE1[where thesis = "\<exists>v'. Mapping.lookup x a = Some v' \<and> b = Mapping.lookup v'"])
-      apply simp
-      apply (drule to_nested_map_SomeE1[where thesis = "\<exists>v'. Mapping.lookup y a = Some v' \<and> b = Mapping.lookup v'"])
-       apply (simp add: lookup_inj)
-      
-  show "x = y" sorry
+  assume a: "to_map_map x = to_map_map y" 
+  have "Mapping.lookup x = Mapping.lookup y" 
+    by (metis a mapping_eqI not_None_eq to_map_map_Some)
+  then show "x = y"
+    by (simp add: mapping_eqI)
 qed
+
 
 lemma exec_wm_to_wm_inj: "inj exec_wm_to_wm"
 proof (rule injI)
   fix x y
   assume a[simp]: "exec_wm_to_wm x = exec_wm_to_wm y"
   show "x = y"
-  proof (induction x; induction y)
+  proof (cases x; cases y)
     fix ps ps' ofi ofi' nfi nfi'
     assume xy[simp]: "x = EWM ps ofi nfi"
            "y = EWM ps' ofi' nfi'"
     have 1: "exec_wm_to_wm (EWM ps ofi nfi) = exec_wm_to_wm (EWM ps' ofi' nfi')" using a xy by fast
     hence "ps = ps'" by simp
-    have "ofi = ofi'" using 1 
-    
-    show "EWM ps ofi nfi = EWM ps' ofi' nfi'" sorry
+    moreover
+    obtain ofi1 ofi'1 where
+      ofi1: "ofi1 = to_map_map ofi"
+      "ofi'1 = to_map_map ofi'"
+      by auto
+    hence "ofi1 = ofi'1" using 1 by fastforce
+    hence "ofi = ofi'" using to_map_map_inj ofi1 inj_eq by fastforce
+    moreover
+    obtain nfi1 nfi'1 where
+      nfi1: "nfi1 = to_map_map nfi"
+      "nfi'1 = to_map_map nfi'"
+      by auto
+    hence "nfi1 = nfi'1" using 1 by fastforce
+    hence "nfi = nfi'" using to_map_map_inj nfi1 inj_eq by fastforce
+    ultimately
+    show "x = y" by auto
   qed
 qed
 
-lemma to_nested_map_upd_other: "x \<noteq> k \<Longrightarrow> to_nested_map (Mapping.update k v M) x = to_nested_map M x"
-  unfolding to_nested_map_def by (simp add: lookup_map_values)
+lemma to_map_map_upd_other: "x \<noteq> k \<Longrightarrow> to_map_map (Mapping.update k v M) x = to_map_map M x"
+  unfolding to_map_map_def by (simp add: lookup_map_values)
 
-lemma to_nested_map_del_other: "x \<noteq> k \<Longrightarrow> to_nested_map (Mapping.delete k M) x = to_nested_map M x"
-  unfolding to_nested_map_def by (simp add: lookup_map_values)
+lemma to_map_map_del_other: "x \<noteq> k \<Longrightarrow> to_map_map (Mapping.delete k M) x = to_map_map M x"
+  unfolding to_map_map_def by (simp add: lookup_map_values)
 
-lemma to_nested_map_upd: "to_nested_map M = M' \<Longrightarrow> to_nested_map (Mapping.update k v M) = M'(k \<mapsto> (Mapping.lookup v))"
+lemma to_map_map_upd: "to_map_map M = M' \<Longrightarrow> to_map_map (Mapping.update k v M) = M'(k \<mapsto> (Mapping.lookup v))"
   apply (rule ext)
   subgoal for x
     apply (cases "x = k")
-    subgoal by (simp add: to_nested_map_SomeI)
-    subgoal by (auto simp: fun_upd_other to_nested_map_upd_other)
+    subgoal by (simp add: to_map_map_SomeI)
+    subgoal by (auto simp: fun_upd_other to_map_map_upd_other)
     done
   done
 
-lemma to_nested_map_del: "to_nested_map M = M' \<Longrightarrow> to_nested_map (Mapping.delete k M) = M'(k := None)"
+lemma to_map_map_del: "to_map_map M = M' \<Longrightarrow> to_map_map (Mapping.delete k M) = M'(k := None)"
   apply (rule ext)
   subgoal for x
-    by (cases "x = k"; auto simp: to_nested_map_NoneI fun_upd_other to_nested_map_del_other)
+    by (cases "x = k"; auto simp: to_map_map_NoneI fun_upd_other to_map_map_del_other)
   done
 
 (* To do: clean up using above lemmas *)
-lemma apply_of_upd_impl_correct: "to_nested_map (apply_of_upd_impl u ofi) = apply_of_upd u (to_nested_map ofi)"
+lemma apply_of_upd_impl_correct: "to_map_map (apply_of_upd_impl u ofi) = apply_of_upd u (to_map_map ofi)"
 proof (rule ext; induction u)
   fix x::func
   and f::func
   and as::"object option list"
   and v::"object option"
-  let ?m1 = "to_nested_map (apply_of_upd_impl (OFU f as v) ofi)"
-  let ?m2 = "apply_of_upd (OFU f as v) (to_nested_map ofi)"
+  let ?m1 = "to_map_map (apply_of_upd_impl (OFU f as v) ofi)"
+  let ?m2 = "apply_of_upd (OFU f as v) (to_map_map ofi)"
   have case_None: "?m1 x = None \<longleftrightarrow> ?m2 x = None"
   proof
     assume "?m1 x = None"
     hence 1: "Mapping.lookup (apply_of_upd_impl (OFU f as v) ofi) x = None"
-      by (subst (asm) to_nested_map_None)
+      by (subst (asm) to_map_map_None)
     hence 2: "f \<noteq> x"
       by (cases "Mapping.lookup ofi f"; cases v; auto)
     show "?m2 x = None" 
       apply (insert 1 2)
       apply (subst apply_of_upd.simps, subst (asm) apply_of_upd_impl.simps)
-      apply (subst (3) to_nested_map_def)
-      by (cases "Mapping.lookup ofi f"; simp add: Let_def lookup_map_values; cases v; simp add: to_nested_map_None)  
+      apply (subst (3) to_map_map_def)
+      by (cases "Mapping.lookup ofi f"; simp add: Let_def lookup_map_values; cases v; simp add: to_map_map_None)  
   next
     assume a: "?m2 x = None"
     hence "f \<noteq> x" 
-      by (cases "to_nested_map ofi f"; auto)
+      by (cases "to_map_map ofi f"; auto)
     with a
-    have "to_nested_map ofi x = None"
-      by (cases "to_nested_map ofi f"; auto)
+    have "to_map_map ofi x = None"
+      by (cases "to_map_map ofi f"; auto)
     hence "Mapping.lookup ofi x = None"
-      using to_nested_map_None by fastforce
+      using to_map_map_None by fastforce
     with \<open>f \<noteq> x\<close>
     have "Mapping.lookup (apply_of_upd_impl (OFU f as v) ofi) x = None" 
       apply (subst apply_of_upd_impl.simps)
       apply (cases "Mapping.lookup ofi f"; cases v)
       by auto
     then 
-    show "?m1 x = None" by (subst to_nested_map_None)
+    show "?m1 x = None" by (subst to_map_map_None)
   qed
 
   show "?m1 x = ?m2 x"
@@ -1216,8 +1217,8 @@ proof (rule ext; induction u)
       show ?thesis
       proof (cases "Mapping.lookup ofi f")
         case None
-        hence "to_nested_map ofi f = None"
-          by (simp add: to_nested_map_None)
+        hence "to_map_map ofi f = None"
+          by (simp add: to_map_map_None)
         hence 1: "?m2 f = Some (Map.empty ((map the as) := v))"
           by auto
         show ?thesis
@@ -1227,7 +1228,7 @@ proof (rule ext; induction u)
             using None \<open>Mapping.lookup ofi f = None\<close>
             by auto
           hence "?m1 f = Some Map.empty"
-            using to_nested_map_SomeI by fastforce
+            using to_map_map_SomeI by fastforce
           moreover
           from None 1
           have "?m2 f = Some Map.empty"
@@ -1244,16 +1245,16 @@ proof (rule ext; induction u)
             using Some \<open>Mapping.lookup ofi f = None\<close>
             by auto
           hence "?m1 f = Some (Map.empty ((map the as) := v))"
-            using to_nested_map_SomeI Some by fastforce
+            using to_map_map_SomeI Some by fastforce
           ultimately 
           show ?thesis using m m' \<open>f = x\<close> by simp
         qed
       next
         case (Some a)
         then obtain a' where
-         a': "to_nested_map ofi f = Some a'"
+         a': "to_map_map ofi f = Some a'"
           "a' = Mapping.lookup a"
-          using to_nested_map_SomeI by fast
+          using to_map_map_SomeI by fast
         hence 1: "?m2 f = Some (a' ((map the as) := v))"
           by auto
         show ?thesis
@@ -1263,7 +1264,7 @@ proof (rule ext; induction u)
             using None \<open>Mapping.lookup ofi f = Some a\<close>
             by auto
           hence 2: "?m1 f = Some (Mapping.lookup (Mapping.delete (map the as) a))"
-            using to_nested_map_SomeI by fastforce
+            using to_map_map_SomeI by fastforce
           
           from None 1
           have "?m2 f = Some (a' ((map the as) := None))"
@@ -1281,7 +1282,7 @@ proof (rule ext; induction u)
             using Some \<open>Mapping.lookup ofi f = Some a\<close>
             by auto
           hence 2: "?m1 f = Some (Mapping.lookup (Mapping.update (map the as) v' a))"
-            using to_nested_map_SomeI by fastforce
+            using to_map_map_SomeI by fastforce
           
           from Some 1
           have "?m2 f = Some (a' ((map the as) := v))"
@@ -1299,12 +1300,12 @@ proof (rule ext; induction u)
       case False
       then have "Mapping.lookup (apply_of_upd_impl (OFU f as v) ofi) x = Mapping.lookup ofi x"
         by (cases "Mapping.lookup ofi f"; cases v; auto)
-      then have "?m1 x = to_nested_map ofi x"
-        unfolding to_nested_map_def by (simp add: lookup_map_values)
+      then have "?m1 x = to_map_map ofi x"
+        unfolding to_map_map_def by (simp add: lookup_map_values)
       moreover
       from False
-      have "?m2 x = to_nested_map ofi x"
-        by (cases "to_nested_map ofi f"; cases v; auto)
+      have "?m2 x = to_map_map ofi x"
+        by (cases "to_map_map ofi f"; cases v; auto)
       ultimately
       show ?thesis using m' m by simp
     qed
@@ -1337,42 +1338,42 @@ fun nf_upd_defined'_impl::"mp_nfi \<Rightarrow> instantiated_nf_upd \<Rightarrow
 lemma upd_nf_int_impl_correct: "Mapping.lookup (upd_nf_int_impl m op args old new) = upd_nf_int (Mapping.lookup m) op args old new"
   by (cases op; auto)
 
-lemma apply_nf_upd_impl_correct: "to_nested_map (apply_nf_upd_impl u nfi) = apply_nf_upd u (to_nested_map nfi)"
+lemma apply_nf_upd_impl_correct: "to_map_map (apply_nf_upd_impl u nfi) = apply_nf_upd u (to_map_map nfi)"
 proof (rule ext; induction u)
   fix x::func
   and n::func
   and op::upd_op
   and as::"object option list"
   and v::"rat option"
-  let ?m1 = "to_nested_map (apply_nf_upd_impl (NFU n op as v) nfi)"
-  let ?m2 = "apply_nf_upd (NFU n op as v) (to_nested_map nfi)"
+  let ?m1 = "to_map_map (apply_nf_upd_impl (NFU n op as v) nfi)"
+  let ?m2 = "apply_nf_upd (NFU n op as v) (to_map_map nfi)"
 
   have case_None: "?m1 x = None \<longleftrightarrow> ?m2 x = None"
   proof
     assume "?m1 x = None"
     hence 1: "Mapping.lookup (apply_nf_upd_impl (NFU n op as v) nfi) x = None"
-      by (simp add: to_nested_map_None)
+      by (simp add: to_map_map_None)
     hence "n \<noteq> x"
       by (cases "Mapping.lookup nfi n"; auto)
     with 1
     have "Mapping.lookup nfi x = None"
       by (cases "Mapping.lookup nfi n"; auto)
-    hence "to_nested_map nfi x = None" by (simp add: to_nested_map_None)
+    hence "to_map_map nfi x = None" by (simp add: to_map_map_None)
     with 1
     show "?m2 x = None"
       by (auto simp: Let_def)
   next
     assume a: "?m2 x = None"
     hence n: "n \<noteq> x"
-      by (cases "to_nested_map nfi n"; auto)
+      by (cases "to_map_map nfi n"; auto)
     with a
-    have "to_nested_map nfi x = None"
-      by (cases "to_nested_map nfi n"; auto)
+    have "to_map_map nfi x = None"
+      by (cases "to_map_map nfi n"; auto)
     with n
     have "Mapping.lookup (apply_nf_upd_impl (NFU n op as v) nfi) x = None"
-      by (cases "Mapping.lookup nfi n"; auto elim: to_nested_map_NoneE)
+      by (cases "Mapping.lookup nfi n"; auto elim: to_map_map_NoneE)
     thus "?m1 x = None"
-      by (auto intro: to_nested_map_NoneI)
+      by (auto intro: to_map_map_NoneI)
   qed 
 
   show "?m1 x = ?m2 x"
@@ -1391,12 +1392,12 @@ proof (rule ext; induction u)
       proof (cases "Mapping.lookup nfi n")
         case None
         hence "?m1 n = Some (Mapping.lookup (upd_nf_int_impl Mapping.empty op (map the as) (the (Mapping.lookup Mapping.empty (map the as))) (the v)))"
-          using to_nested_map_Some by fastforce
+          using to_map_map_Some by fastforce
         hence "?m1 n = Some (Mapping.lookup (upd_nf_int_impl Mapping.empty op (map the as) (the None) (the v)))"
           by simp
         moreover
         from None
-        have "to_nested_map nfi n = None" by (rule to_nested_map_NoneI)
+        have "to_map_map nfi n = None" by (rule to_map_map_NoneI)
         hence "?m2 n = Some (upd_nf_int Map.empty op (map the as) (the (Map.empty (map the as))) (the v))"
           by auto
         hence "?m2 n = Some (upd_nf_int (Mapping.lookup Mapping.empty) op (map the as) (the None) (the v))"
@@ -1406,10 +1407,10 @@ proof (rule ext; induction u)
       next
         case (Some a)
         hence "?m1 n = Some (Mapping.lookup (upd_nf_int_impl a op (map the as) (the (Mapping.lookup a (map the as))) (the v)))"
-          using to_nested_map_Some by fastforce
+          using to_map_map_Some by fastforce
         moreover
         from Some
-        have "to_nested_map nfi n = Some (Mapping.lookup a)" by (rule to_nested_map_SomeI)
+        have "to_map_map nfi n = Some (Mapping.lookup a)" by (rule to_map_map_SomeI)
         hence "?m2 n = Some (upd_nf_int (Mapping.lookup a) op (map the as) (the (Mapping.lookup a (map the as))) (the v))"
           by (auto simp: Let_def)
         ultimately
@@ -1421,17 +1422,17 @@ proof (rule ext; induction u)
       case False
       hence "Mapping.lookup (apply_nf_upd_impl (NFU n op as v) nfi) x = Mapping.lookup nfi x"
         by (cases "Mapping.lookup nfi n"; auto)
-      hence "?m1 x = to_nested_map nfi x" by (simp add: lookup_map_values to_nested_map_def)      
+      hence "?m1 x = to_map_map nfi x" by (simp add: lookup_map_values to_map_map_def)      
       with False
-      show ?thesis by (cases "to_nested_map nfi n"; auto)
+      show ?thesis by (cases "to_map_map nfi n"; auto)
     qed
   qed
 qed
 
-lemma apply_of_upd_impl_correct': "to_nested_map (fold apply_of_upd_impl upds oi) = fold apply_of_upd upds (to_nested_map oi)"
+lemma apply_of_upd_impl_correct': "to_map_map (fold apply_of_upd_impl upds oi) = fold apply_of_upd upds (to_map_map oi)"
   by (induction upds arbitrary: oi; auto simp: apply_of_upd_impl_correct)
 
-lemma apply_nf_upd_impl_correct': "to_nested_map (fold apply_nf_upd_impl upds ni) = fold apply_nf_upd upds (to_nested_map ni)"
+lemma apply_nf_upd_impl_correct': "to_map_map (fold apply_nf_upd_impl upds ni) = fold apply_nf_upd upds (to_map_map ni)"
   using apply_nf_upd_impl_correct
   by (induction upds arbitrary: ni, auto)
 
@@ -1624,12 +1625,12 @@ fun int_defines_nf_upd_impl::"mp_nfi \<Rightarrow> instantiated_nf_upd \<Rightar
         Some f' \<Rightarrow> Mapping.lookup f' (map the args) \<noteq> None
       | None \<Rightarrow> False)"
 
-lemma int_defines_nf_upd_impl_correct: "int_defines_nf_upd_impl nfi upd = int_defines_nf_upd (to_nested_map nfi) upd"
+lemma int_defines_nf_upd_impl_correct: "int_defines_nf_upd_impl nfi upd = int_defines_nf_upd (to_map_map nfi) upd"
   apply (cases upd)
   subgoal for f op args
     apply (cases "Mapping.lookup nfi f")
-    subgoal by (frule to_nested_map_NoneI; cases op; simp)
-    subgoal by (frule to_nested_map_SomeI; cases op; simp)
+    subgoal by (frule to_map_map_NoneI; cases op; simp)
+    subgoal by (frule to_map_map_SomeI; cases op; simp)
     done
   done
 
@@ -1733,11 +1734,27 @@ lemma valid_ground_action_impl_correct: "valid_ground_action_impl a M = valid_gr
   | "ground_action_path_impl M (\<alpha>#\<alpha>s) M' \<longleftrightarrow> valid_ground_action_impl \<alpha> M
     \<and> ground_action_path_impl (execute_ground_action_impl \<alpha> M) \<alpha>s M'"
 
-
-lemma ground_action_path_impl_correct: "ground_action_path_impl M as M' = ground_action_path (exec_wm_to_wm M) as (exec_wm_to_wm M')"
-  using valid_ground_action_impl_correct execute_ground_action_impl_correct
-  apply (induction as arbitrary: M)
-  apply (simp add: arg_cong[of M M' exec_wm_to_wm])
+  
+  lemma ground_action_path_impl_correct: "ground_action_path_impl M as M' = ground_action_path (exec_wm_to_wm M) as (exec_wm_to_wm M')"
+  proof (induction as arbitrary: M)
+    case Nil
+    then show ?case using exec_wm_to_wm_inj
+      by (simp add: inj_eq)
+  next
+    case (Cons a as)
+    have "ground_action_path_impl M (a # as) M' = 
+      (valid_ground_action a (exec_wm_to_wm M) \<and> 
+      ground_action_path_impl (execute_ground_action_impl a M) as M')" 
+      using valid_ground_action_impl_correct by simp
+    have "valid_ground_action_impl a M = valid_ground_action a (exec_wm_to_wm M)" 
+      by (rule valid_ground_action_impl_correct)
+    moreover
+    have "ground_action_path_impl (execute_ground_action_impl a M) as M' 
+     = ground_action_path (execute_ground_action a (exec_wm_to_wm M)) as (exec_wm_to_wm M')"
+      using Cons.IH execute_ground_action_impl_correct by simp
+    ultimately
+    show ?case by simp
+  qed
 
 end \<comment> \<open>Context of \<open>ast_domain\<close>\<close>
 
@@ -1912,6 +1929,80 @@ context ast_domain begin
       (ERR (shows ''No such action schema '' o shows n))"
 end \<comment> \<open>Context of \<open>ast_domain\<close>\<close>
 
+
+text \<open>Our error type is a function from unit to shows. shows encodes a string 
+  and its concatenation operation. The error type is a function from unit to 
+  shows, because it allws binding \<close>
+
+text \<open>Checks that a predicate holds for each element in a list.\<close>
+definition check_all_list::"('a \<Rightarrow> bool) \<Rightarrow> 'a list 
+  \<Rightarrow> string \<Rightarrow> ('a \<Rightarrow> shows) 
+  \<Rightarrow> (unit \<Rightarrow> shows) + _" where 
+"check_all_list P l msg msgf \<equiv>
+  forallM (\<lambda>x. check (P x) (\<lambda>_::unit. shows msg o shows '': '' o msgf x) ) l 
+    <+? snd"
+
+
+
+term "\<lambda>_::unit. shows msg o shows '': '' o msgf x"
+
+term "forallM (\<lambda>x. check (P x) (\<lambda>_::unit. shows msg o shows '': '' o msgf x) ) "
+
+term "update_error"
+
+term forallM
+
+term check_allm
+
+lemma check_all_list_return_iff[return_iff]: "check_all_list P l msg msgf = Inr () \<longleftrightarrow> (\<forall>x\<in>set l. P x)"
+  unfolding check_all_list_def
+  by (induction l) (auto)
+
+
+definition check_all_list_index::"('a \<Rightarrow> bool) \<Rightarrow> 'a list
+  \<Rightarrow> (nat \<Rightarrow> shows) \<Rightarrow> ('a \<Rightarrow> shows) 
+  \<Rightarrow> (unit \<Rightarrow> shows) + _" where
+  "check_all_list_index P l msgf1 msgf2 = 
+    (forallM_index 
+      (\<lambda>x n. check (P x) (\<lambda>_::unit. msgf1 n o shows '': '' o msgf2 x)) 
+      l <+? snd)" (* Cannot prove when this returns, since forallM_index_aux is hidden *)
+
+
+term forallM_index
+
+derive "show" predicate func
+
+instantiation pred::("show") "show" begin
+fun shows_prec_pred::"nat \<Rightarrow> 'a pred \<Rightarrow> shows" where
+  "shows_prec_pred n (pred.Eq a b) = shows a o shows  b"
+| "shows_prec_pred n (pred.Pred p xs) = shows ''Pred '' o shows p o shows '' '' o shows_list xs"
+
+definition shows_list_pred :: "'a pred list \<Rightarrow> shows" where
+  "shows_list_pred xs = showsp_list shows_prec 0 xs"
+
+lemma shows_prec_pred_append: fixes n::nat and p::"'a pred" and r::string and s::string
+  shows "shows_prec n p (r @ s) = shows_prec n p r @ s" 
+  by (induction p; simp add: shows_list_append shows_prec_append)
+instance proof
+  fix n::nat and p::"'a pred" and r::string and s::string
+  show "shows_prec n p (r @ s) = shows_prec n p r @ s" 
+  by (rule shows_prec_pred_append)
+next
+  fix xs::"'a pred list" and r::string and s::string
+  show "shows_list xs (r @ s) = shows_list xs r @ s"
+    unfolding shows_list_pred_def
+    by (induction xs; auto intro: showsp_list_append simp: shows_prec_pred_append)
+qed
+end
+
+instantiation num_fluent::("show") "show" begin
+fun shows_prec_num_fluent::"nat \<Rightarrow> 'a num_fluent \<Rightarrow> shows" where
+  "shows_prec_num_fluent n (NFun f as) = shows ''NFun '' o shows f o shows '' '' o shows_list as"
+| "shows_prec_num_fluent n (Add a b) = shows ''Add '' o shows_prec_num_fluent a o shows '' '' o shows_prec_num_fluent b"
+end
+
+
+derive "show"  object "term" num_fluent num_comp atom formula
 context ast_problem begin
 
 (*TODO: change to this valuation definition to hanlde equalities nicely
@@ -1938,15 +2029,6 @@ primrec holds :: "'a formula set \<Rightarrow> 'a formula \<Rightarrow> bool" wh
 
   text \<open>We define a function to determine whether a formula holds in
     a world model\<close>
-  definition "holds M F \<equiv> (valuation M) \<Turnstile> F"
-
-  text \<open>Justification of this function\<close>
-
-  lemma holds_for_wf_fmlas:
-    assumes "wm_basic s"
-    shows "holds s F \<longleftrightarrow> close_world s \<TTurnstile> F"
-    unfolding holds_def using assms valuation_iff_close_world
-    by blast
 
   (*
   lemma holds_for_wf_fmlas:
@@ -1967,22 +2049,42 @@ primrec holds :: "'a formula set \<Rightarrow> 'a formula \<Rightarrow> bool" wh
   qed auto
   *)
 
+  text \<open>We have to be able to output every possible error message which
+    may arise during execution. \<close>
+
+  text \<open>The first refinement, therefore, must check each conditional effect
+    in the list.\<close>
+
+definition ex_conditional_effect_list::"(ground_formula \<times> ground_effect) list \<Rightarrow>
+  world_model \<Rightarrow> _+unit" where
+"ex_conditional_effect_list effs M \<equiv> undefined "
+
+definition ex_ground_action:: "ground_action \<Rightarrow> world_model \<Rightarrow> _+unit" where
+  "ex_ground_action \<equiv>  undefined"
+
   text \<open>The first refinement summarizes the enabledness check and the execution
     of the action. Moreover, we implement the precondition evaluation by our
-     @{const holds} function. This way, we can eliminate redundant resolving
+     holds function. This way, we can eliminate redundant resolving
      and instantiation of the action.
   \<close>
 
+
+
+fun show_cond_effect::"(ground_formula \<times> ground_effect) \<Rightarrow> shows" where
+  "show_cond_effect (pre, eff) s = pre + s"
+  
   definition en_exE :: "plan_action \<Rightarrow> world_model \<Rightarrow> _+world_model" where
     "en_exE \<equiv> \<lambda>(PAction n args) \<Rightarrow> \<lambda>s. do {
       a \<leftarrow> resolve_action_schemaE n;
       check (action_params_match a args) (ERRS ''Parameter mismatch'');
       let ai = instantiate_action_schema a args;
-      check (wf_effect_inst (effect ai)) (ERRS ''Effect not well-formed'');
-      check ( holds s (precondition ai)) (ERRS ''Precondition not satisfied'');
-      Error_Monad.return (apply_effect (effect ai) s)
+      check_all_list (wf_cond_effect_impl (ty_term_impl objT_impl)) (effects ai) (''Effect not well-formed'') (\<lambda>(pre, eff). shows pre o shows eff);
+      check (valuation s \<Turnstile> (precondition ai)) (ERRS ''Precondition not satisfied'');
+      Error_Monad.return (apply_conditional_effect_list (effects ai) s)
     }"
 
+  term "check (action_params_match a args) (ERRS ''Parameter mismatch'')"
+  term "\<lambda>x. do {x; check (action_params_match a args) (ERRS ''Parameter mismatch'')}"
   (* here we check that an effect is well formed and we execute it *)
 
   text \<open>Justification of implementation.\<close>
@@ -1991,7 +2093,7 @@ primrec holds :: "'a formula set \<Rightarrow> 'a formula \<Rightarrow> bool" wh
     shows "en_exE a s = Inr s'
       \<longleftrightarrow> plan_action_enabled a s \<and> s' = execute_plan_action a s"
     apply (cases a)
-    using assms holds_for_wf_fmlas wf_domain
+    using assms  wf_domain
     unfolding plan_action_enabled_def execute_plan_action_def
       and execute_ground_action_def en_exE_def wf_domain_def
     by (auto
@@ -2003,7 +2105,7 @@ primrec holds :: "'a formula set \<Rightarrow> 'a formula \<Rightarrow> bool" wh
     from instantiating well-formed action schemas are always well-formed
     (@{thm [source] wf_effect_inst_weak}).\<close>
   abbreviation "action_params_match2 stg mp a args
-    \<equiv> list_all2 (is_obj_of_type_impl stg mp)
+    \<equiv> list_all2 (is_of_type_impl)
         args (map snd (ast_action_schema.parameters a))"
 
   definition en_exE2
@@ -2016,33 +2118,6 @@ primrec holds :: "'a formula set \<Rightarrow> 'a formula \<Rightarrow> bool" wh
       check (holds M (precondition ai)) (ERRS ''Precondition not satisfied'');
       Error_Monad.return (apply_effect (effect ai) M)
     }"
-
-  text \<open>Justification of refinement\<close>
-  lemma (in wf_ast_problem) wf_en_exE2_eq:
-    shows "en_exE2 STG mp_objT pa s = en_exE pa s"
-    apply (cases pa; simp add: en_exE2_def en_exE_def Let_def)
-    apply (auto
-      simp: return_iff resolve_action_schemaE_def resolve_action_wf
-      simp: wf_effect_inst_weak action_params_match_def
-      split: error_monad_bind_split)
-    done
-
-  text \<open>Combination of the two refinement lemmas\<close>
-  lemma (in wf_ast_problem) en_exE2_return_iff:
-    assumes "wm_basic M"
-    shows "en_exE2 STG mp_objT a M = Inr M'
-      \<longleftrightarrow> plan_action_enabled a M \<and> M' = execute_plan_action a M"
-    unfolding wf_en_exE2_eq
-    apply (subst en_exE_return_iff)
-    using assms
-    by (auto)
-
-  lemma (in wf_ast_problem) en_exE2_return_iff_compact_notation:
-    "\<lbrakk>wm_basic s\<rbrakk> \<Longrightarrow>
-      en_exE2 STG mp_objT a s = Inr s'
-      \<longleftrightarrow> plan_action_enabled a s \<and> s' = execute_plan_action a s"
-    using en_exE2_return_iff .
-
 end \<comment> \<open>Context of \<open>ast_problem\<close>\<close>
 
 subsubsection \<open>Checking of Plan\<close>
@@ -2072,38 +2147,51 @@ context ast_problem begin
   text \<open>Next, we use our efficient combined enabledness check and execution
     function, and transfer the implementation to use the error monad: \<close>
   fun valid_plan_fromE
-    :: "_ \<Rightarrow> (object, type) mapping \<Rightarrow> nat \<Rightarrow> world_model \<Rightarrow> plan \<Rightarrow> _+unit"
+    :: "_ \<Rightarrow> (object, type) mapping \<Rightarrow> nat \<Rightarrow> exec_world_model \<Rightarrow> plan \<Rightarrow> _+unit"
   where
-    "valid_plan_fromE stg mp si s []
-      = check (holds s (inst_goal (goal P))) (ERRS ''Postcondition does not hold'')"
+    "valid_plan_fromE stg si s []
+      = check (valuation_impl s \<Turnstile> (inst_goal (goal P))) (ERRS ''Postcondition does not hold'')"
   | "valid_plan_fromE stg mp si s (\<pi>#\<pi>s) = do {
-        s \<leftarrow> en_exE2 stg mp \<pi> s
+        s \<leftarrow> en_exE2 stg \<pi> s
           <+? (\<lambda>e _. shows ''at step '' o shows si o shows '': '' o e ());
         valid_plan_fromE stg mp (si+1) s \<pi>s
       }"
 
+end
 
-  text \<open>For the refinement, we need to show that the world models only
-    contain atoms, i.e., containing only atoms is an invariant under execution
-    of well-formed plan actions.\<close>
-  lemma (in wf_ast_problem) wf_actions_only_add_atoms:
-    "\<lbrakk> wm_basic s; wf_plan_action a \<rbrakk>
-      \<Longrightarrow> wm_basic (execute_plan_action a s)"
-    using wf_problem wf_domain
-    unfolding wf_problem_def wf_domain_def
-    apply (cases a)
-    apply (clarsimp
-      split: option.splits
-      simp: wf_fmla_atom_alt execute_plan_action_def wm_basic_def
-      simp: execute_ground_action_def)
-    subgoal for n args schema fmla
-      apply (cases "effect (instantiate_action_schema schema args)"; simp)
-      by (metis ground_action.sel(2) wf_effect.simps
-            wf_fmla_atom_alt resolve_action_wf
-            wf_ground_action.elims(2) wf_instantiate_action_schema)
+context wf_ast_problem
+begin
+  
+
+  text \<open>Justification of refinement\<close>
+  lemma (in wf_ast_problem) wf_en_exE2_eq:
+    shows "en_exE2 STG mp_objT pa s = en_exE pa s"
+    apply (cases pa; simp add: en_exE2_def en_exE_def Let_def)
+    apply (auto
+      simp: return_iff resolve_action_schemaE_def resolve_action_wf
+      simp: wf_effect_inst_weak action_params_match_def
+      split: error_monad_bind_split)
     done
 
+  text \<open>Combination of the two refinement lemmas\<close>
+  lemma (in wf_ast_problem) en_exE2_return_iff:
+    assumes "wm_basic M"
+    shows "en_exE2 STG mp_objT a M = Inr M'
+      \<longleftrightarrow> plan_action_enabled a M \<and> M' = execute_plan_action a M"
+    unfolding wf_en_exE2_eq
+    apply (subst en_exE_return_iff)
+    using assms
+    by (auto)
+
+  lemma (in wf_ast_problem) en_exE2_return_iff_compact_notation:
+    "\<lbrakk>wm_basic s\<rbrakk> \<Longrightarrow>
+      en_exE2 STG mp_objT a s = Inr s'
+      \<longleftrightarrow> plan_action_enabled a s \<and> s' = execute_plan_action a s"
+    using en_exE2_return_iff .
+
+
   text \<open>Refinement lemma for our plan checking algorithm\<close>
+ 
   lemma (in wf_ast_problem) valid_plan_fromE_return_iff[return_iff]:
     assumes "wm_basic s"
     shows "valid_plan_fromE STG mp_objT k s \<pi>s = Inr () \<longleftrightarrow> valid_plan_from s \<pi>s"
@@ -2145,23 +2233,21 @@ text \<open>We obtain the main plan checker by combining the well-formedness che
   and executability check. \<close>
 
 
-definition "check_all_list P l msg msgf \<equiv>
-  forallM (\<lambda>x. check (P x) (\<lambda>_::unit. shows msg o shows '': '' o msgf x) ) l <+? snd"
-
-lemma check_all_list_return_iff[return_iff]: "check_all_list P l msg msgf = Inr () \<longleftrightarrow> (\<forall>x\<in>set l. P x)"
-  unfolding check_all_list_def
-  by (induction l) (auto)
-
 definition "check_wf_types D \<equiv> do {
   check_all_list (\<lambda>(_,t). t=''object'' \<or> t\<in>fst`set (types D)) (types D) ''Undeclared supertype'' (shows o snd)
 }"
+
+definition "check_wf_types' D \<equiv> do {
+  check_all_list (\<lambda>(_,t). t=''object'' \<or> t\<in>fst`set (types D)) (types D) ''Undeclared supertype'' (shows o snd)
+} <+? (\<lambda>e. String.implode e '''')"
+
 
 lemma check_wf_types_return_iff[return_iff]: "check_wf_types D = Inr () \<longleftrightarrow> ast_domain_decs.wf_types D"
   unfolding ast_domain_decs.wf_types_def check_wf_types_def
   by (force simp: return_iff)
 
 
-definition "check_wf_domain_decs DD stg conT \<equiv> do {
+definition "check_wf_domain_decs DD \<equiv> do {
   check_wf_types DD;
   check (distinct (map (predicate_decl.pred) (predicates DD))) (ERRS ''Duplicate predicate declaration'');
   check_all_list (ast_domain_decs.wf_predicate_decl DD) (predicates DD) ''Malformed predicate declaration'' (shows o predicate.name o predicate_decl.pred);
@@ -2170,11 +2256,11 @@ definition "check_wf_domain_decs DD stg conT \<equiv> do {
 }"
 
 lemma check_wf_domain_decs_return_iff[return_iff]:
-  "check_wf_domain_decs DD stg conT = Inr () \<longleftrightarrow> ast_domain_decs.wf_domain_decs' DD stg conT"
+  "check_wf_domain_decs DD = Inr () \<longleftrightarrow> ast_domain_decs.wf_domain_decs DD"
 proof -
   interpret ast_domain_decs DD .
   show ?thesis
-    unfolding check_wf_domain_decs_def wf_domain_decs'_def
+    unfolding check_wf_domain_decs_def wf_domain_decs_def
     by (auto simp: return_iff)
 qed
 
@@ -2182,32 +2268,45 @@ qed
 definition "prepend_err_msg msg e \<equiv> \<lambda>_::unit. shows msg o shows '': '' o e ()"
 
 
-definition "check_wf_problem_decs PD stg conT mp \<equiv> do {
+definition "check_wf_problem_decs PD \<equiv> do {
   let DD = ast_problem_decs.domain_decs PD;
-  check_wf_domain_decs DD stg conT <+? prepend_err_msg ''Domain declarations not well-formed'';
+  check_wf_domain_decs DD <+? prepend_err_msg ''Domain declarations not well-formed'';
   check (distinct (map fst (objects PD) @ map fst (consts DD))) (ERRS ''Duplicate object declaration'');
   check ((\<forall>(n,T)\<in>set (objects PD). ast_domain_decs.wf_type DD T)) (ERRS ''Malformed type'')
 }"
 
 lemma check_wf_problem_decs_return_iff[return_iff]:
-  "check_wf_problem_decs PD stg conT mp = Inr () \<longleftrightarrow> ast_problem_decs.wf_problem_decs' PD stg conT mp"
+  "check_wf_problem_decs PD = Inr () \<longleftrightarrow> ast_problem_decs.wf_problem_decs PD"
 proof -
   interpret ast_problem_decs PD .
   show ?thesis
-    unfolding check_wf_problem_decs_def wf_problem_decs'_def
+    unfolding check_wf_problem_decs_def wf_problem_decs_def
     by (auto simp: return_iff)
 qed
 
-
-definition "check_wf_domain D stg conT mp \<equiv> do {
+(* Why do we need a well-formed domain? *)
+term ast_problem_decs.wf_action_schema'
+(* We check that the domain is well-formed *)
+definition "check_wf_domain D \<equiv> do {
   let PD = ast_domain.problem_decs D;
-  check_wf_problem_decs PD stg conT mp <+? prepend_err_msg ''Declarations from problem not well-formed'';
-  check (distinct (map ast_action_schema.name (actions D))  ) (ERRS ''Duplicate action name'');
-  check_all_list (ast_problem_decs.wf_action_schema' PD stg mp) (actions D) ''Malformed action'' (shows o ast_action_schema.name)
+  let DD = ast_problem_decs.domain_decs PD;
+  let of_type_impl = ast_domain_decs.of_type_impl DD;
+  let ofs_impl = ast_domain_decs.ofs_impl DD;
+  let nfs_impl = ast_domain_decs.nfs_impl DD;
+  let objT_impl = ast_problem_decs.objT_impl PD;
+  
+  check_wf_problem_decs PD <+? prepend_err_msg ''Declarations from problem not well-formed'';
+  check (distinct (map ast_action_schema.name (actions D))) (ERRS ''Duplicate action name'');
+  check_all_list (ast_problem_decs.wf_action_schema' PD of_type_impl ofs_impl nfs_impl objT_impl) (actions D) ''Malformed action'' (shows o ast_action_schema.name)
 }"
 
+
+term "Error_Monad.bind"
+
+term "shows o ast_action_schema.name"
+
 lemma check_wf_domain_return_iff[return_iff]:
-  "check_wf_domain D stg conT mp = Inr () \<longleftrightarrow> ast_domain.wf_domain' D stg conT mp"
+  "check_wf_domain D = Inr () \<longleftrightarrow> ast_domain.wf_domain' D"
 proof -
   interpret ast_domain D .
   show ?thesis
@@ -2239,9 +2338,19 @@ definition "check_plan P \<pi>s \<equiv> do {
   let stg=ast_domain_decs.STG DD;
   let conT = ast_domain_decs.mp_constT DD;
   let mp = ast_problem_decs.mp_objT PD;
-  check_wf_problem P stg conT mp;
+  check_wf_problem P;
+
   ast_problem.valid_plan_fromE P stg mp 1 (ast_problem.I P) \<pi>s
 } <+? (\<lambda>e. String.implode (e () ''''))"
+
+(* valid_plan_fromE should be as efficient as possible *)
+(* after checking that the problem is valid, we can just pass the 
+    necessary components of the problem to valid_plan_fromE *)
+
+(* the correctness of valid_plan_fromE is relative to valid_plan_from, which
+  needs (what?) *)
+
+term ast_problem.valid_plan_from
 
 text \<open>Correctness theorem of the plan checker: It returns @{term "Inr ()"}
   if and only if the problem is well-formed and the plan is valid.
@@ -2288,6 +2397,25 @@ lemmas wf_domain_decs_code =
   ast_domain_decs.mp_constT_def
   ast_domain_decs.subtype_edge.simps
   ast_domain_decs.of_type_impl_def
+ast_domain_decs.ty_term'.simps
+ast_domain_decs.ofs_impl_def
+ast_domain_decs.nfs_impl_def
+ast_domain_decs.wf_cond_effect'_def
+ast_domain_decs.wf_cond_effect_list'_def
+ast_domain_decs.wf_num_comp'.simps 
+ast_domain_decs.wf_pred_eq.simps
+ast_domain_decs.is_term_of_type'.simps
+ast_domain_decs.wf_num_fluent'.simps 
+ast_domain_decs.wf_predicate'.simps 
+ast_domain_decs.obj_fun_sig'_def 
+ast_domain_decs.num_fun_sig'_def 
+ast_domain_decs.wf_pred_eq'.simps 
+ast_domain_decs.wf_of_upd'.simps 
+ast_domain_decs.wf_nf_upd'.simps
+ast_domain_decs.obj_fun_sig_def
+ ast_domain_decs.wf_num_func'.simps 
+ast_domain_decs.wf_pred'.simps
+ast_domain_decs.sig'_def
 
 declare wf_domain_decs_code[code]
 
@@ -2308,6 +2436,8 @@ lemmas wf_problem_decs_code =
   ast_problem_decs.nc_vars_impl.simps
   ast_problem_decs.term_vars_impl.simps 
   ast_problem_decs.nf_vars_impl.simps
+  ast_problem_decs.mp_objT_def
+  ast_problem_decs.objT_impl_def
   f_vars_def
 
 declare wf_problem_decs_code[code]
@@ -2356,7 +2486,8 @@ lemmas check_code =
   ast_domain.resolve_action_schema_def
   ast_domain.resolve_action_schemaE_def
   ast_problem.I_def
-  ast_domain.instantiate_action_schema.simps(* 
+  ast_domain.instantiate_action_schema.simps
+(*
   ast_domain.apply_effect_exec.simps *)
   (*ast_domain.apply_effect_exec'.simps*)
 (*   ast_domain.apply_effect_eq_impl_eq
@@ -2410,6 +2541,7 @@ derive (eq) ceq symbol "term"
 derive ccompare "term" symbol 
 derive (no) cenum variable
 derive (rbt) set_impl "term"
+derive (rbt) mapping_impl func predicate
 
 print_derives
 
@@ -2707,9 +2839,10 @@ export_code
   ast_problem_decs.pddl_all_impl ast_problem_decs.pddl_exists_impl
   formula.Not formula.Bot Effect ast_action_schema.Action_Schema
   map_atom Domain Problem DomainDecls ProbDecls PAction
-  valuation f_chars term_val_impl ast_domain.apply_effect_impl (* f_vars \<comment> Need to instantiate a few classes for symbol, but that is difficult *)
+  valuation f_chars term_val_impl ast_domain.apply_effect_impl
+  check_all_list check_wf_domain (* f_vars \<comment> Need to instantiate a few classes for symbol, but that is difficult *)
   (* term.CONST *) (* term.VAR *) 
-  String.explode String.implode ast_domain.non_int_nf_upd_list
+  String.explode String.implode ast_domain.non_int_nf_upd_list check_all_list_index
   in Scala
   module_name PDDL_Checker_Exported
   file "PDDL_STRIPS_Checker_Exported.scala"
