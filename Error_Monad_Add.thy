@@ -49,5 +49,7 @@ begin
   
   lemmas error_monad_bind_splits =error_monad_bind_split error_monad_bind_split_asm
   
+  thm option.splits
+  
   
 end

@@ -264,9 +264,9 @@ begin
 fun nc_val'::"object term num_comp \<Rightarrow> bool" where
   "nc_val' (Num_Eq x y) = (case (nf_val x, nf_val y) of
       (Some x, Some y)  \<Rightarrow> x = y | _ \<Rightarrow> False)"
-  | "nc_val'(num_comp.Le x y) = (case (nf_val x, nf_val y) of
+  | "nc_val'(Num_Le x y) = (case (nf_val x, nf_val y) of
       (Some x, Some y)  \<Rightarrow> x \<le> y | _ \<Rightarrow> False)"
-  | "nc_val'(num_comp.Lt x y) = (case (nf_val x, nf_val y) of
+  | "nc_val'(Num_Lt x y) = (case (nf_val x, nf_val y) of
       (Some x, Some y)  \<Rightarrow> x < y | _ \<Rightarrow> False)"
 
 fun pred_inst'::"object term pred \<Rightarrow> object pred option" where
@@ -502,8 +502,8 @@ context ast_domain_decs begin
     
     fun wf_num_comp' :: "'ent num_comp \<Rightarrow> bool" where
       "wf_num_comp' (Num_Eq a b) = (wf_num_fluent' a \<and> wf_num_fluent' b)"
-    | "wf_num_comp' (num_comp.Lt a b) = (wf_num_fluent' a \<and> wf_num_fluent' b)"
-    | "wf_num_comp' (num_comp.Le a b) = (wf_num_fluent' a \<and> wf_num_fluent' b)"
+    | "wf_num_comp' (Num_Lt a b) = (wf_num_fluent' a \<and> wf_num_fluent' b)"
+    | "wf_num_comp' (Num_Le a b) = (wf_num_fluent' a \<and> wf_num_fluent' b)"
 
     text \<open>Predicate-atoms are well-formed if their arguments match the
       signature, equalities are well-formed if the arguments are valid
@@ -858,10 +858,6 @@ derive (rbt) set_impl variable
 
 context ast_problem_decs begin
 
-
-  (* "of_type_impl G oT T \<equiv> (\<forall>pt\<in>set (primitives oT). dfs_reachable G ((=) pt) (primitives T))" *)
-  
-  (* definition "t_dom_impl G T \<equiv> \<Inter> (dfs_all G (primitives T))" *)
               
   find_theorems name: "collect"
   
@@ -926,8 +922,8 @@ qed (auto simp: nf_vars_def)
 
 fun nc_vars_impl::"symbol term num_comp \<Rightarrow> variable set" where
   "nc_vars_impl (Num_Eq a b) = nf_vars_impl a \<union> nf_vars_impl b"
-| "nc_vars_impl (Le a b) = nf_vars_impl a \<union> nf_vars_impl b"
-| "nc_vars_impl (num_comp.Lt a b) = nf_vars_impl a \<union> nf_vars_impl b"
+| "nc_vars_impl (Num_Le a b) = nf_vars_impl a \<union> nf_vars_impl b"
+| "nc_vars_impl (Num_Lt a b) = nf_vars_impl a \<union> nf_vars_impl b"
 
 lemma nc_vars_impl_correct: "nc_vars_impl x = nc_vars x"
   by (induction x; simp add: nc_vars_def nf_vars_def nf_vars_impl_correct)
@@ -1759,6 +1755,117 @@ lemma valid_ground_action_impl_correct: "valid_ground_action_impl a M = valid_gr
 end \<comment> \<open>Context of \<open>ast_domain\<close>\<close>
 
 
+definition "mp_index_by f l \<equiv> Mapping.of_alist (map (\<lambda>x. (f x, x)) l)"
+
+text \<open>Refinement of the resolution and instantiation of action schemas.\<close>
+context ast_problem begin
+
+definition mp_res_as::"(name, ast_action_schema) mapping" where
+  "mp_res_as = mp_index_by ast_action_schema.name (actions D)"
+
+definition "resolve_action_schema_impl = Mapping.lookup mp_res_as"
+
+lemma resolve_action_schema_impl_correct: "resolve_action_schema_impl x = resolve_action_schema x"
+  unfolding resolve_action_schema_impl_def resolve_action_schema_def mp_res_as_def mp_index_by_def index_by_def
+  by (simp add: lookup_of_alist)
+
+context
+  fixes is_obj_of_type:: "object \<Rightarrow> type \<Rightarrow> bool"
+    and res::"name \<rightharpoonup> ast_action_schema"
+begin
+
+definition "params_match' params as \<equiv> list_all2 is_obj_of_type as (map snd params)"
+
+definition "action_params_match' a as \<equiv> params_match' (parameters a) as"
+
+fun wf_plan_action'::"plan_action \<Rightarrow> bool" where
+  "wf_plan_action' (PAction n as) = (
+      case res n of
+        None \<Rightarrow> False
+      | Some a \<Rightarrow>
+          action_params_match' a as
+        )"
+
+
+fun resolve_instantiate'::"plan_action \<Rightarrow> ground_action" where
+  "resolve_instantiate' (PAction n as) =
+      instantiate_action_schema
+        (the (res n))
+        as"
+
+definition plan_action_path'::"exec_world_model \<Rightarrow> plan_action list \<Rightarrow> exec_world_model \<Rightarrow> bool" where
+  "plan_action_path' M \<pi>s M' = ((\<forall>\<pi> \<in> set \<pi>s. wf_plan_action' \<pi>) 
+    \<and> ground_action_path_impl M (map resolve_instantiate' \<pi>s) M')"
+
+definition valid_plan_action'::"plan_action \<Rightarrow> exec_world_model \<Rightarrow> bool" where
+  "valid_plan_action' \<pi> M \<equiv> wf_plan_action' \<pi> 
+  \<and> valid_ground_action_impl (resolve_instantiate' \<pi>) M"
+
+definition execute_plan_action'::"plan_action \<Rightarrow> exec_world_model \<Rightarrow> exec_world_model" where
+  "execute_plan_action' \<pi> M = execute_ground_action_impl (resolve_instantiate' \<pi>) M"
+
+end
+
+term execute_plan_action'
+term valid_plan_action'
+
+abbreviation "is_obj_of_type_impl \<equiv> is_of_type' of_type_impl objT_impl"
+
+lemma is_obj_of_type_impl_correct: "is_obj_of_type_impl x = is_of_type objT x"
+  unfolding objT_impl_correct is_of_type_impl_correct
+  ..
+
+abbreviation "params_match_impl \<equiv> params_match' is_obj_of_type_impl"
+
+lemma params_match_impl_correct: "params_match_impl params args = params_match params args"
+  unfolding params_match'_def params_match_def is_obj_of_type_impl_correct
+  ..
+
+abbreviation "action_params_match_impl \<equiv> action_params_match' is_obj_of_type_impl"
+
+lemma action_params_match_impl_correct: "action_params_match_impl a as = action_params_match a as"
+  unfolding action_params_match'_def action_params_match_def params_match_impl_correct
+  ..
+
+abbreviation "wf_plan_action_impl \<equiv> wf_plan_action' is_obj_of_type_impl resolve_action_schema_impl"
+
+lemma wf_plan_action_impl_correct: "wf_plan_action_impl a = wf_plan_action a"
+  apply (induction a)
+  subgoal for a as
+    apply (subst wf_plan_action'.simps)
+    apply (subst wf_plan_action.simps)
+    apply (subst resolve_action_schema_impl_correct)
+    apply (subst action_params_match_impl_correct) 
+    .. (* the simplifier does not handle these substitutions well *)
+  .
+
+abbreviation "resolve_instantiate_impl \<equiv> resolve_instantiate' resolve_action_schema_impl"
+
+lemma resolve_instantiate_impl_correct: "resolve_instantiate_impl a = resolve_instantiate a"
+  by (cases a; simp add: resolve_action_schema_impl_correct)
+
+abbreviation "plan_action_path_impl \<equiv> plan_action_path' is_obj_of_type_impl resolve_action_schema_impl"
+
+lemma plan_action_path_impl_correct: "plan_action_path_impl M as M' = plan_action_path (exec_wm_to_wm M) as (exec_wm_to_wm M')"
+  unfolding plan_action_path'_def plan_action_path_def
+  by (simp add: wf_plan_action_impl_correct ground_action_path_impl_correct ext[OF resolve_instantiate_impl_correct])
+
+(* There is no consistency in when type environments and functions are passed as parameters
+  and when they are coded hard *)
+abbreviation valid_plan_action_impl::"plan_action \<Rightarrow> exec_world_model \<Rightarrow> bool" where
+  "valid_plan_action_impl \<equiv> valid_plan_action' is_obj_of_type_impl resolve_action_schema_impl"
+
+lemma valid_plan_action_impl_correct: "valid_plan_action_impl \<pi> M = valid_plan_action \<pi> (exec_wm_to_wm M)"
+  unfolding valid_plan_action'_def valid_plan_action_def wf_plan_action_impl_correct
+    valid_ground_action_impl_correct resolve_instantiate_impl_correct
+  ..
+
+abbreviation "execute_plan_action_impl \<equiv> execute_plan_action' resolve_action_schema_impl"
+
+lemma execute_plan_action_impl_correct: "exec_wm_to_wm (execute_plan_action_impl \<pi> M) \<equiv> execute_plan_action \<pi> (exec_wm_to_wm M)"
+  unfolding execute_plan_action'_def execute_plan_action_def 
+    resolve_instantiate_impl_correct execute_ground_action_impl_correct .
+end
 
 context ast_problem
 begin
@@ -1824,8 +1931,6 @@ lemma wf_of_arg_r_map_impl_correct: "wf_of_arg_r_map_impl f m = wf_of_arg_r_map 
 (* To do: decide whether you even need these *)
 definition "wf_of_int_impl oi = wf_of_int'' of_type_impl ofs_impl objT_impl (Mapping.lookup oi)"
 
-
-lemma wf_of_int_impl_correct
 
   definition "wf_nf_int_map_refine = wf_nf_int_map' of_type_impl nfs_impl objT_impl"
 
@@ -1919,17 +2024,6 @@ end \<comment> \<open>Context of \<open>ast_domain\<close>\<close>
 
 subsubsection \<open>Execution of Plan Actions\<close>
 
-text \<open>We will perform two refinement steps, to summarize redundant operations\<close>
-
-text \<open>We first lift action schema lookup into the error monad. \<close>
-context ast_domain begin
-  definition "resolve_action_schemaE n \<equiv>
-    lift_opt
-      (resolve_action_schema n)
-      (ERR (shows ''No such action schema '' o shows n))"
-end \<comment> \<open>Context of \<open>ast_domain\<close>\<close>
-
-
 text \<open>Our error type is a function from unit to shows. shows encodes a string 
   and its concatenation operation. The error type is a function from unit to 
   shows, because it allws binding \<close>
@@ -1958,6 +2052,10 @@ lemma check_all_list_return_iff[return_iff]: "check_all_list P l msg msgf = Inr 
   unfolding check_all_list_def
   by (induction l) (auto)
 
+lemma isOK_check_all_list[simp]: "isOK (check_all_list P l msg msgf) \<longleftrightarrow> list_all P l"
+  unfolding check_all_list_def
+  by (simp add: Ball_set)
+
 
 definition check_all_list_index::"('a \<Rightarrow> bool) \<Rightarrow> 'a list
   \<Rightarrow> (nat \<Rightarrow> shows) \<Rightarrow> ('a \<Rightarrow> shows) 
@@ -1968,9 +2066,8 @@ definition check_all_list_index::"('a \<Rightarrow> bool) \<Rightarrow> 'a list
       l <+? snd)" (* Cannot prove when this returns, since forallM_index_aux is hidden *)
 
 
-term forallM_index
-
-derive "show" predicate func
+text \<open>Functions to allow printing of instances of these types\<close>
+derive "show" predicate func upd_op object "term" formula 
 
 instantiation pred::("show") "show" begin
 fun shows_prec_pred::"nat \<Rightarrow> 'a pred \<Rightarrow> shows" where
@@ -1992,62 +2089,126 @@ next
   show "shows_list xs (r @ s) = shows_list xs r @ s"
     unfolding shows_list_pred_def
     by (induction xs; auto intro: showsp_list_append simp: shows_prec_pred_append)
-qed
+qed                                      
 end
 
 instantiation num_fluent::("show") "show" begin
 fun shows_prec_num_fluent::"nat \<Rightarrow> 'a num_fluent \<Rightarrow> shows" where
   "shows_prec_num_fluent n (NFun f as) = shows ''NFun '' o shows f o shows '' '' o shows_list as"
-| "shows_prec_num_fluent n (Add a b) = shows ''Add '' o shows_prec_num_fluent a o shows '' '' o shows_prec_num_fluent b"
+| "shows_prec_num_fluent n (Add a b) = shows ''Add '' o shows_prec_num_fluent n a o shows '' '' o shows_prec_num_fluent n b"
+| "shows_prec_num_fluent n (Sub a b) = shows ''Sub '' o shows_prec_num_fluent n a o shows '' '' o shows_prec_num_fluent n b"
+| "shows_prec_num_fluent n (Mult a b) = shows ''Mult '' o shows_prec_num_fluent n a o shows '' '' o shows_prec_num_fluent n b"
+| "shows_prec_num_fluent n (Div a b) = shows ''Div '' o shows_prec_num_fluent n a o shows '' '' o shows_prec_num_fluent n b"
+| "shows_prec_num_fluent n (Num x) = shows ''Num '' o shows '' '' o shows x"
+
+definition shows_list_num_fluent::"'a num_fluent list \<Rightarrow> shows" where
+  "shows_list_num_fluent xs = showsp_list shows_prec 0 xs"
+
+lemma shows_prec_num_fluent_append: fixes n::nat and nf::"'a num_fluent" and r::string and s::string
+  shows "shows_prec n nf (r @ s) = shows_prec n nf r @ s" 
+  by (induction nf arbitrary: r s; auto simp: shows_list_append shows_prec_append)
+instance 
+  apply standard
+  subgoal by (auto simp: shows_prec_num_fluent_append)
+  subgoal for xs by (induction xs; auto simp: shows_list_num_fluent_def shows_prec_num_fluent_append intro: showsp_list_append)
+  done
+end
+
+instantiation num_comp::("show") "show" begin
+fun shows_prec_num_comp::"nat \<Rightarrow> 'a num_comp \<Rightarrow> shows" where
+  "shows_prec_num_comp n (Num_Eq a b) = shows ''Num_Eq '' o shows a o shows b"
+| "shows_prec_num_comp n (Num_Lt a b) = shows ''Num_Lt '' o shows a o shows b"
+| "shows_prec_num_comp n (Num_Le a b) = shows ''Num_Le '' o shows a o shows b"
+
+definition shows_list_num_comp::"'a num_comp list \<Rightarrow> shows" where
+  "shows_list_num_comp xs = showsp_list shows_prec 0 xs"
+
+lemma shows_prec_num_comp_append: fixes n::nat and nc::"'a num_comp" and r::string and s::string
+  shows "shows_prec n nc (r @ s) = shows_prec n nc r @ s"
+  by (cases nc; auto simp: shows_list_append shows_prec_append)
+instance
+  apply standard
+  subgoal by (auto simp: shows_prec_num_comp_append)
+  subgoal for xs by (induction xs; auto simp: shows_list_num_comp_def shows_prec_num_comp_append intro: showsp_list_append)
+  done
+end
+
+instantiation atom::("show") "show" begin
+fun shows_prec_atom::"nat \<Rightarrow> 'a atom \<Rightarrow> shows" where
+  "shows_prec_atom n (PredAtom p) = shows ''PredAtom '' o shows p"
+| "shows_prec_atom n (NumComp nc) = shows ''NumComp '' o shows nc"
+
+definition shows_list_atom::"'a atom list \<Rightarrow> shows" where
+  "shows_list_atom xs = showsp_list shows_prec 0 xs"
+
+lemma shows_prec_atom_append: fixes n::nat and a::"'a atom" and r::string and s::string
+  shows "shows_prec n a (r @ s) = shows_prec n a r @ s"
+  by (cases a; auto simp: shows_list_append shows_prec_append)
+
+instance 
+  apply standard
+  subgoal by (auto simp: shows_prec_atom_append)
+  subgoal for xs by (induction xs; auto simp: shows_list_atom_def shows_prec_atom_append intro: showsp_list_append)
+  done
+end
+
+instantiation of_upd::("show") "show" begin
+fun shows_prec_of_upd::"nat \<Rightarrow> 'a of_upd \<Rightarrow> shows" where
+  "shows_prec_of_upd n (OF_Upd f as v) = shows ''OF_Upd '' o shows f o shows as o shows v"
+
+definition shows_list_of_upd :: "'a of_upd list \<Rightarrow> shows" where
+  "shows_list_of_upd xs = showsp_list shows_prec 0 xs"
+
+lemma shows_prec_of_upd_append: fixes n::nat and u::"'a of_upd" and r::string and s::string
+  shows "shows_prec n u (r @ s) = shows_prec n u r @ s"
+  by (cases u; auto simp: shows_list_append shows_prec_append)
+instance 
+  apply standard
+  subgoal by (auto simp: shows_prec_of_upd_append)
+  subgoal for xs by (induction xs; auto simp: shows_list_of_upd_def shows_prec_of_upd_append intro: showsp_list_append)
+  done
 end
 
 
-derive "show"  object "term" num_fluent num_comp atom formula
+instantiation nf_upd::("show") "show" begin
+fun shows_prec_nf_upd::"nat \<Rightarrow> 'a nf_upd \<Rightarrow> shows" where
+  "shows_prec_nf_upd n (NF_Upd f op as v) = shows ''NF_Upd '' o shows f o shows op o shows as o shows v"
+
+definition shows_list_nf_upd :: "'a nf_upd list \<Rightarrow> shows" where
+  "shows_list_nf_upd xs = showsp_list shows_prec 0 xs"
+
+lemma shows_prec_nf_upd_append: fixes n::nat and u::"'a nf_upd" and r::string and s::string
+  shows "shows_prec n u (r @ s) = shows_prec n u r @ s"
+  by (cases u; auto simp: shows_list_append shows_prec_append)
+instance 
+  apply standard
+  subgoal by (auto simp: shows_prec_nf_upd_append)
+  subgoal for xs by (induction xs; auto simp: shows_list_nf_upd_def shows_prec_nf_upd_append intro: showsp_list_append)
+  done
+end
+
+instantiation ast_effect::("show") "show" begin
+fun shows_prec_ast_effect::"nat \<Rightarrow> 'a ast_effect \<Rightarrow> shows" where
+  "shows_prec_ast_effect n (Effect a d ou nu) = shows ''Effect '' o shows a o shows d o shows ou o shows nu"
+
+definition shows_list_ast_effect :: "'a ast_effect list \<Rightarrow> shows" where
+  "shows_list_ast_effect xs = showsp_list shows_prec 0 xs"
+
+lemma shows_prec_ast_effect_append: fixes n::nat and eff::"'a ast_effect" and r::string and s::string
+  shows "shows_prec n eff (r @ s) = shows_prec n eff r @ s"
+  by (cases eff; auto simp: shows_list_append shows_prec_append)
+instance 
+  apply standard
+  subgoal by (auto simp: shows_prec_ast_effect_append)
+  subgoal for xs by (induction xs; auto simp: shows_list_ast_effect_def shows_prec_ast_effect_append intro: showsp_list_append)
+  done
+end
+
 context ast_problem begin
-
-(*TODO: change to this valuation definition to hanlde equalities nicely
-definition "valuation s \<equiv> \<lambda>x. case x of (atom.Atom P ARGS) \<Rightarrow>
-                                                ((formula.Atom x) \<in> s)
-                                    | (atom.Eq t1 t2) \<Rightarrow> (t1 = t2)"
-
-primrec holds :: "'a formula set \<Rightarrow> 'a formula \<Rightarrow> bool" where
-"holds s (Atom k) = ((Atom k) \<in> s)" |
-"holds _ \<bottom> = False" |
-"holds s (Not F) = (\<not> (holds s F))" |
-"holds s (And F G) = (holds s F \<and> holds s G)" |
-"holds s (Or F G) = (holds s F \<or> holds s G)" |
-"holds s (Imp F G) = (holds s F \<longrightarrow> holds s G)"
-
-  lemma holds_for_valid_formulas:
-        assumes "\<forall>x\<in>s. \<exists>x'. x = formula.Atom x'"
-        shows "s \<TTurnstile> F \<Longrightarrow> holds s F"
-        unfolding holds_def entailment_def
-        using assms
-        apply (induction F; auto)
-        subgoal for x apply(cases x)*)
 
 
   text \<open>We define a function to determine whether a formula holds in
     a world model\<close>
-
-  (*
-  lemma holds_for_wf_fmlas:
-    assumes "\<forall>x\<in>s. is_Atom x" "wf_fmla Q F"
-    shows "holds s F \<longleftrightarrow> s \<TTurnstile> F"
-    unfolding holds_def entailment_def valuation_def
-    using assms
-  proof (induction F)
-    case (Atom x)
-    then show ?case
-      apply auto
-      by (metis formula_semantics.simps(1) is_Atom.elims(2) valuation_def)
-  next
-    case (Or F1 F2)
-    then show ?case
-      apply simp apply (safe; clarsimp?)
-      by (metis (mono_tags) is_Atom.elims(2) formula_semantics.simps(1))
-  qed auto
-  *)
 
   text \<open>We have to be able to output every possible error message which
     may arise during execution. \<close>
@@ -2068,56 +2229,287 @@ definition ex_ground_action:: "ground_action \<Rightarrow> world_model \<Rightar
      and instantiation of the action.
   \<close>
 
+  definition "resolve_action_schemaE n \<equiv>
+    lift_opt
+      (resolve_action_schema_impl n)
+      (ERR (shows ''No such action schema '' o shows n))"
+                                            
+lemma resolve_action_schemaE_return_iff[return_iff]:
+  "(resolve_action_schemaE n = Inr s) \<longleftrightarrow> (resolve_action_schema_impl n = Some s)"
+  unfolding resolve_action_schemaE_def 
+  by (rule return_iff)
 
-
-fun show_cond_effect::"(ground_formula \<times> ground_effect) \<Rightarrow> shows" where
-  "show_cond_effect (pre, eff) s = pre + s"
-  
-  definition en_exE :: "plan_action \<Rightarrow> world_model \<Rightarrow> _+world_model" where
+  (* check non-interference *)
+  definition en_exE :: "plan_action \<Rightarrow> exec_world_model \<Rightarrow> _+exec_world_model" where
     "en_exE \<equiv> \<lambda>(PAction n args) \<Rightarrow> \<lambda>s. do {
       a \<leftarrow> resolve_action_schemaE n;
-      check (action_params_match a args) (ERRS ''Parameter mismatch'');
+      check (action_params_match_impl a args) (ERRS ''Parameter mismatch'');
       let ai = instantiate_action_schema a args;
-      check_all_list (wf_cond_effect_impl (ty_term_impl objT_impl)) (effects ai) (''Effect not well-formed'') (\<lambda>(pre, eff). shows pre o shows eff);
-      check (valuation s \<Turnstile> (precondition ai)) (ERRS ''Precondition not satisfied'');
-      Error_Monad.return (apply_conditional_effect_list (effects ai) s)
+      check (wf_fmla_impl (ty_term_impl objT_impl) (precondition ai)) (ERRS ''Precondition not well-formed'');
+      check_all_list (wf_cond_effect_impl (ty_term_impl objT_impl)) (effects ai) (''Conditional effect not well-formed'') shows;
+      check (valuation_impl s \<Turnstile> (precondition ai)) (ERRS ''Precondition not satisfied'');
+      check_all_list (wf_inst_cond_effect_impl s) (effects ai) (''Conditional effect cannot be instantiated correctly'') shows;
+      check_all_list (well_inst_cond_effect_impl s s) (effects ai) (''Conditional effect cannot be instantiated correctly'') shows;
+      check (non_int_cond_eff_list_impl s (effects ai)) (ERRS ''Effects interfere'');
+      Error_Monad.return (apply_conditional_effect_list_impl (effects ai) s)
     }"
+  thm wf_ground_action_impl_def
+
+
+
+  find_theorems name: "bind"
 
   term "check (action_params_match a args) (ERRS ''Parameter mismatch'')"
   term "\<lambda>x. do {x; check (action_params_match a args) (ERRS ''Parameter mismatch'')}"
   (* here we check that an effect is well formed and we execute it *)
 
   text \<open>Justification of implementation.\<close>
-  lemma (in wf_ast_problem) en_exE_return_iff:
-    assumes "wm_basic s"
+  lemma (in wf_ast_problem) en_exE_return_iff[return_iff]:
     shows "en_exE a s = Inr s'
-      \<longleftrightarrow> plan_action_enabled a s \<and> s' = execute_plan_action a s"
-    apply (cases a)
-    using assms  wf_domain
-    unfolding plan_action_enabled_def execute_plan_action_def
-      and execute_ground_action_def en_exE_def wf_domain_def
-    by (auto
+      \<longleftrightarrow> valid_plan_action_impl a s \<and> s' = execute_plan_action_impl a s"
+    by (cases a; auto
         split: option.splits
-        simp: resolve_action_schemaE_def return_iff)
+        simp: en_exE_def valid_plan_action'_def valid_ground_action_impl_def 
+          ground_action_enabled_impl_def valid_effects_impl_def 
+          well_inst_cond_effect_list_impl_def wf_inst_cond_effect_list_impl_def
+          wf_cond_effect_list'_def wf_ground_action_impl_def execute_plan_action'_def
+          execute_ground_action_impl_def return_iff)
 
   text \<open>Next, we use the efficient implementation @{const is_obj_of_type_impl}
     for the type check, and omit the well-formedness check, as effects obtained
     from instantiating well-formed action schemas are always well-formed
     (@{thm [source] wf_effect_inst_weak}).\<close>
-  abbreviation "action_params_match2 stg mp a args
-    \<equiv> list_all2 (is_of_type_impl)
-        args (map snd (ast_action_schema.parameters a))"
 
+  
   definition en_exE2
-    :: "_ \<Rightarrow> (object, type) mapping \<Rightarrow> plan_action \<Rightarrow> world_model \<Rightarrow> _+world_model"
+    :: "plan_action \<Rightarrow> exec_world_model \<Rightarrow> _+exec_world_model"
   where
-    "en_exE2 G mp \<equiv> \<lambda>(PAction n args) \<Rightarrow> \<lambda>M. do {
+    "en_exE2 \<equiv> \<lambda>(PAction n args) \<Rightarrow> \<lambda>s. do {
       a \<leftarrow> resolve_action_schemaE n;
-      check (action_params_match2 G mp a args) (ERRS ''Parameter mismatch'');
+      check (action_params_match_impl a args) (ERRS ''Parameter mismatch'');
       let ai = instantiate_action_schema a args;
-      check (holds M (precondition ai)) (ERRS ''Precondition not satisfied'');
-      Error_Monad.return (apply_effect (effect ai) M)
+      check (valuation_impl s \<Turnstile> (precondition ai)) (ERRS ''Precondition not satisfied'');
+      check_all_list (wf_inst_cond_effect_impl s) (effects ai) (''Conditional effect cannot be instantiated correctly'') shows;
+      check_all_list (well_inst_cond_effect_impl s s) (effects ai) (''Conditional effect cannot be instantiated correctly'') shows;
+      check (non_int_cond_eff_list_impl s (effects ai)) (ERRS ''Effects interfere'');
+      Error_Monad.return (apply_conditional_effect_list_impl (effects ai) s)
     }"
+
+  find_theorems name: "resolve*w"
+
+lemmas wf_instantiate_action_schema_impl =
+  wf_instantiate_action_schema[simplified 
+    sym[OF action_params_match_impl_correct]
+    sym[OF wf_action_schema_impl_correct]
+    sym[OF wf_ground_action_impl_correct]
+      ]
+
+lemmas (in wf_ast_problem) resolve_action_wf_impl  =
+  resolve_action_wf[simplified 
+    sym[OF wf_action_schema_impl_correct]
+    sym[OF resolve_action_schema_impl_correct]
+      ]
+
+lemma (in wf_ast_problem) en_exE2_return_iff[return_iff]:
+  shows "en_exE2 a s = Inr s' \<longleftrightarrow> valid_plan_action_impl a s \<and> s' = execute_plan_action_impl a s"
+  unfolding en_exE2_def
+  apply (induction a)
+  subgoal for n as
+    apply (simp add: return_iff)
+    apply (rule iffI)
+     apply (erule exE)
+    apply (erule conjE)+
+    subgoal for action_schema
+      unfolding valid_plan_action'_def valid_ground_action_impl_def
+      apply (rule conjI)
+       apply (subst wf_plan_action'.simps)
+       apply simp
+      apply (rule conjI)
+         apply (drule resolve_action_wf_impl, rule wf_instantiate_action_schema_impl; assumption)
+       apply (simp add: ground_action_enabled_impl_def valid_effects_impl_def well_inst_cond_effect_list_impl_def wf_inst_cond_effect_list_impl_def)
+      by (simp add: execute_plan_action'_def execute_ground_action_impl_def)
+    apply (cases "resolve_action_schema_impl n") 
+    subgoal by (auto simp: valid_plan_action'_def)
+    subgoal by (auto simp: wf_plan_action'.simps valid_plan_action'_def
+       valid_ground_action_impl_def valid_effects_impl_def
+       ground_action_enabled_impl_def wf_inst_cond_effect_list_impl_def
+       well_inst_cond_effect_list_impl_def execute_plan_action'_def
+       execute_ground_action_impl_def)
+   done
+  done
+
+lemma "(if True then [] else [x]) = []"
+  thm if_split
+  apply (split if_split)
+  by simp
+
+lemma "(case Some x of None \<Rightarrow> [] | Some y \<Rightarrow> [y]) = [x]"
+  thm option.splits
+  apply (split option.splits)
+  by simp
+
+lemma return_idk:
+  assumes "\<And>R. m = Inr R ==> f R = Inr R"
+  shows "Error_Monad.bind m f \<bind> g = m \<bind> g"
+  using assms
+  by (cases m; auto)
+
+find_theorems name: "Monad*assoc"
+
+text \<open>Justification of refinement\<close>
+text \<open>We know that the problem is well-formed, because our executable check is equivalent to 
+      the abstract check. Therefore, we can use the assumption\<close>
+lemma (in wf_ast_problem) wf_en_exE2_eq:
+  shows "en_exE2 pa s = en_exE pa s"
+proof (induction pa)
+  case (PAction n as)
+  show ?case
+  proof (cases "en_exE2 (PAction n as) s")
+    case ret_val: (Inl l)
+    then show ?thesis 
+    proof (cases "resolve_action_schemaE n")
+      case (Inl a)
+      then show ?thesis unfolding en_exE_def en_exE2_def plan_action.case
+        by auto
+    next
+      case action_schema: (Inr a)
+      with ret_val obtain ai where
+        ai: "ai = instantiate_action_schema a as"
+        and do:
+        "do {check (action_params_match_impl a as) (ERRS ''Parameter mismatch'');
+          check (valuation_impl s \<Turnstile> (precondition ai)) (ERRS ''Precondition not satisfied'');
+          check_all_list (wf_inst_cond_effect_impl s) (effects ai) (''Conditional effect cannot be instantiated correctly'') shows;
+          check_all_list (well_inst_cond_effect_impl s s) (effects ai) (''Conditional effect cannot be instantiated correctly'') shows;
+          check (non_int_cond_eff_list_impl s (effects ai)) (ERRS ''Effects interfere'');
+          Error_Monad.return (apply_conditional_effect_list_impl (effects ai) s)} = Inl l"
+        unfolding en_exE2_def plan_action.case
+        by (auto simp: Let_def)
+      from this(2)[simplified Error_Monad.bind_assoc] this(2)
+      show ?thesis 
+      proof (cases "action_params_match_impl a as")
+        case True
+        from action_schema 
+        have "wf_action_schema_impl a" using resolve_action_schemaE_return_iff resolve_action_wf_impl by simp
+        with True ai
+        have "wf_ground_action_impl ai" using wf_instantiate_action_schema_impl by blast
+        hence "wf_fmla_impl (ty_term_impl objT_impl) (precondition ai)"
+              "list_all (wf_cond_effect_impl (ty_term_impl objT_impl)) (effects ai)" 
+          unfolding wf_ground_action_impl_def wf_cond_effect_list'_def by simp+
+        hence "\<forall>x. do { Inr x;
+                check (wf_fmla_impl (ty_term_impl objT_impl) (precondition ai)) (ERRS ''Precondition not well-formed'');
+                check_all_list (wf_cond_effect_impl (ty_term_impl objT_impl)) (effects ai) (''Conditional effect not well-formed'') shows}
+            = Inr ()" 
+          by (auto split: error_monad_bind_split simp: check_all_list_return_iff Ball_set)
+        hence "en_exE (PAction n as) s = Inl l" 
+          unfolding en_exE_def plan_action.case 
+          using ai do action_schema
+          by (auto simp: Let_def)
+        with ret_val
+        show ?thesis by simp
+      next
+        case False
+        then show ?thesis 
+          unfolding en_exE_def en_exE2_def plan_action.case
+          by (simp add: action_schema)
+      qed
+    qed
+  next
+    case (Inr r)
+    hence "valid_plan_action_impl (PAction n as) s \<and> r = execute_plan_action_impl (PAction n as) s" using en_exE2_return_iff by simp
+    hence "en_exE (PAction n as) s = Inr r" using en_exE_return_iff by simp
+    with Inr
+    show ?thesis by simp
+  qed
+qed
+
+(* 
+proof (induction pa)
+  case (PAction n as)
+  show ?case 
+  proof (cases "en_exE2 (PAction n as) s")
+    case (Inl a)
+    from this[simplified en_exE2_def plan_action.case]
+    have "resolve_action_schemaE n \<bind>
+    (\<lambda>a. check (action_params_match_impl a as) (ERRS ''Parameter mismatch'') \<bind>
+          (\<lambda>_. let ai = instantiate_action_schema a as
+                in check (valuation_impl s \<Turnstile> ground_action.precondition ai) (ERRS ''Precondition not satisfied'') \<bind>
+                   (\<lambda>_. check_all_list (wf_inst_cond_effect_impl s) (ground_action.effects ai) ''Conditional effect cannot be instantiated correctly'' shows \<bind>
+                         (\<lambda>_. check_all_list (well_inst_cond_effect_impl s s) (ground_action.effects ai) ''Conditional effect cannot be instantiated correctly'' shows \<bind>
+                               (\<lambda>_. check (non_int_cond_eff_list_impl s (ground_action.effects ai)) (ERRS ''Effects interfere'') \<bind>
+                                     (\<lambda>_. Inr (apply_conditional_effect_list_impl (ground_action.effects ai) s))))))) = Inl a" .
+    then have "en_exE (PAction n as) s = Inl a"
+      apply -
+      apply (split error_monad_bind_split_asm)
+      subgoal for no_action_schema
+        apply (erule disjE)
+        subgoal 
+          unfolding en_exE_def plan_action.case
+         apply (split error_monad_bind_split)
+          by simp
+        apply (erule exE)
+        subgoal for action_schema
+          apply simp
+          apply (split error_monad_bind_split_asm)
+          subgoal for param_mismatch
+            apply (erule disjE)
+            subgoal 
+              unfolding en_exE_def plan_action.case
+              by simp
+            apply (simp add: Let_def)
+            apply (split error_monad_bind_split_asm)
+            apply simp
+            apply (erule disjE)
+            subgoal for not_prec
+              unfolding en_exE_def plan_action.case
+              apply (subst Let_def)
+              apply simp
+              apply (elim conjE)
+              apply (subst (asm) check_return_iff)
+              apply (subst (asm) resolve_action_schemaE_return_iff)
+              apply (drule resolve_action_wf_impl, drule wf_instantiate_action_schema_impl, assumption)
+              apply (subst (asm) wf_ground_action_impl_def)
+              apply (elim conjE)
+              apply (split error_monad_bind_split)
+              apply (subst check_return_iff)+
+              apply (rule conjI)
+              subgoal by (auto)
+              unfolding wf_cond_effect_list'_def
+              apply (subst (asm) sym[OF check_all_list_return_iff[simplified Ball_set, of _ _ "''Conditional effect not well-formed''" "shows"]])
+              apply (rule allI)
+              subgoal
+                apply (split error_monad_bind_split)
+                by auto
+              done
+            subgoal
+              apply (split error_monad_bind_split_asm)
+              apply simp
+              subgoal for param_mismatch
+                apply (split error_monad_bind_split_asm)
+                apply simp
+                subgoal for not_well_inst
+                  apply (split error_monad_bind_split_asm)
+                  subgoal for int_eff
+                    apply simp
+                    apply (erule disjE)+
+                     apply auto
+                    sorry
+                  sorry
+                sorry
+              sorry
+            sorry
+          done
+        done
+      done
+      with Inl show ?thesis by simp
+  next
+    case (Inr b)
+    hence "valid_plan_action_impl (PAction n as) s \<and> b = execute_plan_action_impl (PAction n as) s" using en_exE2_return_iff by simp
+    hence "en_exE (PAction n as) s = Inr b" using en_exE_return_iff by simp
+    with Inr
+    show ?thesis by simp
+  qed
+qed *)
+      
 end \<comment> \<open>Context of \<open>ast_problem\<close>\<close>
 
 subsubsection \<open>Checking of Plan\<close>
@@ -2161,17 +2553,18 @@ end
 
 context wf_ast_problem
 begin
-  
 
-  text \<open>Justification of refinement\<close>
-  lemma (in wf_ast_problem) wf_en_exE2_eq:
-    shows "en_exE2 STG mp_objT pa s = en_exE pa s"
-    apply (cases pa; simp add: en_exE2_def en_exE_def Let_def)
-    apply (auto
-      simp: return_iff resolve_action_schemaE_def resolve_action_wf
-      simp: wf_effect_inst_weak action_params_match_def
-      split: error_monad_bind_split)
-    done
+
+lemma resolve_impl_wf: "resolve_action_schema_impl n = Some as \<Longrightarrow> wf_action_schema as"
+  apply (subst (asm) resolve_action_schema_impl_correct)
+  apply (insert wf_problem)
+  unfolding wf_problem_def wf_domain_def
+  using resolve_action_wf by blast
+
+lemma resolve_action_schemaE_wf: "resolve_action_schemaE n = Inr as \<Longrightarrow> wf_action_schema as"
+  using resolve_impl_wf resolve_action_schemaE_return_iff by blast
+
+find_theorems name: "Error_Monad"
 
   text \<open>Combination of the two refinement lemmas\<close>
   lemma (in wf_ast_problem) en_exE2_return_iff:

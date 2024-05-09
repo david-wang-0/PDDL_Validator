@@ -136,8 +136,8 @@ datatype (ent: 'ent) num_fluent =
 text \<open>A comparison operation can be applied to a numeric fluent\<close>
 datatype (ent: 'ent) num_comp =
     Num_Eq "'ent num_fluent" "'ent num_fluent"
-  | Le "'ent num_fluent" "'ent num_fluent"
-  | Lt "'ent num_fluent" "'ent num_fluent"
+  | Num_Le "'ent num_fluent" "'ent num_fluent"
+  | Num_Lt "'ent num_fluent" "'ent num_fluent"
 
 text \<open>\<^term>\<open>pred\<close> is used to model predicate application to and equality of 
     entities (or terms/fluents, which evaluate to entities)\<close>
@@ -652,9 +652,9 @@ text \<open>Here, we evaluate an {@typ object term} against world-model to
   fun nc_val::"world_model \<Rightarrow> object term num_comp \<Rightarrow> bool" where
     "nc_val M (Num_Eq x y) = (case (nf_val M x, nf_val M y) of
       (Some x, Some y)  \<Rightarrow> x = y | _ \<Rightarrow> False)"
-  | "nc_val M (Le x y) = (case (nf_val M x, nf_val M y) of
+  | "nc_val M (Num_Le x y) = (case (nf_val M x, nf_val M y) of
       (Some x, Some y)  \<Rightarrow> x \<le> y | _ \<Rightarrow> False)"
-  | "nc_val M (Lt x y) = (case (nf_val M x, nf_val M y) of
+  | "nc_val M (Num_Lt x y) = (case (nf_val M x, nf_val M y) of
       (Some x, Some y)  \<Rightarrow> x < y | _ \<Rightarrow> False)"
 
   text \<open>We have to make sure that the arguments are not undefined.\<close>
@@ -856,8 +856,8 @@ begin
     
     fun wf_num_comp :: "'ent num_comp \<Rightarrow> bool" where
       "wf_num_comp (Num_Eq a b) = (wf_num_fluent a \<and> wf_num_fluent b)"
-    | "wf_num_comp (Lt a b) = (wf_num_fluent a \<and> wf_num_fluent b)"
-    | "wf_num_comp (Le a b) = (wf_num_fluent a \<and> wf_num_fluent b)"
+    | "wf_num_comp (Num_Lt a b) = (wf_num_fluent a \<and> wf_num_fluent b)"
+    | "wf_num_comp (Num_Le a b) = (wf_num_fluent a \<and> wf_num_fluent b)"
 
     text \<open>Predicate-atoms are well-formed if their arguments match the
       signature, equalities are well-formed if the arguments are valid
@@ -1444,7 +1444,7 @@ text \<open>Important: thinking in terms of conditional lists of effects vs filt
         - The full effect instantiation is valid
         - Applying, the effect (unfolded) will lead to a state
           from which a ground action path leads to the other state\<close>
-  lemma ground_action_path_unfolded:
+  (* lemma ground_action_path_unfolded:
     "ground_action_path M [] M' \<longleftrightarrow> (M = M')"
     "ground_action_path M (\<alpha>#\<alpha>s) M' \<longleftrightarrow> 
       wf_fmla (ty_term objT) (precondition \<alpha>)
@@ -1455,6 +1455,7 @@ text \<open>Important: thinking in terms of conditional lists of effects vs filt
     \<and> non_int_cond_eff_list M (effects \<alpha>)
     \<and> ground_action_path (apply_conditional_effect_list (effects \<alpha>) M) \<alpha>s M'"
     sorry (* TODO: fix later -- not necessary for implementation *)
+ *)
 end
 
 subsection \<open>Conditions for the preservation of well-formedness\<close>
@@ -2500,7 +2501,6 @@ context ast_problem begin
         None \<Rightarrow> False
       | Some a \<Rightarrow>
           action_params_match a as
-        \<and> wf_ground_action (instantiate_action_schema a as)
         )"
 
   text \<open>A sequence of plan actions form a path, if they are well-formed and
@@ -3195,7 +3195,7 @@ begin
         by (cases eff; auto)
       with assms(2)[simplified M]
       have "list_all (int_defines_nf_upd ni) nus'" 
-        unfolding well_inst_effect_def nf_upd_defined_def int_defines_nf_upd'_def
+        unfolding well_inst_effect_def nf_upd_defined_def 
         apply simp
         apply (drule conjunct2)
         by (simp add: list_all_length)
@@ -3307,7 +3307,13 @@ begin
       using that
       apply (induction effs arbitrary: M)
        apply simp
-      using wf_apply_effect well_inst_effect_inv
+      apply (subst foldr.simps)
+      apply (subst comp_def)
+      apply (rule wf_apply_effect)
+        apply (subst (asm) Ball_set)+
+        apply (subst (asm) list_all_simps(1))+
+        apply (drule conjunct2)+
+        apply assumption
       sorry
     from this[OF assms]
     show "wf_world_model (foldr (inst_apply_effect M) effs M)" .
@@ -3651,7 +3657,7 @@ lemma conditional_effect_list_sem:
       and "active = active_effects M inst_ces"
       and "applicable = map ((inst_effect M) o snd) active"
     shows "foldr apply_effect applicable M = apply_conditional_effect_list inst_ces M"
-  
+  sorry
 
 lemma apply_conditional_effects_in_action_schema_sem:
   assumes "a = (Action_Schema n params pre ces)"
@@ -3663,13 +3669,7 @@ lemma apply_conditional_effects_in_action_schema_sem:
     shows "foldr apply_effect applicable M = apply_conditional_effect_list eff_inst M"
   using conditional_effect_list_sem assms
   unfolding action_params_match_def params_match_def apply_conditional_effect_list_def
-  by presburger
-  using assms apply (auto simp: Let_def intro: conditional_effect_list_sem wf_problem_decs.wf_univ_effect_inst)
-proof -
-  
-
-qed
-
+  sorry
   text \<open>Applying a universal effect, means to filter the individual effects, instantiate them, and
         then apply them one by one\<close>
 
@@ -3684,9 +3684,7 @@ assumes "ces = (univ_effect v ty ce)"
     and "inst_ces = map (map_cond_effect (inst_term params as)) ces"
     and "inst_ces' = map (map_cond_effect (inst_term params as)) ces'"
   shows "apply_conditional_effect_list inst_ces = apply_conditional_effect_list inst_ces'"
-proof -
-  
-qed
+  sorry
 
 lemma univ_effect_list_sem:
   assumes "ces' = pddl_univ_effect_list vts ces"
