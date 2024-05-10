@@ -96,7 +96,7 @@ subsection \<open>Abstract Syntax\<close>
 subsubsection \<open>Deeply embedded types\<close>
 type_synonym name = string
 
-datatype predicate = Pred (name: name)
+datatype pred = Pred (name: name)
 
 datatype func = Func (name: name)
 
@@ -139,16 +139,16 @@ datatype (ent: 'ent) num_comp =
   | Num_Le "'ent num_fluent" "'ent num_fluent"
   | Num_Lt "'ent num_fluent" "'ent num_fluent"
 
-text \<open>\<^term>\<open>pred\<close> is used to model predicate application to and equality of 
+text \<open>\<^term>\<open>predicate\<close> is used to model pred application to and equality of 
     entities (or terms/fluents, which evaluate to entities)\<close>
-datatype (ent: 'ent) pred = 
-    Pred (predicate: predicate) (arguments: "'ent list")
+datatype (ent: 'ent) predicate = 
+    Pred (pred: pred) (arguments: "'ent list")
     | Eq (lhs: 'ent) (rhs: 'ent)
 
-text \<open>An atom is either a predicate with arguments, or an equality statement.\<close>
+text \<open>An atom is either a pred with arguments, or an equality statement.\<close>
 
 datatype (ent: 'ent) atom = 
-    PredAtom "'ent pred"
+    PredAtom "'ent predicate"
   | NumComp "'ent num_comp"
 
 
@@ -159,10 +159,10 @@ text \<open>Some of the AST entities are defined over a polymorphic {@typ} type,
   
   Before a term can be evaluated in a world-state, its variables must be replaced
   by specific instances of objects. Therefore {@typ symbol}s must be replaced
-  by {@typ object}s in formulas, predicates, etc. This is what we will from now on refer to as a \emph{syntax transformation}.
+  by {@typ object}s in formulas, preds, etc. This is what we will from now on refer to as a \emph{syntax transformation}.
   The evaluation of {@typ object term}s requires another syntax transformation
   to {@typ object}. Once we have substituted every term with the entity that it 
-  evaluates to, we can evaluated predicates and comparisons and numeric functions.
+  evaluates to, we can evaluated preds and comparisons and numeric functions.
 \<close>
 
 text \<open>For instance, in this blocks world domain, we have the following function:\<close>
@@ -182,7 +182,7 @@ datatype upd_op =
   | Increase
   | Decrease
 
-text \<open>An effect modifies the objects for which a predicate holds as well
+text \<open>An effect modifies the objects for which a pred holds as well
       as the return values of functions for argument lists. The assignment of 
       the return value to {@typ undefined} is implicitly modelled as \<^term>\<open>option.None\<close>.
       This simplifies the semantics of expression evaluation significantly compared to 
@@ -196,8 +196,8 @@ datatype (ent: 'ent) of_upd = OF_Upd func "'ent list" (ret_val: "'ent option")
 datatype (ent: 'ent) nf_upd = NF_Upd func upd_op "'ent list" "'ent num_fluent"
 
 datatype (ent: 'ent) ast_effect = 
-  Effect  (adds: "('ent pred) list") 
-          (dels: "('ent pred) list")
+  Effect  (adds: "('ent predicate) list") 
+          (dels: "('ent predicate) list")
           (of_upds: "('ent of_upd) list")
           (nf_upds: "('ent nf_upd) list")
 
@@ -220,12 +220,12 @@ type_synonym ground_formula = "object term atom formula"
 type_synonym ground_effect = "object term ast_effect"
 
 text \<open>The types used to model fully instantiated effects. \<open>adds\<close> and \<open>dels\<close> 
-      are lists of predicates, which are added/removed from the set of true predicates.
+      are lists of preds, which are added/removed from the set of true preds.
       
       Another benefit of our decision to model assignments of \<open>undefined\<close> to
-      return values as {@typ option} can be seen here. When a term, predicate,
+      return values as {@typ option} can be seen here. When a term, pred,
       etc. is evaluated against a world model and a function returns \<open>undefined\<close>, 
-      the semantics enforce that predicates in which the term occurs evaluate to \<^term>\<open>None\<close>.
+      the semantics enforce that preds in which the term occurs evaluate to \<^term>\<open>None\<close>.
       Therefore we can explicitly deal with undefined at the level of effects. 
       See \cref{subsec:quant_form_eff}. This is also why we require another type to
       model these.
@@ -235,8 +235,8 @@ datatype instantiated_of_upd = OFU func "object option list" (return_value: "obj
 datatype instantiated_nf_upd = NFU func upd_op "object option list" "rat option"
 
 datatype fully_instantiated_effect =
-  Eff "(object pred option) list"
-      "(object pred option) list"
+  Eff "(object predicate option) list"
+      "(object predicate option) list"
       (ous: "instantiated_of_upd list")
       (nus: "instantiated_nf_upd list")
 
@@ -252,9 +252,9 @@ datatype ast_action_schema = Action_Schema
   (precondition: "schematic_formula")
   (effects: "(schematic_formula \<times> schematic_effect) list")
 
-text \<open>A world model is required to interpret the value of functions and predicates.
-      \<open>preds\<close> represents the set of true predicates at a state of the world. Under 
-      the closed-world assumption, every predicate not present in this set is false.
+text \<open>A world model is required to interpret the value of functions and preds.
+      \<open>predicates\<close> represents the set of true preds at a state of the world. Under 
+      the closed-world assumption, every pred not present in this set is false.
       \<open>of_int\<close> (\emph{object function interpretation}) maps a function's name to a valuation 
       for various argument lists. \<open>nf_int\<close> (\emph{numeric function interpretation} maps a function's
       name to a valuation for argument lists. Numeric functions return rational numbers.\<close>
@@ -265,15 +265,15 @@ type_synonym object_function_interpretation = "func \<rightharpoonup> (object li
 type_synonym numeric_function_interpretation = "func \<rightharpoonup> (object list \<rightharpoonup> rat)"
 
 datatype world_model = World_Model 
-  (preds: "object pred set")
+  (predicates: "object predicate set")
   (of_int: "object_function_interpretation")
   (nf_int: "numeric_function_interpretation")
 
 
-text \<open>A predicate declaration contains the predicate's name and its
+text \<open>A pred declaration contains the pred's name and its
   argument types.\<close>
-datatype predicate_decl = PredDecl
-  (pred: predicate)
+datatype pred_decl = PredDecl
+  (predicate: pred)
   (argTs: "type list")
 
 datatype obj_fun_decl = ObjFunDecl
@@ -285,12 +285,12 @@ datatype num_func_decl = NumFunDecl
   (func: func)
   (argTs: "type list")
 
-text \<open>A domain contains the declarations of primitive types, predicates,
+text \<open>A domain contains the declarations of primitive types, preds,
   and action schemas.\<close>
 
 datatype ast_domain_decs = DomainDecls
   (types: "(name \<times> name) list") \<comment> \<open> \<open>(type, supertype)\<close> declarations. \<close>
-  (predicates: "predicate_decl list")
+  (preds: "pred_decl list")
   (object_funs: "obj_fun_decl list")
   (num_funs: "num_func_decl list")
   ("consts": "(object \<times> type) list")
@@ -298,8 +298,8 @@ datatype ast_domain_decs = DomainDecls
 
 subsubsection \<open>Problems\<close>
 
-text \<open>A fact is a predicate applied to objects.\<close>
-type_synonym fact = "predicate \<times> object list"
+text \<open>A fact is a pred applied to objects.\<close>
+type_synonym fact = "pred \<times> object list"
 
 text \<open>Declarations of objects and an initial state in the problem.
       The \<close>
@@ -307,7 +307,7 @@ datatype ast_problem_decs = ProbDecls
   (domain_decs: ast_domain_decs)
   (objects: "(object \<times> type) list")
 
-text \<open>In addition to the declaration of types, predicates, and constants, 
+text \<open>In addition to the declaration of types, preds, and constants, 
       a domain contains actions\<close>
 datatype ast_domain = Domain
   (problem_decs: ast_problem_decs)
@@ -317,7 +317,7 @@ text \<open>A problem consists of a domain, a list of objects,
   a description of the initial state, and a description of the goal state.\<close>
 datatype ast_problem = Problem
   (domain: ast_domain)
-  (init_ps: "object pred set")
+  (init_ps: "object predicate list")
   (init_ofs: "(func \<times> object list \<times> object) list")
   (init_nfs: "(func \<times> object list \<times> rat) list")
   (goal: "schematic_formula")
@@ -364,8 +364,8 @@ definition nc_vars::"symbol term num_comp \<Rightarrow> variable set" where
   "nc_vars nc \<equiv> \<Union> (term_vars ` num_comp.ent nc)"
 
 text \<open>Etc.\<close>
-definition pred_vars where
-  "pred_vars p \<equiv> \<Union> (term_vars ` pred.ent p)"
+definition predicate_vars where
+  "predicate_vars p \<equiv> \<Union> (term_vars ` predicate.ent p)"
 
 definition atom_vars::"symbol term atom \<Rightarrow> variable set" where
   "atom_vars a \<equiv> \<Union> (term_vars ` atom.ent a)"
@@ -391,8 +391,8 @@ definition nf_consts where
 definition nc_consts::"symbol term num_comp \<Rightarrow> object set" where
   "nc_consts nc \<equiv> \<Union> (term_consts ` num_comp.ent nc)"
 
-definition pred_consts where
-  "pred_consts p \<equiv> \<Union> (term_consts ` p)"
+definition predicate_consts where
+  "predicate_consts p \<equiv> \<Union> (term_consts ` p)"
 
 definition atom_consts::"symbol term atom \<Rightarrow> object set" where
   "atom_consts a \<equiv> \<Union> (term_consts ` atom.ent a)"
@@ -418,8 +418,8 @@ definition sym_term_nf_subst::"variable \<Rightarrow> object \<Rightarrow> symbo
 definition sym_term_nc_subst::"variable \<Rightarrow> object \<Rightarrow> symbol term num_comp \<Rightarrow> symbol term num_comp" where
   "sym_term_nc_subst v c \<equiv> map_num_comp (term_subst v c)"
 
-definition sym_term_pred_subst where
-  "sym_term_pred_subst v c \<equiv> map_pred (term_subst )"
+definition sym_term_predicate_subst where
+  "sym_term_predicate_subst v c \<equiv> map_predicate (term_subst )"
 
 definition atom_subst::"variable \<Rightarrow> object \<Rightarrow> symbol term atom \<Rightarrow> symbol term atom" where
   "atom_subst v c \<equiv> map_atom (term_subst v c)"
@@ -429,7 +429,7 @@ definition ast_effect_subst where
 
 
 text \<open>\<^term>\<open>f_ent\<close> extracts the entities from a formula. Entities in this context
-      are entities to which predicates and numeric functions are applied. For instance,
+      are entities to which preds and numeric functions are applied. For instance,
       these could be {@typ object term}s, {@typ object}s, {@typ symbol term}s, etc.\<close>
 definition f_ent::"'ent atom formula \<Rightarrow> 'ent set" where
   "f_ent \<phi> = \<Union> (atom.ent ` atoms \<phi>)"
@@ -454,13 +454,13 @@ definition f_subst where
 
 fun eff_vars::"schematic_effect \<Rightarrow> variable set" where
   "eff_vars (Effect a d tu nu) = 
-      \<Union> (pred_vars ` (set a)) 
-    \<union> \<Union> (pred_vars ` (set d)) 
+      \<Union> (predicate_vars ` (set a)) 
+    \<union> \<Union> (predicate_vars ` (set d)) 
     \<union> \<Union> (of_upd_vars ` (set tu)) 
     \<union> \<Union> (nf_upd_vars ` (set nu))"
 
-definition pred_syms where
-  "pred_syms p = \<Union> (term.ent ` pred.ent p)"
+definition predicate_syms where
+  "predicate_syms p = \<Union> (term.ent ` predicate.ent p)"
 
 definition of_upd_syms where
   "of_upd_syms u = \<Union> (term.ent ` of_upd.ent u)"
@@ -470,8 +470,8 @@ definition nf_upd_syms where
 
 fun eff_syms::"schematic_effect \<Rightarrow> symbol set" where
   "eff_syms (Effect a d tu nu) = 
-    \<Union> (pred_syms ` (set a))
-  \<union> \<Union> (pred_syms ` (set d))
+    \<Union> (predicate_syms ` (set a))
+  \<union> \<Union> (predicate_syms ` (set d))
   \<union> \<Union> (of_upd_syms ` (set tu))
   \<union> \<Union> (nf_upd_syms ` (set nu))"
 
@@ -522,7 +522,7 @@ lemma f_consts_as_f_syms: "f_consts \<phi> = \<Union> (sym_consts ` f_syms \<phi
   by blast
 
 text \<open>\<open>ent\<close> in this context refers to the entities to which 
-      numeric functions and predicates are applied. In the 
+      numeric functions and preds are applied. In the 
       case of {@typ symbol term atom formula}s, these are 
       {@typ symbol term}s. \<^term>\<open>term.ent\<close> extracts the symbols
       from the terms.\<close>
@@ -539,10 +539,10 @@ lemma f_vars_as_f_ent: "f_vars \<phi> = \<Union> (term_vars ` f_ent \<phi>)"
 
 text \<open>Similarly, we can extract variables and symbols from effects.\<close>
 lemma eff_syms_as_eff_ent: "eff_syms eff = \<Union> (term.ent ` ast_effect.ent eff)"
-  by (induction eff; simp add: pred_syms_def of_upd_syms_def nf_upd_syms_def)
+  by (induction eff; simp add: predicate_syms_def of_upd_syms_def nf_upd_syms_def)
   
 lemma eff_vars_as_eff_syms: "eff_vars eff = \<Union> (sym_vars ` eff_syms eff)"
-  by (induction eff; simp add: pred_vars_def of_upd_vars_def nf_upd_vars_def eff_syms_as_eff_ent term_vars_def)
+  by (induction eff; simp add: predicate_vars_def of_upd_vars_def nf_upd_vars_def eff_syms_as_eff_ent term_vars_def)
 
 lemma eff_vars_as_eff_ent: "eff_vars eff = \<Union> (term_vars ` ast_effect.ent eff)"
   by (induction eff; simp add: eff_vars_as_eff_syms eff_syms_as_eff_ent term_vars_def)
@@ -606,7 +606,7 @@ text \<open>\<open>undefined\<close> is interpreted as nothing. Due to the limit
         a term-valued function. Therefore, the decision was made to not model
         \<open>undefined\<close> as a member of a deeply embedded type. 
 
-        One limitation here, is the fact that any predicate application and equality check
+        One limitation here, is the fact that any pred application and equality check
         with \<^term>\<open>undefined\<close> as argument will return false.
         The semantics of an existential preconditions is thus not 
         as we might expect. Rather than \<^term>\<open>P undefined \<Longrightarrow> \<exists>x. P x\<close>, any
@@ -658,25 +658,25 @@ text \<open>Here, we evaluate an {@typ object term} against world-model to
       (Some x, Some y)  \<Rightarrow> x < y | _ \<Rightarrow> False)"
 
   text \<open>We have to make sure that the arguments are not undefined.\<close>
-  fun pred_inst::"world_model \<Rightarrow> (object term) pred \<Rightarrow> object pred option" where
-    "pred_inst M (Pred p as) = (let arg_vals = map (\<lambda>t. term_val M t) as
+  fun predicate_inst::"world_model \<Rightarrow> (object term) predicate \<Rightarrow> object predicate option" where
+    "predicate_inst M (Pred p as) = (let arg_vals = map (\<lambda>t. term_val M t) as
         in (if (list_all (\<lambda>x. x \<noteq> None) arg_vals) 
             then Some (Pred p (map the arg_vals)) 
             else None))"
-  | "pred_inst M (Eq t1 t2) = (case (term_val M t1, term_val M t2) of
+  | "predicate_inst M (Eq t1 t2) = (case (term_val M t1, term_val M t2) of
       (Some x, Some y) \<Rightarrow> Some (Eq x y)
     | _                \<Rightarrow> None)"
   
-  fun pred_val::"world_model \<Rightarrow> (object term) pred \<Rightarrow> bool" where
-    "pred_val M p = (case pred_inst M p of 
-      Some (Pred p as)  \<Rightarrow> (Pred p as) \<in> world_model.preds M
+  fun predicate_val::"world_model \<Rightarrow> (object term) predicate \<Rightarrow> bool" where
+    "predicate_val M p = (case predicate_inst M p of 
+      Some (Pred p as)  \<Rightarrow> (Pred p as) \<in> world_model.predicates M
     | Some (Eq x y)     \<Rightarrow> x = y
     | None              \<Rightarrow> False)"
   
   
   text \<open>We check the value of atoms against a world-model.\<close>
   fun valuation::"world_model \<Rightarrow> object term atom valuation" where
-    "valuation M (PredAtom p) = pred_val M p"
+    "valuation M (PredAtom p) = predicate_val M p"
   | "valuation M (NumComp c) = nc_val M c"
 
 
@@ -704,15 +704,15 @@ lemma ty_sym_mono: "varT \<subseteq>\<^sub>m varT' \<Longrightarrow> objT \<subs
   done
 
 
-subsubsection \<open>Declarations of types, constants and predicates in the domain\<close>
+subsubsection \<open>Declarations of types, constants and preds in the domain\<close>
 
 locale ast_domain_decs =
   fixes DD :: ast_domain_decs
 begin
-  text \<open>The signature is a partial function that maps the predicates
+  text \<open>The signature is a partial function that maps the preds
     of the domain to lists of argument types.\<close>
-  definition sig :: "predicate \<rightharpoonup> type list" where
-  "sig \<equiv> map_of (map (\<lambda>PredDecl p n \<Rightarrow> (p,n)) (predicates DD))"
+  definition sig :: "pred \<rightharpoonup> type list" where
+  "sig \<equiv> map_of (map (\<lambda>PredDecl p n \<Rightarrow> (p,n)) (preds DD))"
 
   text \<open>The signature of functions from objects to other objects. The semantics
         of types and the subtype relationship are carried over from the work
@@ -818,22 +818,22 @@ begin
           Some vT \<Rightarrow> of_type vT T
         | None \<Rightarrow> False)"
 
-    text \<open>A predicate is well-formed if a declaration with the name exists
+    text \<open>A pred is well-formed if a declaration with the name exists
           and the type is correct\<close>
-    fun wf_pred::"predicate \<times> 'ent list \<Rightarrow> bool" where
-      "wf_pred (p,vs) \<longleftrightarrow> (
+    fun wf_predicate::"pred \<times> 'ent list \<Rightarrow> bool" where
+      "wf_predicate (p,vs) \<longleftrightarrow> (
         case sig p of
           None \<Rightarrow> False
         | Some Ts \<Rightarrow> list_all2 is_of_type vs Ts)"
  
-    fun wf_pred_eq :: "'ent pred \<Rightarrow> bool" where
-      "wf_pred_eq (Pred p vs) \<longleftrightarrow> wf_pred (p,vs)"
-    | "wf_pred_eq (Eq a b) \<longleftrightarrow> ty_ent a \<noteq> None \<and> ty_ent b \<noteq> None"
+    fun wf_predicate_eq :: "'ent predicate \<Rightarrow> bool" where
+      "wf_predicate_eq (Pred p vs) \<longleftrightarrow> wf_predicate (p,vs)"
+    | "wf_predicate_eq (Eq a b) \<longleftrightarrow> ty_ent a \<noteq> None \<and> ty_ent b \<noteq> None"
 
-    text \<open>This checks that a predicate is well-formed and not an equality.\<close>
-    fun wf_predicate :: "'ent pred \<Rightarrow> bool" where
-      "wf_predicate (Pred p vs) \<longleftrightarrow> wf_pred (p, vs)"
-    | "wf_predicate (Eq _ _) \<longleftrightarrow> False"
+    text \<open>This checks that a pred is well-formed and not an equality.\<close>
+    fun wf_pred :: "'ent predicate \<Rightarrow> bool" where
+      "wf_pred (Pred p vs) \<longleftrightarrow> wf_predicate (p, vs)"
+    | "wf_pred (Eq _ _) \<longleftrightarrow> False"
 
     text \<open>A function call is well-formed if the function has been
           declared and the types of the arguments matches the types
@@ -865,7 +865,7 @@ begin
       and terms are well-typed.
     \<close>
     fun wf_atom :: "'ent atom \<Rightarrow> bool" where
-      "wf_atom (PredAtom p) \<longleftrightarrow> wf_pred_eq p"
+      "wf_atom (PredAtom p) \<longleftrightarrow> wf_predicate_eq p"
     | "wf_atom (NumComp nc) \<longleftrightarrow> wf_num_comp nc"
 
     text \<open>A formula is well-formed if its components are well-formed
@@ -905,8 +905,8 @@ begin
     text \<open>An effect is well-formed if its constituent parts are well-formed\<close>
     fun wf_effect where
       "wf_effect (Effect a d tu nu) \<longleftrightarrow>
-          (\<forall>u \<in> set a. wf_predicate u)
-        \<and> (\<forall>u \<in> set d. wf_predicate u)
+          (\<forall>u \<in> set a. wf_pred u)
+        \<and> (\<forall>u \<in> set d. wf_pred u)
         \<and> (\<forall>u \<in> set tu. wf_of_upd u)
         \<and> (\<forall>u \<in> set nu. wf_nf_upd u)
         "
@@ -924,19 +924,19 @@ begin
       using assms
       by (induction rule: list_all2_induct; auto simp: is_of_type_def split: option.splits)
       
-    lemma wf_pred_imp_args_in_ty_env:
+    lemma wf_predicate_imp_args_in_ty_env:
       fixes args::"'ent list"
-      assumes "wf_pred (p, args)"
+      assumes "wf_predicate (p, args)"
       shows "set args \<subseteq> dom ty_ent"
       using assms
       by (auto split: option.splits dest: list_all2_is_of_type_imp_set_in_ty_env)
 
-    lemma wf_pred_imp_ent_in_ty_env:
-      fixes p::"'ent pred" 
-        assumes "wf_pred_eq p"
-        shows "pred.ent p \<subseteq> dom ty_ent"
+    lemma wf_predicate_imp_ent_in_ty_env:
+      fixes p::"'ent predicate" 
+        assumes "wf_predicate_eq p"
+        shows "predicate.ent p \<subseteq> dom ty_ent"
       using assms
-      by (cases p; auto simp: wf_pred_imp_args_in_ty_env)
+      by (cases p; auto simp: wf_predicate_imp_args_in_ty_env)
     
     lemma wf_num_func_imp_args_in_ty_env:
       fixes args::"'ent list"
@@ -963,8 +963,8 @@ begin
         fixes a::"'ent atom"
         assumes "wf_atom a"
         shows "atom.ent a \<subseteq> dom ty_ent"
-        using assms wf_pred_imp_ent_in_ty_env
-        by (cases a; auto simp: wf_num_comp_imp_ent_in_ty_env wf_pred_imp_ent_in_ty_env)
+        using assms wf_predicate_imp_ent_in_ty_env
+        by (cases a; auto simp: wf_num_comp_imp_ent_in_ty_env wf_predicate_imp_ent_in_ty_env)
       
       lemma wf_fmla_as_wf_atoms:
         shows "wf_fmla \<phi> \<longleftrightarrow> (\<forall>a \<in> atoms \<phi>. wf_atom a)"
@@ -986,23 +986,23 @@ end \<comment> \<open>Context fixing \<open>ty_ent\<close>\<close>
   fun wf_type where
     "wf_type (Either Ts) \<longleftrightarrow> set Ts \<subseteq> insert ''object'' (fst`set (types DD))"
 
-  text \<open>A predicate is well-formed if its argument types are well-formed.\<close>
-  fun wf_predicate_decl where
-    "wf_predicate_decl (PredDecl p Ts) \<longleftrightarrow> (\<forall>T\<in>set Ts. wf_type T)"
+  text \<open>A pred is well-formed if its argument types are well-formed.\<close>
+  fun wf_pred_decl where
+    "wf_pred_decl (PredDecl p Ts) \<longleftrightarrow> (\<forall>T\<in>set Ts. wf_type T)"
 
   text \<open>The types declaration is well-formed, if all supertypes are declared types (or object)\<close>
   definition "wf_types \<equiv> snd`set (types DD) \<subseteq> insert ''object'' (fst`set (types DD))"
 
   text \<open>The declarations in a domain are well-formed if 
-    \<^item> there are no duplicate declared predicate names,
-    \<^item> all declared predicates are well-formed,
+    \<^item> there are no duplicate declared pred names,
+    \<^item> all declared preds are well-formed,
     \<^item> there are no duplicate action names\<close>
 
   definition wf_domain_decs :: "bool" where
     "wf_domain_decs \<equiv>
       wf_types
-    \<and> distinct (map (predicate_decl.pred) (predicates DD))
-    \<and> (\<forall>p\<in>set (predicates DD). wf_predicate_decl p)
+    \<and> distinct (map (pred_decl.predicate) (preds DD))
+    \<and> (\<forall>p\<in>set (preds DD). wf_pred_decl p)
     \<and> distinct (map fst (consts DD)) 
     \<and> (\<forall>(c, T) \<in> set (consts DD). wf_type T)"
 
@@ -1103,11 +1103,11 @@ begin
     definition wf_nf_int::"(func \<rightharpoonup> object list \<rightharpoonup> rat) \<Rightarrow> bool" where
       "wf_nf_int ni \<equiv> (\<forall>(f, m) \<in> Map.graph ni. wf_nf_int_map f m)"
 
-  text \<open>The predicates are well-formed, i.e. well-typed. The interpretations of 
+  text \<open>The preds are well-formed, i.e. well-typed. The interpretations of 
         fluents are also well-formed, i.e. well-typed and only defined for those
         functions which have been declared in the domain or problem.\<close>
   definition wf_world_model::"world_model \<Rightarrow> bool" where
-    "wf_world_model M \<equiv> (\<forall>p \<in> preds M. wf_predicate objT p) 
+    "wf_world_model M \<equiv> (\<forall>p \<in> predicates M. wf_pred objT p) 
                       \<and> wf_of_int (of_int M)
                       \<and> wf_nf_int (nf_int M)"
 
@@ -1125,7 +1125,7 @@ begin
   definition wf_problem where
     "wf_problem \<equiv>
       wf_domain
-    \<and> (\<forall>p \<in> (init_ps P). wf_predicate objT p)
+    \<and> (\<forall>p \<in> set (init_ps P). wf_pred objT p)
     \<and> (\<forall>a \<in> set (init_ofs P). wf_init_of_a a)
     \<and> (\<forall>a \<in> set (init_nfs P). wf_init_nf_a a)
     \<and> wf_goal (goal P)
@@ -1158,8 +1158,8 @@ text \<open>Important: thinking in terms of conditional lists of effects vs filt
   
   fun inst_effect :: "world_model \<Rightarrow> ground_effect \<Rightarrow> fully_instantiated_effect" where
     "inst_effect M (Effect a d tu nu) = (
-      Eff (map (pred_inst M) a) 
-          (map (pred_inst M) d) 
+      Eff (map (predicate_inst M) a) 
+          (map (predicate_inst M) d) 
           (map (inst_of_upd M) tu) 
           (map (inst_nf_upd M) nu))"
 
@@ -1237,13 +1237,13 @@ text \<open>Important: thinking in terms of conditional lists of effects vs filt
   definition execute_ground_action :: "ground_action \<Rightarrow> world_model \<Rightarrow> world_model" where
     "execute_ground_action a M = (apply_conditional_effect_list (effects a) M)"
 
-  text \<open>An update to a predicate can be applied only if it is defined and 
-        it is a predicate and not an equality. Equality is checked on the fly,
+  text \<open>An update to a pred can be applied only if it is defined and 
+        it is a pred and not an equality. Equality is checked on the fly,
         rather than using set membership.\<close>
-  fun wf_app_pred_upd where
-    "wf_app_pred_upd None = False"
-  | "wf_app_pred_upd (Some (Eq _ _)) = False"
-  | "wf_app_pred_upd (Some (Pred p as)) = wf_pred_eq objT (Pred p as)"
+  fun wf_app_predicate_upd where
+    "wf_app_predicate_upd None = False"
+  | "wf_app_predicate_upd (Some (Eq _ _)) = False"
+  | "wf_app_predicate_upd (Some (Pred p as)) = wf_predicate_eq objT (Pred p as)"
 
   fun is_some where
     "is_some (Some x) = True"
@@ -1273,8 +1273,8 @@ text \<open>Important: thinking in terms of conditional lists of effects vs filt
 
   fun wf_fully_instantiated_effect where
     "wf_fully_instantiated_effect (Eff a d tu nu) \<longleftrightarrow> 
-        (\<forall>ae \<in> set a. wf_app_pred_upd ae)
-      \<and> (\<forall>de \<in> set d. wf_app_pred_upd de)
+        (\<forall>ae \<in> set a. wf_app_predicate_upd ae)
+      \<and> (\<forall>de \<in> set d. wf_app_predicate_upd de)
       \<and> (\<forall>u \<in> set tu. wf_app_of_upd u)     
       \<and> (\<forall>u \<in> set nu. wf_app_nf_upd u)"
 
@@ -1535,10 +1535,10 @@ begin
     "\<exists>T. is_of_type R x T \<Longrightarrow> R x \<noteq> None"
     unfolding is_of_type_def by (auto split: option.splits)
   
-  lemma ent_type_imp_wf_pred_eq:
-    assumes "\<forall>e \<in> pred.ent p. \<forall>T. is_of_type Q e T \<longrightarrow> is_of_type R (f e) T"
-        and "wf_pred_eq Q p"
-      shows "wf_pred_eq R (map_pred f p)"
+  lemma ent_type_imp_wf_predicate_eq:
+    assumes "\<forall>e \<in> predicate.ent p. \<forall>T. is_of_type Q e T \<longrightarrow> is_of_type R (f e) T"
+        and "wf_predicate_eq Q p"
+      shows "wf_predicate_eq R (map_predicate f p)"
     using assms
     apply (cases p) 
     subgoal by (auto split: option.splits intro: list_all2_is_of_type)
@@ -1549,7 +1549,7 @@ begin
         and "wf_atom Q a"
       shows "wf_atom R (map_atom f a)"
     using assms 
-    by (cases a; auto intro: ent_type_imp_wf_pred_eq ent_type_imp_wf_num_comp)
+    by (cases a; auto intro: ent_type_imp_wf_predicate_eq ent_type_imp_wf_num_comp)
   
   lemma ent_type_imp_wf_fmla:
     assumes "\<forall>e \<in> f_ent \<phi>. \<forall>T. is_of_type Q e T \<longrightarrow> is_of_type R (f e) T"
@@ -1559,18 +1559,18 @@ begin
     by (induction \<phi>; auto simp: f_ent_def intro: ent_type_imp_wf_atom)
 
 
-  lemma ent_type_imp_wf_predicate:
-    assumes "\<forall>e \<in> pred.ent upd. \<forall>T. is_of_type Q e T \<longrightarrow> is_of_type R (f e) T"
-        and "wf_predicate Q upd"
-      shows "wf_predicate R (map_pred f upd)"
+  lemma ent_type_imp_wf_pred:
+    assumes "\<forall>e \<in> predicate.ent upd. \<forall>T. is_of_type Q e T \<longrightarrow> is_of_type R (f e) T"
+        and "wf_pred Q upd"
+      shows "wf_pred R (map_predicate f upd)"
       using assms 
       by (induction upd; auto split: option.splits simp: list_all2_is_of_type)
 
-  lemma ent_type_imp_wf_predicates:
-    assumes "\<forall>e \<in> \<Union>(pred.ent ` set upd). \<forall>T. is_of_type Q e T \<longrightarrow> is_of_type R (f e) T"
-        and "\<forall>u \<in> set upd. wf_predicate Q u"
-      shows "\<forall>u \<in> set (map (map_pred f) upd). wf_predicate R u"
-    using assms ent_type_imp_wf_predicate by fastforce
+  lemma ent_type_imp_wf_preds:
+    assumes "\<forall>e \<in> \<Union>(predicate.ent ` set upd). \<forall>T. is_of_type Q e T \<longrightarrow> is_of_type R (f e) T"
+        and "\<forall>u \<in> set upd. wf_pred Q u"
+      shows "\<forall>u \<in> set (map (map_predicate f) upd). wf_pred R u"
+    using assms ent_type_imp_wf_pred by fastforce
 
   lemma ent_type_imp_wf_of_upd:
     assumes "\<forall>e \<in> of_upd.ent tu. \<forall>T. is_of_type Q e T \<longrightarrow> is_of_type R (f e) T"
@@ -1619,12 +1619,12 @@ begin
   proof (cases eff)
     case [simp]: (Effect a d tu nu)
     from assms(2)
-    have "\<forall>u \<in> set a. (wf_predicate Q) u" 
-         "\<forall>u \<in> set d. (wf_predicate Q) u"
+    have "\<forall>u \<in> set a. (wf_pred Q) u" 
+         "\<forall>u \<in> set d. (wf_pred Q) u"
          "\<forall>u \<in> set tu. (wf_of_upd Q) u"
          "\<forall>u \<in> set nu. (wf_nf_upd Q) u" by simp_all
     with assms(1)[simplified Effect ast_effect.set ball_Un] 
-        ent_type_imp_wf_predicates ent_type_imp_wf_of_upds ent_type_imp_wf_nf_upds
+        ent_type_imp_wf_preds ent_type_imp_wf_of_upds ent_type_imp_wf_nf_upds
     show ?thesis 
       apply (subst Effect; subst ast_effect.map; subst wf_effect.simps)
       apply (elim conjE; intro conjI)
@@ -2307,7 +2307,7 @@ begin
   (* Note: The other direction cannot be proven from these definitions. 
             Quantifiers expand into long con-/disjunctions 
             by substitution of variables for all suitably typed constants. 
-            Assume there is a predicate P::t2 \<Rightarrow> bool, a variable v::t1, t2 \<subseteq> t1, 
+            Assume there is a pred P::t2 \<Rightarrow> bool, a variable v::t1, t2 \<subseteq> t1, 
             and the only object o1 in the domain of t1 has a type t2. In this case, P(v) is not
             well-formed, but the instantiation P(o1) is. *)
 
@@ -2468,7 +2468,7 @@ context ast_problem begin
 
   text \<open>Initial model\<close>
   definition I :: "world_model" where
-    "I \<equiv> (World_Model (init_ps P) ofi nfi)"
+    "I \<equiv> (World_Model (set (init_ps P)) ofi nfi)"
 
   text \<open>Resolve a plan action and instantiate the referenced action schema.\<close>
   fun resolve_instantiate :: "plan_action \<Rightarrow> ground_action" where
@@ -2484,7 +2484,7 @@ context ast_problem begin
     such that we map it to a list of types first. Then, the list
     relator @{const list_all2} checks that arguments and types have the same
     length, and each matching pair of argument and type
-    satisfies the predicate @{const is_of_type} @{term objT}.
+    satisfies the pred @{const is_of_type} @{term objT}.
   \<close>          
   definition "params_match ps as \<equiv> list_all2 (is_of_type objT) as (map snd ps)"
 
@@ -2663,7 +2663,7 @@ begin
     where "execute_plan_action \<pi> M
       = execute_ground_action (resolve_instantiate \<pi>) M"
 
-  text \<open>The @{const plan_action_path} predicate can be decomposed naturally
+  text \<open>The @{const plan_action_path} pred can be decomposed naturally
     using these shorthands: \<close>
   lemma plan_action_path_Nil[simp]: "plan_action_path M [] M' \<longleftrightarrow> M'=M"
     by (auto simp: plan_action_path_def)
@@ -2894,9 +2894,9 @@ begin
     using wf_ofi wf_nfi I_def wf_problem[simplified wf_problem_def]
     by simp
 
-  lemma wf_apply_pred_upd:
-    assumes "wf_app_pred_upd u"
-    shows "wf_predicate objT (the u)"
+  lemma wf_apply_predicate_upd:
+    assumes "wf_app_predicate_upd u"
+    shows "wf_pred objT (the u)"
     using assms
     apply (cases u)
     subgoal by simp
@@ -3154,34 +3154,34 @@ begin
       shows "wf_world_model (inst_apply_effect eM eff M)"
     using assms
   proof -
-    obtain preds oi ni where
-      M: "M = World_Model preds oi ni"
+    obtain predicates oi ni where
+      M: "M = World_Model predicates oi ni"
       by (cases M; simp)
     
     obtain a' d' ous' nus' where
       eff': "inst_effect eM eff = Eff a' d' ous' nus'"
       by (cases "inst_effect eM eff"; simp)
     
-    obtain preds' oi' ni' where
-      M': "inst_apply_effect eM eff M = World_Model preds' oi' ni'"
+    obtain predicates' oi' ni' where
+      M': "inst_apply_effect eM eff M = World_Model predicates' oi' ni'"
       using world_model.exhaust by blast
   
-    have preds': "preds' = preds - set (map the d') \<union> set (map the a')"
+    have predicates': "predicates' = predicates - set (map the d') \<union> set (map the a')"
          and oi': "oi' = fold apply_of_upd ous' oi"
          and ni': "ni' = fold apply_nf_upd nus' ni"
       using M eff' M' unfolding inst_apply_effect_def by simp+
     
-    have "wf_predicate objT p" if "p \<in> preds - set (map the d') \<union> set (map the a')" for p
+    have "wf_pred objT p" if "p \<in> predicates - set (map the d') \<union> set (map the a')" for p
     proof -
-      have "list_all (wf_predicate objT) (map the a')"
-       "list_all (wf_predicate objT) (map the d')"
+      have "list_all (wf_pred objT) (map the a')"
+       "list_all (wf_pred objT) (map the d')"
         using assms(3)[simplified eff'] 
-        subgoal by (induction a'; auto intro: wf_apply_pred_upd simp: Ball_set) 
+        subgoal by (induction a'; auto intro: wf_apply_predicate_upd simp: Ball_set) 
         using assms(3)[simplified eff'] 
-        subgoal by (induction d'; auto intro: wf_apply_pred_upd simp: Ball_set)
+        subgoal by (induction d'; auto intro: wf_apply_predicate_upd simp: Ball_set)
         done
       with that  assms(1)[simplified M wf_world_model_def]
-      show "wf_predicate objT p" by (auto simp: sym[OF Ball_set]) 
+      show "wf_pred objT p" by (auto simp: sym[OF Ball_set]) 
     qed 
     moreover
     have "wf_of_int (fold apply_of_upd ous' oi)"
@@ -3211,7 +3211,7 @@ begin
     qed
     ultimately
     show "wf_world_model (inst_apply_effect eM eff M)"
-      using  preds' oi' ni' M'
+      using  predicates' oi' ni' M'
       unfolding wf_world_model_def 
       by auto
   qed

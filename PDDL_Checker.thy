@@ -174,7 +174,7 @@ type_synonym mp_nfi = "(func, (object list, rat) mapping) mapping"
 
 datatype exec_world_model = 
   EWM
-  (ps: "object pred set")
+  (ps: "object predicate set")
   (eofi: mp_ofi)
   (enfi: mp_nfi)
 
@@ -185,7 +185,7 @@ definition to_map_map::"('a, ('b, 'c) mapping) mapping \<Rightarrow> 'a \<righth
 fun exec_wm_to_wm::"exec_world_model \<Rightarrow> world_model" where
   "exec_wm_to_wm (EWM p oi ni) = World_Model p (to_map_map oi) (to_map_map ni)"
 
-lemma ps_preds[simp]: "ps M = preds (exec_wm_to_wm M)"
+lemma ps_predicates[simp]: "ps M = predicates (exec_wm_to_wm M)"
   by (cases M; simp)
 
 lemma eofi_of_int[simp]: "to_map_map (eofi M) = world_model.of_int (exec_wm_to_wm M)"
@@ -269,13 +269,13 @@ fun nc_val'::"object term num_comp \<Rightarrow> bool" where
   | "nc_val'(Num_Lt x y) = (case (nf_val x, nf_val y) of
       (Some x, Some y)  \<Rightarrow> x < y | _ \<Rightarrow> False)"
 
-fun pred_inst'::"object term pred \<Rightarrow> object pred option" where
-  "pred_inst' (Pred p as) = (let arg_vals = map (\<lambda>t. term_val t) as
+fun predicate_inst'::"object term predicate \<Rightarrow> object predicate option" where
+  "predicate_inst' (Pred p as) = (let arg_vals = map (\<lambda>t. term_val t) as
         in (if (list_all (\<lambda>x. x \<noteq> None) arg_vals) 
             then Some (Pred p (map the arg_vals)) 
             else None))"
-  | "pred_inst' (pred.Eq t1 t2) = (case (term_val t1, term_val t2) of
-      (Some x, Some y) \<Rightarrow> Some (pred.Eq x y)
+  | "predicate_inst' (predicate.Eq t1 t2) = (case (term_val t1, term_val t2) of
+      (Some x, Some y) \<Rightarrow> Some (predicate.Eq x y)
     | _                \<Rightarrow> None)"
 
 end
@@ -286,30 +286,30 @@ lemma nc_val_impl_correct: "nc_val_impl M x = nc_val (exec_wm_to_wm M) x"
   unfolding nc_val_impl_def
   by (cases x; auto simp: nf_val_impl_correct)
 
-definition "pred_inst_impl M = pred_inst' (term_val_impl M)"
+definition "predicate_inst_impl M = predicate_inst' (term_val_impl M)"
 
-lemma pred_inst_impl_correct: "pred_inst_impl M x = pred_inst (exec_wm_to_wm M) x"
-  unfolding pred_inst_impl_def
+lemma predicate_inst_impl_correct: "predicate_inst_impl M x = predicate_inst (exec_wm_to_wm M) x"
+  unfolding predicate_inst_impl_def
   by (induction x; auto simp: term_val_impl_correct[THEN ext])
 
-fun pred_val_impl::"exec_world_model \<Rightarrow> object term pred \<Rightarrow> bool" where
-  "pred_val_impl M p = (case pred_inst_impl M p of 
+fun predicate_val_impl::"exec_world_model \<Rightarrow> object term predicate \<Rightarrow> bool" where
+  "predicate_val_impl M p = (case predicate_inst_impl M p of 
       Some (Pred p as)  \<Rightarrow> (Pred p as) \<in> ps M
-    | Some (pred.Eq x y)     \<Rightarrow> x = y
+    | Some (predicate.Eq x y)     \<Rightarrow> x = y
     | None              \<Rightarrow> False)"
 
-lemma pred_val_impl_correct: "pred_val_impl M x = pred_val (exec_wm_to_wm M) x"
-  apply (cases "pred_inst_impl M x")
-  subgoal by (simp add: pred_inst_impl_correct)
-  subgoal for a by (cases a; auto simp: pred_inst_impl_correct)
+lemma predicate_val_impl_correct: "predicate_val_impl M x = predicate_val (exec_wm_to_wm M) x"
+  apply (cases "predicate_inst_impl M x")
+  subgoal by (simp add: predicate_inst_impl_correct)
+  subgoal for a by (cases a; auto simp: predicate_inst_impl_correct)
   done
 
 fun valuation_impl::"exec_world_model \<Rightarrow> object term atom valuation" where
-  "valuation_impl M (PredAtom p) = pred_val_impl M p"
+  "valuation_impl M (PredAtom p) = predicate_val_impl M p"
 | "valuation_impl M (NumComp c) = nc_val_impl M c"
 
 lemma valuation_impl_correct: "valuation_impl M x = valuation (exec_wm_to_wm M) x"
-  using pred_val_impl_correct nc_val_impl_correct
+  using predicate_val_impl_correct nc_val_impl_correct
   by (cases x; auto)
 
   subsubsection \<open>Of-Type\<close>
@@ -348,9 +348,9 @@ context ast_domain_decs begin
     unfolding of_type1_impl STG_def of_type_impl_def of_type_refine1 of_type'_def 
     ..
 
-  text \<open>Refining the declarations of signatures for predicates and functions.\<close>
-  definition sig'::"(predicate, type list) mapping" where
-    "sig' = Mapping.of_alist (map (\<lambda>PredDecl p n \<Rightarrow> (p,n)) (predicates DD))"
+  text \<open>Refining the declarations of signatures for preds and functions.\<close>
+  definition sig'::"(pred, type list) mapping" where
+    "sig' = Mapping.of_alist (map (\<lambda>PredDecl p n \<Rightarrow> (p,n)) (preds DD))"
 
   definition "sig_impl = Mapping.lookup sig'"
 
@@ -455,7 +455,7 @@ context ast_domain_decs begin
   end
 
 
-  text \<open>It would be nice, if we could remove the ty_ent call in wf_pred_eq'.
+  text \<open>It would be nice, if we could remove the ty_ent call in wf_predicate_eq'.
         If we could, we could pass is_term_of_type/is_object_of_type/etc.
         rather than of_type and ty_ent.\<close>
   context 
@@ -466,20 +466,20 @@ context ast_domain_decs begin
   begin
     abbreviation "is_of_type'' \<equiv> is_of_type' of_type ty_ent"
 
-    fun wf_pred'::"predicate \<times> 'ent list \<Rightarrow> bool" where
-      "wf_pred' (p,vs) \<longleftrightarrow> (
+    fun wf_predicate'::"pred \<times> 'ent list \<Rightarrow> bool" where
+      "wf_predicate' (p,vs) \<longleftrightarrow> (
         case Mapping.lookup sig' p of
           None \<Rightarrow> False
         | Some Ts \<Rightarrow> list_all2 is_of_type'' vs Ts)"
  
-    fun wf_pred_eq' :: "'ent pred \<Rightarrow> bool" where
-      "wf_pred_eq' (Pred p vs) \<longleftrightarrow> wf_pred' (p,vs)"
-    | "wf_pred_eq' (pred.Eq a b) \<longleftrightarrow> ty_ent a \<noteq> None \<and> ty_ent b \<noteq> None"
+    fun wf_predicate_eq' :: "'ent predicate \<Rightarrow> bool" where
+      "wf_predicate_eq' (Pred p vs) \<longleftrightarrow> wf_predicate' (p,vs)"
+    | "wf_predicate_eq' (predicate.Eq a b) \<longleftrightarrow> ty_ent a \<noteq> None \<and> ty_ent b \<noteq> None"
 
-    text \<open>This checks that a predicate is well-formed and not an equality.\<close>
-    fun wf_predicate' :: "'ent pred \<Rightarrow> bool" where
-      "wf_predicate' (Pred p vs) \<longleftrightarrow> wf_pred' (p, vs)"
-    | "wf_predicate' (pred.Eq _ _) \<longleftrightarrow> False"
+    text \<open>This checks that a pred is well-formed and not an equality.\<close>
+    fun wf_pred' :: "'ent predicate \<Rightarrow> bool" where
+      "wf_pred' (Pred p vs) \<longleftrightarrow> wf_predicate' (p, vs)"
+    | "wf_pred' (predicate.Eq _ _) \<longleftrightarrow> False"
 
     text \<open>A function call is well-formed if the function has been
           declared and the types of the arguments matches the types
@@ -511,7 +511,7 @@ context ast_domain_decs begin
       and terms are well-typed.
     \<close>
     fun wf_atom' :: "'ent atom \<Rightarrow> bool" where
-      "wf_atom' (PredAtom p) \<longleftrightarrow> wf_pred_eq' p"
+      "wf_atom' (PredAtom p) \<longleftrightarrow> wf_predicate_eq' p"
     | "wf_atom' (NumComp nc) \<longleftrightarrow> wf_num_comp' nc"
 
     text \<open>A formula is well-formed if its components are well-formed
@@ -549,8 +549,8 @@ context ast_domain_decs begin
     text \<open>An effect is well-formed if its constituent parts are well-formed\<close>
     fun wf_effect' where
       "wf_effect' (Effect a d tu nu) \<longleftrightarrow>
-          (\<forall>u \<in> set a. wf_predicate' u)
-        \<and> (\<forall>u \<in> set d. wf_predicate' u)
+          (\<forall>u \<in> set a. wf_pred' u)
+        \<and> (\<forall>u \<in> set d. wf_pred' u)
         \<and> (\<forall>u \<in> set tu. wf_of_upd' u)
         \<and> (\<forall>u \<in> set nu. wf_nf_upd' u)
         "
@@ -570,33 +570,33 @@ context ast_domain_decs begin
     by (auto split: option.splits)
 
   (* To do: maybe replace definitions by abbreviations *)
-abbreviation "wf_pred_impl \<equiv> wf_pred' of_type_impl"
+abbreviation "wf_predicate_impl \<equiv> wf_predicate' of_type_impl"
 
-  lemma wf_pred_impl_correct: "wf_pred_impl ty_ent = wf_pred ty_ent"
+  lemma wf_predicate_impl_correct: "wf_predicate_impl ty_ent = wf_predicate ty_ent"
     apply (rule ext)
     subgoal for x
     apply (cases x)
       subgoal for p vs
         apply (rule ssubst[of x], assumption)
-        apply (subst wf_pred'.simps, subst wf_pred.simps)
+        apply (subst wf_predicate'.simps, subst wf_predicate.simps)
         by (rule option.case_cong; simp add: sig_impl_correct is_of_type_impl_correct)
       done
     done 
   
-  abbreviation "wf_pred_eq_impl \<equiv> wf_pred_eq' of_type_impl"
+  abbreviation "wf_predicate_eq_impl \<equiv> wf_predicate_eq' of_type_impl"
   
-  lemma wf_pred_eq_impl_correct: "wf_pred_eq_impl ty_ent = wf_pred_eq ty_ent"
+  lemma wf_predicate_eq_impl_correct: "wf_predicate_eq_impl ty_ent = wf_predicate_eq ty_ent"
     apply (intro ext)
     subgoal for x
-      by (cases x; simp add: wf_pred_impl_correct)
+      by (cases x; simp add: wf_predicate_impl_correct)
     done
     
-  abbreviation "wf_predicate_impl \<equiv> wf_predicate' of_type_impl"
+  abbreviation "wf_pred_impl \<equiv> wf_pred' of_type_impl"
                                            
-    lemma wf_predicate_impl_correct: "wf_predicate_impl ty_ent = wf_predicate ty_ent"
+    lemma wf_pred_impl_correct: "wf_pred_impl ty_ent = wf_pred ty_ent"
       apply (intro ext)
       subgoal for x
-        by (cases x; simp add: wf_pred_impl_correct)
+        by (cases x; simp add: wf_predicate_impl_correct)
       done
   
   abbreviation "wf_num_func_impl \<equiv> wf_num_func' of_type_impl nfs_impl"
@@ -636,7 +636,7 @@ abbreviation "wf_pred_impl \<equiv> wf_pred' of_type_impl"
   lemma wf_atom_impl_correct: "wf_atom_impl ty_ent = wf_atom ty_ent"
     apply (rule ext)
     subgoal for x 
-      by (cases x; simp add: wf_num_comp_impl_correct wf_pred_eq_impl_correct)
+      by (cases x; simp add: wf_num_comp_impl_correct wf_predicate_eq_impl_correct)
     done
 
   abbreviation "wf_fmla_impl \<equiv> wf_fmla' of_type_impl nfs_impl"
@@ -684,7 +684,7 @@ abbreviation "wf_pred_impl \<equiv> wf_pred' of_type_impl"
     apply (rule ext)
     subgoal for x
       apply (cases x)
-      by (simp add: wf_predicate_impl_correct 
+      by (simp add: wf_pred_impl_correct 
           wf_of_upd_impl_correct
           wf_nf_upd_impl_correct)
     done
@@ -756,10 +756,10 @@ context ast_problem_decs begin
 
     definition "wf_goal' ot ofs nfs = wf_fmla' ot nfs (ty_term' ot ofs (ty_sym Map.empty objT_impl))"
 
-definition "wf_goal_impl \<equiv> wf_goal' of_type_impl ofs_impl nfs_impl"
+  abbreviation "wf_goal_impl \<equiv> wf_goal' of_type_impl ofs_impl nfs_impl"
 
     lemma wf_goal_impl_correct: "wf_goal_impl = wf_goal"
-      unfolding wf_goal'_def wf_goal_def wf_goal_impl_def
+      unfolding wf_goal'_def wf_goal_def
         ty_term_impl_correct
         wf_fmla_impl_correct
         objT_impl_correct
@@ -832,26 +832,23 @@ begin
 
   definition "wf_problem' ot ofs nfs obT\<equiv>
       wf_domain' ot ofs nfs obT
-    \<and> (\<forall>p \<in> (init_ps P). wf_predicate' ot obT p)
+    \<and> (\<forall>p \<in> set (init_ps P). wf_pred' ot obT p)
     \<and> (\<forall>a \<in> set (init_ofs P). wf_init_of_a' ot ofs obT a)
     \<and> (\<forall>a \<in> set (init_nfs P). wf_init_nf_a' ot nfs obT a)
     \<and> wf_goal' ot ofs nfs (goal P)"
 
-definition "wf_problem_impl \<equiv>
-    wf_problem' of_type_impl ofs_impl nfs_impl  objT_impl"
+abbreviation "wf_problem_impl \<equiv>
+    wf_problem' of_type_impl ofs_impl nfs_impl objT_impl"
 
   lemma wf_problem_impl_correct: "wf_problem_impl = wf_problem"
-    unfolding wf_problem_impl_def wf_problem'_def wf_problem_def
-     wf_domain_impl_correct wf_predicate_impl_correct
+    unfolding  wf_problem'_def wf_problem_def
+     wf_domain_impl_correct wf_pred_impl_correct
       wf_init_of_a_impl_correct wf_init_nf_a_impl_correct
-      wf_goal_impl_correct[simplified wf_goal_impl_def] apply (subst objT_impl_correct)
+      wf_goal_impl_correct apply (subst objT_impl_correct)
     ..
 end
 subsubsection \<open>Implementation of the quantifier macros\<close>
 
-derive ceq variable
-derive ccompare variable
-derive (rbt) set_impl variable 
 
 
 (* this syntax also works for Mapping *)
@@ -878,15 +875,15 @@ context ast_problem_decs begin
       by (simp add: fold_map)
   qed (simp add: term_vars_def)
   
-  fun pred_vars_impl::"symbol term pred \<Rightarrow> variable set" where
-    "pred_vars_impl (Pred p as) = fold ((\<union>) o term_vars_impl) as {}"
-  | "pred_vars_impl (pred.Eq a b) = term_vars_impl a \<union> term_vars_impl b"
+  fun predicate_vars_impl::"symbol term predicate \<Rightarrow> variable set" where
+    "predicate_vars_impl (Pred p as) = fold ((\<union>) o term_vars_impl) as {}"
+  | "predicate_vars_impl (predicate.Eq a b) = term_vars_impl a \<union> term_vars_impl b"
   
-  lemma pred_vars_impl_correct: "pred_vars x = pred_vars_impl x"
+  lemma predicate_vars_impl_correct: "predicate_vars x = predicate_vars_impl x"
   proof (cases x)
     case [simp]: (Pred p as)
-    have "pred_vars (Pred p as) = \<Union> (term_vars_impl ` (set as))"
-      unfolding pred_vars_def
+    have "predicate_vars (Pred p as) = \<Union> (term_vars_impl ` (set as))"
+      unfolding predicate_vars_def
       using term_vars_impl_correct by simp
     also have "... = fold (\<union>) (map term_vars_impl as) {}"
         by (simp add: SUP_set_fold fold_map)
@@ -895,7 +892,7 @@ context ast_problem_decs begin
   next
     case (Eq a b)
     then show ?thesis 
-      unfolding pred_vars_def 
+      unfolding predicate_vars_def 
       using term_vars_impl_correct 
       by simp
   qed
@@ -929,14 +926,14 @@ lemma nc_vars_impl_correct: "nc_vars_impl x = nc_vars x"
   by (induction x; simp add: nc_vars_def nf_vars_def nf_vars_impl_correct)
 
 fun atom_vars_impl::"symbol term atom \<Rightarrow> variable set" where
-  "atom_vars_impl (PredAtom p) = pred_vars_impl p"
+  "atom_vars_impl (PredAtom p) = predicate_vars_impl p"
 | "atom_vars_impl (NumComp nc) = nc_vars_impl nc"
 
 lemma atom_vars_impl_correct: "atom_vars_impl x = atom_vars x"
   unfolding atom_vars_def
 proof (induction x)
   case (PredAtom p)
-  then show ?case using pred_vars_impl_correct atom_vars_def pred_vars_def by simp
+  then show ?case using predicate_vars_impl_correct atom_vars_def predicate_vars_def by simp
 next
   case (NumComp nc)
   then show ?case using nc_vars_impl_correct atom_vars_def nc_vars_def by simp
@@ -1005,7 +1002,7 @@ context ast_domain begin
 context 
   fixes term_val::"object term \<rightharpoonup> object"
   fixes nf_val::"object term num_fluent \<rightharpoonup> rat"
-  fixes pred_inst::"object term pred \<rightharpoonup> object pred"
+  fixes predicate_inst::"object term predicate \<rightharpoonup> object predicate"
 begin
 
 fun inst_of_upd'::"object term of_upd \<Rightarrow> instantiated_of_upd" where
@@ -1018,8 +1015,8 @@ fun inst_nf_upd'::"object term nf_upd \<Rightarrow> instantiated_nf_upd" where
 
 fun inst_effect'::" ground_effect \<Rightarrow> fully_instantiated_effect" where
     "inst_effect' (Effect a d tu nu) = (
-      Eff (map pred_inst a) 
-          (map pred_inst d) 
+      Eff (map predicate_inst a) 
+          (map predicate_inst d) 
           (map inst_of_upd' tu) 
           (map inst_nf_upd' nu))"
 end
@@ -1036,14 +1033,14 @@ lemma inst_nf_upd_impl_correct: "inst_nf_upd_impl M u = inst_nf_upd (exec_wm_to_
   unfolding inst_nf_upd_impl_def
   by (cases u; auto simp: term_val_impl_correct nf_val_impl_correct)
 
-definition "inst_effect_impl M \<equiv> inst_effect' (term_val_impl M) (nf_val_impl M) (pred_inst_impl M)"
+definition "inst_effect_impl M \<equiv> inst_effect' (term_val_impl M) (nf_val_impl M) (predicate_inst_impl M)"
 
 lemma inst_effect_impl_correct: "inst_effect_impl M eff = inst_effect (exec_wm_to_wm M) eff"
   unfolding inst_effect_impl_def
   by (cases eff; auto simp:
       inst_nf_upd_impl_correct[simplified inst_nf_upd_impl_def]
       inst_of_upd_impl_correct[simplified inst_of_upd_impl_def]
-      pred_inst_impl_correct)
+      predicate_inst_impl_correct)
 
 
 
@@ -1512,10 +1509,10 @@ context
 begin
   abbreviation "is_obj_of_type' \<equiv> is_of_type' of_type obT"
 
-  fun wf_app_pred_upd' where
-    "wf_app_pred_upd' None = False"
-  | "wf_app_pred_upd' (Some (pred.Eq _ _)) = False"
-  | "wf_app_pred_upd' (Some (Pred p as)) = wf_pred_eq' of_type obT (Pred p as)" 
+  fun wf_app_predicate_upd' where
+    "wf_app_predicate_upd' None = False"
+  | "wf_app_predicate_upd' (Some (predicate.Eq _ _)) = False"
+  | "wf_app_predicate_upd' (Some (Pred p as)) = wf_predicate_eq' of_type obT (Pred p as)" 
 
   fun wf_app_of_upd'::"instantiated_of_upd \<Rightarrow> bool" where
       "wf_app_of_upd' (OFU f as v) = (case ofs f of 
@@ -1536,22 +1533,22 @@ begin
 
   fun wf_fully_instantiated_effect' where
     "wf_fully_instantiated_effect' (Eff a d tu nu) \<longleftrightarrow> 
-        (\<forall>ae \<in> set a. wf_app_pred_upd' ae)
-      \<and> (\<forall>de \<in> set d. wf_app_pred_upd' de)
+        (\<forall>ae \<in> set a. wf_app_predicate_upd' ae)
+      \<and> (\<forall>de \<in> set d. wf_app_predicate_upd' de)
       \<and> (\<forall>u \<in> set tu. wf_app_of_upd' u)     
       \<and> (\<forall>u \<in> set nu. wf_app_nf_upd' u)"
 
 end
 
-abbreviation "wf_app_pred_upd_impl \<equiv> wf_app_pred_upd' of_type_impl objT_impl"
+abbreviation "wf_app_predicate_upd_impl \<equiv> wf_app_predicate_upd' of_type_impl objT_impl"
 
-lemma wf_app_pred_upd_impl_correct: "wf_app_pred_upd_impl x = wf_app_pred_upd x"
+lemma wf_app_predicate_upd_impl_correct: "wf_app_predicate_upd_impl x = wf_app_predicate_upd x"
   apply (cases x)
   subgoal by simp
   subgoal for p
     apply (cases p)
-    subgoal using wf_pred_eq_impl_correct[of objT] 
-          objT_impl_correct[THEN arg_cong[of _ _ wf_pred_eq_impl]] by auto
+    subgoal using wf_predicate_eq_impl_correct[of objT] 
+          objT_impl_correct[THEN arg_cong[of _ _ wf_predicate_eq_impl]] by auto
     subgoal by auto
     done
   done
@@ -1587,7 +1584,7 @@ abbreviation "wf_fully_instantiated_effect_impl \<equiv> wf_fully_instantiated_e
 lemma wf_fully_instantiated_effect_impl_correct: "wf_fully_instantiated_effect_impl e = wf_fully_instantiated_effect e"
   apply (induction e)
   unfolding wf_fully_instantiated_effect'.simps wf_fully_instantiated_effect.simps
-      wf_app_pred_upd_impl_correct wf_app_of_upd_impl_correct wf_app_nf_upd_impl_correct ..
+      wf_app_predicate_upd_impl_correct wf_app_of_upd_impl_correct wf_app_nf_upd_impl_correct ..
 
 definition non_int_cond_effs_impl::"exec_world_model \<Rightarrow> (ground_formula \<times> ground_effect) 
   \<Rightarrow> (ground_formula \<times> ground_effect) \<Rightarrow> bool" where
@@ -1957,7 +1954,7 @@ definition "wf_of_int_impl oi = wf_of_int'' of_type_impl ofs_impl objT_impl (Map
     \<Rightarrow> (object \<rightharpoonup> type) 
     \<Rightarrow> world_model \<Rightarrow> bool" where
     "wf_world_model' ot ofs nfs obT M \<equiv> 
-      (\<forall>p \<in> preds M. wf_predicate' ot obT p)
+      (\<forall>p \<in> predicates M. wf_pred' ot obT p)
       \<and> wf_of_int' ot ofs obT (of_int M)
       \<and> wf_nf_int' ot nfs obT (nf_int M)"
   
@@ -1970,7 +1967,7 @@ definition "wf_of_int_impl oi = wf_of_int'' of_type_impl ofs_impl objT_impl (Map
   
   lemma wf_world_model_refine_correct: "wf_world_model_refine = wf_world_model"
     unfolding wf_world_model_refine_def wf_world_model_def wf_world_model'_def
-     wf_predicate_impl_correct
+     wf_pred_impl_correct
      wf_of_int_refine_correct[simplified wf_of_int_refine_def]
      wf_nf_int_refine_correct[simplified wf_nf_int_refine_def]
       apply (subst objT_impl_correct)
@@ -2028,7 +2025,7 @@ text \<open>Our error type is a function from unit to shows. shows encodes a str
   and its concatenation operation. The error type is a function from unit to 
   shows, because it allws binding \<close>
 
-text \<open>Checks that a predicate holds for each element in a list.\<close>
+text \<open>Checks that a pred holds for each element in a list.\<close>
 definition check_all_list::"('a \<Rightarrow> bool) \<Rightarrow> 'a list 
   \<Rightarrow> string \<Rightarrow> ('a \<Rightarrow> shows) 
   \<Rightarrow> (unit \<Rightarrow> shows) + _" where 
@@ -2036,17 +2033,6 @@ definition check_all_list::"('a \<Rightarrow> bool) \<Rightarrow> 'a list
   forallM (\<lambda>x. check (P x) (\<lambda>_::unit. shows msg o shows '': '' o msgf x) ) l 
     <+? snd"
 
-
-
-term "\<lambda>_::unit. shows msg o shows '': '' o msgf x"
-
-term "forallM (\<lambda>x. check (P x) (\<lambda>_::unit. shows msg o shows '': '' o msgf x) ) "
-
-term "update_error"
-
-term forallM
-
-term check_allm
 
 lemma check_all_list_return_iff[return_iff]: "check_all_list P l msg msgf = Inr () \<longleftrightarrow> (\<forall>x\<in>set l. P x)"
   unfolding check_all_list_def
@@ -2067,28 +2053,28 @@ definition check_all_list_index::"('a \<Rightarrow> bool) \<Rightarrow> 'a list
 
 
 text \<open>Functions to allow printing of instances of these types\<close>
-derive "show" predicate func upd_op object "term" formula 
+derive "show" pred func upd_op object "term" formula 
 
-instantiation pred::("show") "show" begin
-fun shows_prec_pred::"nat \<Rightarrow> 'a pred \<Rightarrow> shows" where
-  "shows_prec_pred n (pred.Eq a b) = shows a o shows  b"
-| "shows_prec_pred n (pred.Pred p xs) = shows ''Pred '' o shows p o shows '' '' o shows_list xs"
+instantiation predicate::("show") "show" begin
+fun shows_prec_predicate::"nat \<Rightarrow> 'a predicate \<Rightarrow> shows" where
+  "shows_prec_predicate n (predicate.Eq a b) = shows a o shows  b"
+| "shows_prec_predicate n (predicate.Pred p xs) = shows ''Pred '' o shows p o shows '' '' o shows_list xs"
 
-definition shows_list_pred :: "'a pred list \<Rightarrow> shows" where
-  "shows_list_pred xs = showsp_list shows_prec 0 xs"
+definition shows_list_predicate :: "'a predicate list \<Rightarrow> shows" where
+  "shows_list_predicate xs = showsp_list shows_prec 0 xs"
 
-lemma shows_prec_pred_append: fixes n::nat and p::"'a pred" and r::string and s::string
+lemma shows_prec_predicate_append: fixes n::nat and p::"'a predicate" and r::string and s::string
   shows "shows_prec n p (r @ s) = shows_prec n p r @ s" 
   by (induction p; simp add: shows_list_append shows_prec_append)
 instance proof
-  fix n::nat and p::"'a pred" and r::string and s::string
+  fix n::nat and p::"'a predicate" and r::string and s::string
   show "shows_prec n p (r @ s) = shows_prec n p r @ s" 
-  by (rule shows_prec_pred_append)
+  by (rule shows_prec_predicate_append)
 next
-  fix xs::"'a pred list" and r::string and s::string
+  fix xs::"'a predicate list" and r::string and s::string
   show "shows_list xs (r @ s) = shows_list xs r @ s"
-    unfolding shows_list_pred_def
-    by (induction xs; auto intro: showsp_list_append simp: shows_prec_pred_append)
+    unfolding shows_list_predicate_def
+    by (induction xs; auto intro: showsp_list_append simp: shows_prec_predicate_append)
 qed                                      
 end
 
@@ -2256,9 +2242,6 @@ lemma resolve_action_schemaE_return_iff[return_iff]:
   thm wf_ground_action_impl_def
 
 
-
-  find_theorems name: "bind"
-
   term "check (action_params_match a args) (ERRS ''Parameter mismatch'')"
   term "\<lambda>x. do {x; check (action_params_match a args) (ERRS ''Parameter mismatch'')}"
   (* here we check that an effect is well formed and we execute it *)
@@ -2275,11 +2258,7 @@ lemma resolve_action_schemaE_return_iff[return_iff]:
           wf_cond_effect_list'_def wf_ground_action_impl_def execute_plan_action'_def
           execute_ground_action_impl_def return_iff)
 
-  text \<open>Next, we use the efficient implementation @{const is_obj_of_type_impl}
-    for the type check, and omit the well-formedness check, as effects obtained
-    from instantiating well-formed action schemas are always well-formed
-    (@{thm [source] wf_effect_inst_weak}).\<close>
-
+  text \<open>Now, we eliminate the well-formedness check for ground actions, because \<close>
   
   definition en_exE2
     :: "plan_action \<Rightarrow> exec_world_model \<Rightarrow> _+exec_world_model"
@@ -2330,7 +2309,7 @@ lemma (in wf_ast_problem) en_exE2_return_iff[return_iff]:
       by (simp add: execute_plan_action'_def execute_ground_action_impl_def)
     apply (cases "resolve_action_schema_impl n") 
     subgoal by (auto simp: valid_plan_action'_def)
-    subgoal by (auto simp: wf_plan_action'.simps valid_plan_action'_def
+    subgoal by (auto simp:  valid_plan_action'_def
        valid_ground_action_impl_def valid_effects_impl_def
        ground_action_enabled_impl_def wf_inst_cond_effect_list_impl_def
        well_inst_cond_effect_list_impl_def execute_plan_action'_def
@@ -2353,8 +2332,6 @@ lemma return_idk:
   shows "Error_Monad.bind m f \<bind> g = m \<bind> g"
   using assms
   by (cases m; auto)
-
-find_theorems name: "Monad*assoc"
 
 text \<open>Justification of refinement\<close>
 text \<open>We know that the problem is well-formed, because our executable check is equivalent to 
@@ -2532,118 +2509,65 @@ context ast_problem begin
     case (Cons a \<pi>s)
     then show ?case
       by (auto
-        simp: valid_plan_from_def plan_action_path_def plan_action_enabled_def
+        simp: valid_plan_from_def plan_action_path_def valid_plan_action_def
         simp: execute_ground_action_def execute_plan_action_def)
   qed
+
+  text \<open>Next we re-implement the function with our efficient datatypes
+    from the container framework.\<close>
+  fun valid_plan_from2::"exec_world_model \<Rightarrow> plan \<Rightarrow> bool" where
+    "valid_plan_from2 s [] \<longleftrightarrow> valuation_impl s \<Turnstile> (inst_goal (goal P))"
+  | "valid_plan_from2 s (\<pi>#\<pi>s) \<longleftrightarrow> valid_plan_action_impl \<pi> s 
+      \<and> (valid_plan_from2 (execute_plan_action_impl \<pi> s) \<pi>s)"
+
+  lemma valid_plan_from2_refine: "valid_plan_from2 s \<pi>s = valid_plan_from1 (exec_wm_to_wm s) \<pi>s"
+    by (induction \<pi>s arbitrary: s; simp add: ext[OF valuation_impl_correct] valid_plan_action_impl_correct execute_plan_action_impl_correct)
 
   text \<open>Next, we use our efficient combined enabledness check and execution
     function, and transfer the implementation to use the error monad: \<close>
   fun valid_plan_fromE
-    :: "_ \<Rightarrow> (object, type) mapping \<Rightarrow> nat \<Rightarrow> exec_world_model \<Rightarrow> plan \<Rightarrow> _+unit"
+    :: "nat \<Rightarrow> exec_world_model \<Rightarrow> plan \<Rightarrow> _+unit"
   where
-    "valid_plan_fromE stg si s []
+    "valid_plan_fromE si s []
       = check (valuation_impl s \<Turnstile> (inst_goal (goal P))) (ERRS ''Postcondition does not hold'')"
-  | "valid_plan_fromE stg mp si s (\<pi>#\<pi>s) = do {
-        s \<leftarrow> en_exE2 stg \<pi> s
+  | "valid_plan_fromE si s (\<pi>#\<pi>s) = do {
+        s \<leftarrow> en_exE2 \<pi> s
           <+? (\<lambda>e _. shows ''at step '' o shows si o shows '': '' o e ());
-        valid_plan_fromE stg mp (si+1) s \<pi>s
+        valid_plan_fromE (si+1) s \<pi>s
       }"
 
+lemma (in wf_ast_problem) valid_plan_fromE_correct[return_iff]:
+  shows "valid_plan_fromE n s \<pi>s = Inr () \<longleftrightarrow> valid_plan_from (exec_wm_to_wm s) \<pi>s"
+  apply (subst valid_plan_from1_refine)
+  apply (subst sym[OF valid_plan_from2_refine])
+  apply (induction \<pi>s arbitrary: n s)
+   apply (simp add: check_return_iff)
+  by (simp add: bind_return_iff en_exE2_return_iff)
+    
+
 end
-
-context wf_ast_problem
-begin
-
-
-lemma resolve_impl_wf: "resolve_action_schema_impl n = Some as \<Longrightarrow> wf_action_schema as"
-  apply (subst (asm) resolve_action_schema_impl_correct)
-  apply (insert wf_problem)
-  unfolding wf_problem_def wf_domain_def
-  using resolve_action_wf by blast
-
-lemma resolve_action_schemaE_wf: "resolve_action_schemaE n = Inr as \<Longrightarrow> wf_action_schema as"
-  using resolve_impl_wf resolve_action_schemaE_return_iff by blast
-
-find_theorems name: "Error_Monad"
-
-  text \<open>Combination of the two refinement lemmas\<close>
-  lemma (in wf_ast_problem) en_exE2_return_iff:
-    assumes "wm_basic M"
-    shows "en_exE2 STG mp_objT a M = Inr M'
-      \<longleftrightarrow> plan_action_enabled a M \<and> M' = execute_plan_action a M"
-    unfolding wf_en_exE2_eq
-    apply (subst en_exE_return_iff)
-    using assms
-    by (auto)
-
-  lemma (in wf_ast_problem) en_exE2_return_iff_compact_notation:
-    "\<lbrakk>wm_basic s\<rbrakk> \<Longrightarrow>
-      en_exE2 STG mp_objT a s = Inr s'
-      \<longleftrightarrow> plan_action_enabled a s \<and> s' = execute_plan_action a s"
-    using en_exE2_return_iff .
-
-
-  text \<open>Refinement lemma for our plan checking algorithm\<close>
- 
-  lemma (in wf_ast_problem) valid_plan_fromE_return_iff[return_iff]:
-    assumes "wm_basic s"
-    shows "valid_plan_fromE STG mp_objT k s \<pi>s = Inr () \<longleftrightarrow> valid_plan_from s \<pi>s"
-    using assms unfolding valid_plan_from1_refine
-  proof (induction stg\<equiv>STG mp\<equiv>mp_objT k s \<pi>s rule: valid_plan_fromE.induct)
-    case (1 si s)
-    then show ?case
-      using wf_problem holds_for_wf_fmlas
-      by (auto
-        simp: return_iff Let_def wf_en_exE2_eq wf_problem_def
-        split: plan_action.split)
-  next
-    case (2 si s \<pi> \<pi>s)
-    then show ?case
-      apply (clarsimp
-        simp: return_iff en_exE2_return_iff
-        split: plan_action.split)
-      by (meson ast_problem.plan_action_enabled_def wf_actions_only_add_atoms)
-  qed
-
-  lemmas valid_plan_fromE_return_iff'[return_iff]
-    = wf_ast_problem.valid_plan_fromE_return_iff[of P, OF wf_ast_problem.intro]
-
-  (* TODO: This function is unused! *)
-  (*fun apply_effect_exec''
-    :: "object atom ast_effect \<Rightarrow> world_model \<Rightarrow> world_model"
-    where
-    "apply_effect_exec'' (Effect (adds) (dels)) s
-      = fold (%add s. insert add s)
-          (map formula.Atom adds)
-          (fold (%del s. Set.remove del s) (map formula.Atom dels) s)"
-  *)
-
-
-end \<comment> \<open>Context of \<open>wf_ast_problem\<close>\<close>
 
 subsection \<open>Executable Plan Checker\<close>
 text \<open>We obtain the main plan checker by combining the well-formedness check
   and executability check. \<close>
 
 
-definition "check_wf_types D \<equiv> do {
-  check_all_list (\<lambda>(_,t). t=''object'' \<or> t\<in>fst`set (types D)) (types D) ''Undeclared supertype'' (shows o snd)
+definition "check_wf_types DD \<equiv> do {
+  check_all_list (\<lambda>(_,t). t=''object'' \<or> t\<in>fst`set (types DD)) (types DD) ''Undeclared supertype'' (shows o snd)
 }"
 
-definition "check_wf_types' D \<equiv> do {
-  check_all_list (\<lambda>(_,t). t=''object'' \<or> t\<in>fst`set (types D)) (types D) ''Undeclared supertype'' (shows o snd)
-} <+? (\<lambda>e. String.implode e '''')"
+(* To do: implement check for types which output all errors *)
 
 
-lemma check_wf_types_return_iff[return_iff]: "check_wf_types D = Inr () \<longleftrightarrow> ast_domain_decs.wf_types D"
+lemma check_wf_types_return_iff[return_iff]: "check_wf_types DD = Inr () \<longleftrightarrow> ast_domain_decs.wf_types DD"
   unfolding ast_domain_decs.wf_types_def check_wf_types_def
   by (force simp: return_iff)
 
 
 definition "check_wf_domain_decs DD \<equiv> do {
   check_wf_types DD;
-  check (distinct (map (predicate_decl.pred) (predicates DD))) (ERRS ''Duplicate predicate declaration'');
-  check_all_list (ast_domain_decs.wf_predicate_decl DD) (predicates DD) ''Malformed predicate declaration'' (shows o predicate.name o predicate_decl.pred);
+  check (distinct (map (pred_decl.predicate) (preds DD))) (ERRS ''Duplicate pred declaration'');
+  check_all_list (ast_domain_decs.wf_pred_decl DD) (preds DD) ''Malformed pred declaration'' (shows o pred.name o pred_decl.predicate);
   check (distinct (map fst (consts DD))) (ERRS  ''Duplicate constant declaration'');
   check (\<forall>(n,T)\<in>set (consts DD). ast_domain_decs.wf_type DD T) (ERRS ''Malformed type'')
 }"
@@ -2654,7 +2578,7 @@ proof -
   interpret ast_domain_decs DD .
   show ?thesis
     unfolding check_wf_domain_decs_def wf_domain_decs_def
-    by (auto simp: return_iff)
+    by (auto simp: check_wf_types_return_iff Ball_set check_return_iff)
 qed
 
 
@@ -2683,14 +2607,10 @@ term ast_problem_decs.wf_action_schema'
 definition "check_wf_domain D \<equiv> do {
   let PD = ast_domain.problem_decs D;
   let DD = ast_problem_decs.domain_decs PD;
-  let of_type_impl = ast_domain_decs.of_type_impl DD;
-  let ofs_impl = ast_domain_decs.ofs_impl DD;
-  let nfs_impl = ast_domain_decs.nfs_impl DD;
-  let objT_impl = ast_problem_decs.objT_impl PD;
   
   check_wf_problem_decs PD <+? prepend_err_msg ''Declarations from problem not well-formed'';
   check (distinct (map ast_action_schema.name (actions D))) (ERRS ''Duplicate action name'');
-  check_all_list (ast_problem_decs.wf_action_schema' PD of_type_impl ofs_impl nfs_impl objT_impl) (actions D) ''Malformed action'' (shows o ast_action_schema.name)
+  check_all_list (ast_problem_decs.wf_action_schema_impl PD) (actions D) ''Malformed action'' (shows o ast_action_schema.name)
 }"
 
 
@@ -2698,32 +2618,51 @@ term "Error_Monad.bind"
 
 term "shows o ast_action_schema.name"
 
-lemma check_wf_domain_return_iff[return_iff]:
-  "check_wf_domain D = Inr () \<longleftrightarrow> ast_domain.wf_domain' D"
+lemma check_wf_domain_return_iff':
+  "check_wf_domain D = Inr x \<longleftrightarrow> ast_domain.wf_domain_impl D"
 proof -
   interpret ast_domain D .
   show ?thesis
     unfolding check_wf_domain_def wf_domain'_def
     by (auto simp: return_iff)
 qed
-definition "check_wf_problem P stg conT mp \<equiv> do {
+
+lemma check_wf_domain_return_iff[return_iff]:
+  "check_wf_domain D = Inr x \<longleftrightarrow> ast_domain.wf_domain D"
+  apply (subst check_wf_domain_return_iff')
+  apply (subst ast_domain.wf_domain_impl_correct)
+  ..
+
+definition "check_wf_problem P\<equiv> do {
   let D = ast_problem.domain P;
   let PD = ast_domain.problem_decs D;
-  check_wf_domain D stg conT mp <+? prepend_err_msg ''Domain not well-formed'';
-  check (ast_problem_decs.wf_goal' PD mp stg (goal P)) (ERRS ''Malformed goal formula'');
-  check (distinct (init P)) (ERRS ''Duplicate fact in initial state'');
-  check (\<forall>f\<in>set (init P). ast_problem_decs.wf_fmla_atom2' PD mp stg f) (ERRS ''Malformed formula in initial state'')
+  let DD = ast_problem_decs.domain_decs PD;
+  
+  check_wf_domain D <+? prepend_err_msg ''Domain not well-formed'';
+  check_all_list (ast_domain_decs.wf_pred_impl DD (ast_problem_decs.objT_impl PD)) (init_ps P) ''Predicate not well-formed'' shows;
+  check_all_list (ast_problem.wf_init_of_a_impl P) (init_ofs P) ''Malformed initial assignment to object function'' shows;
+  check_all_list (ast_problem.wf_init_nf_a_impl P) (init_nfs P) ''Malformed initial assignment to numeric function'' shows;
+  check (ast_problem_decs.wf_goal_impl PD (goal P)) (ERRS ''Malformed goal formula'')
 }"
 
-lemma check_wf_problem_return_iff[return_iff]:
-  "check_wf_problem P stg conT mp = Inr () \<longleftrightarrow> ast_problem.wf_problem' P stg conT mp"
+lemma check_wf_problem_return_iff':
+  "check_wf_problem P = Inr () \<longleftrightarrow> ast_problem.wf_problem_impl P"
 proof -
   interpret ast_problem P .
   show ?thesis
     unfolding check_wf_problem_def wf_problem'_def
-    by (auto simp: return_iff)
+    by (auto simp: check_wf_domain_return_iff' return_iff Ball_set)
 qed
 
+
+lemma check_wf_problem_return_iff[return_iff]:
+  "check_wf_problem P = Inr () \<longleftrightarrow> ast_problem.wf_problem P"
+  apply (subst check_wf_problem_return_iff')
+  apply (subst ast_problem.wf_problem_impl_correct)
+  ..
+
+(* To do: implement executable plan checker *)
+(* 
 definition "check_plan P \<pi>s \<equiv> do {
   let D = ast_problem.domain P;
   let PD = ast_domain.problem_decs D;
@@ -2733,7 +2672,7 @@ definition "check_plan P \<pi>s \<equiv> do {
   let mp = ast_problem_decs.mp_objT PD;
   check_wf_problem P;
 
-  ast_problem.valid_plan_fromE P stg mp 1 (ast_problem.I P) \<pi>s
+  ast_problem.valid_plan_fromE P  \<pi>s
 } <+? (\<lambda>e. String.implode (e () ''''))"
 
 (* valid_plan_fromE should be as efficient as possible *)
@@ -2761,7 +2700,7 @@ proof -
       simp: Let_def
       )
 qed
-
+ *)
 
 subsection \<open>Code Setup\<close>
 
@@ -2778,11 +2717,11 @@ lemmas wf_domain_decs_code =
   ast_domain_decs.sig_def
   ast_domain_decs.wf_types_def
   ast_domain_decs.wf_type.simps
-  ast_domain_decs.wf_predicate_decl.simps
+  ast_domain_decs.wf_pred_decl.simps
   ast_domain_decs.STG_def
   ast_domain_decs.is_of_type'_def
   ast_domain_decs.wf_atom'.simps(* 
-  ast_domain_decs.wf_pred_atom'.simps *)
+  ast_domain_decs.wf_predicate_atom'.simps *)
   ast_domain_decs.wf_fmla'.simps(* 
   ast_domain_decs.wf_fmla_atom1'.simps *)
   ast_domain_decs.wf_effect'.simps(* 
@@ -2796,18 +2735,18 @@ ast_domain_decs.nfs_impl_def
 ast_domain_decs.wf_cond_effect'_def
 ast_domain_decs.wf_cond_effect_list'_def
 ast_domain_decs.wf_num_comp'.simps 
-ast_domain_decs.wf_pred_eq.simps
+ast_domain_decs.wf_predicate_eq.simps
 ast_domain_decs.is_term_of_type'.simps
 ast_domain_decs.wf_num_fluent'.simps 
-ast_domain_decs.wf_predicate'.simps 
+ast_domain_decs.wf_pred'.simps 
 ast_domain_decs.obj_fun_sig'_def 
 ast_domain_decs.num_fun_sig'_def 
-ast_domain_decs.wf_pred_eq'.simps 
+ast_domain_decs.wf_predicate_eq'.simps 
 ast_domain_decs.wf_of_upd'.simps 
 ast_domain_decs.wf_nf_upd'.simps
 ast_domain_decs.obj_fun_sig_def
  ast_domain_decs.wf_num_func'.simps 
-ast_domain_decs.wf_pred'.simps
+ast_domain_decs.wf_predicate'.simps
 ast_domain_decs.sig'_def
 
 declare wf_domain_decs_code[code]
@@ -2825,7 +2764,7 @@ lemmas wf_problem_decs_code =
   ast_problem_decs.pddl_exists_impl_def
   ast_problem_decs.wf_action_schema'.simps
   ast_problem_decs.atom_vars_impl.simps
-  ast_problem_decs.pred_vars_impl.simps
+  ast_problem_decs.predicate_vars_impl.simps
   ast_problem_decs.nc_vars_impl.simps
   ast_problem_decs.term_vars_impl.simps 
   ast_problem_decs.nf_vars_impl.simps
@@ -2877,7 +2816,6 @@ lemmas check_code =
   ast_problem.en_exE2_def *)
   ast_problem.resolve_instantiate.simps
   ast_domain.resolve_action_schema_def
-  ast_domain.resolve_action_schemaE_def
   ast_problem.I_def
   ast_domain.instantiate_action_schema.simps
 (*
@@ -2885,7 +2823,6 @@ lemmas check_code =
   (*ast_domain.apply_effect_exec'.simps*)
 (*   ast_domain.apply_effect_eq_impl_eq
  *)  (*ast_domain.apply_atomic.simps*)
-  ast_problem.holds_def
   ast_problem_decs.mp_objT_def
 (*   ast_problem.is_obj_of_type_impl_def
  ast_problem_decs.wf_fmla_atom2'_def
@@ -2894,18 +2831,6 @@ lemmas check_code =
 declare check_code[code]
 
 subsubsection \<open>Setup for Containers Framework\<close>
-
-derive (linorder) compare rat
-
-derive (eq) ceq predicate func num_fluent 
-  num_comp pred atom object formula  
-derive ccompare predicate func pred num_fluent num_comp 
-  atom object formula
-derive (rbt) set_impl atom formula
-
-derive (rbt) mapping_impl object
-
-derive linorder predicate object atom "object atom formula"
 
 subsubsection \<open>More Efficient Distinctness Check for Linorders\<close>
 (* TODO: Can probably be optimized even more. *)
@@ -2930,297 +2855,16 @@ lemma [code_unfold]: "distinct = distinct_ds"
 
 subsubsection \<open>Code Generation\<close>
 
-derive (eq) ceq symbol "term"
-derive ccompare "term" symbol 
+
+derive (eq) ceq pred func variable object symbol "term" num_fluent num_comp 
+  predicate atom formula instantiated_nf_upd
+derive (linorder) compare rat 
+derive ccompare func pred variable object "term" symbol upd_op predicate num_fluent num_comp 
+  atom formula instantiated_nf_upd
 derive (no) cenum variable
-derive (rbt) set_impl "term"
-derive (rbt) mapping_impl func predicate
+derive (rbt) set_impl variable "term" atom formula instantiated_nf_upd 
+derive (rbt) mapping_impl func object pred
 
-print_derives
-
-find_theorems name: "finite_UNIV_nat"
-
-
-lemma "CARD(variable) = 0"
-  using card_eq_0_iff
-  using [[simp_trace_new]]
-  apply simp
-  sorry
-find_theorems name: "nat*inf"
-
-datatype test = Test1 | Test2
-
-lemma "UNIV = {Test1, Test2}"
-  apply (rule UNIV_eq_I)
-  subgoal for x
-    apply (cases x)
-    by simp+
-  done
-
-value "UNIV::string set"
-
-find_theorems name: "String*UNIV"
-
-thm UNIV_eq_I insert_iff
-
-lemma [simp]: "CARD(test) = 2"
-  by (meson UNIV_I card_2_iff' test.distinct(2) test.exhaust)
-
-value "length (replicate 4 CHR ''A'')"
-
-lemma "infinite (range (\<lambda>n. replicate n CHR ''A''))"
-  thm finite_range_imageI [of _ length]
-  apply (auto dest: finite_range_imageI [of _ length])
-  done
-
-lemma "infinite (range (\<lambda>n. length (replicate n CHR ''B'')))"
-  apply (subst length_replicate)
-  using [[simp_trace]]
-  by simp
-
-thm Finite_Set.infinite_UNIV_nat
-
-thm surj_def
-
-lemma endo_inj_surj: "finite A \<Longrightarrow> f ` A \<subseteq> A \<Longrightarrow> inj_on f A \<Longrightarrow> f ` A = A"
-  by (simp add: card_seteq card_image)
-
-lemma finite_UNIV_inj_surj: "finite(UNIV:: 'a set) \<Longrightarrow> inj f \<Longrightarrow> surj f"
-  for f :: "'a \<Rightarrow> 'a"
-  by (fastforce simp:surj_def dest!: endo_inj_surj)
-
-lemma infinite_UNIV_nat [iff]: "infinite (UNIV :: nat set)"
-proof
-  thm endo_inj_surj
-  assume "finite (UNIV :: nat set)" 
-    (* given a finite universal set, any function from the set to itself
-       is surjective (\<forall>y. \<exists>x . f(x) = y) 
-        if it is injective (f(a) = f(b) \<Longrightarrow> a = b)*)
-  with finite_UNIV_inj_surj [of Suc] show False
-    by simp (blast dest: Suc_neq_Zero surjD)
-qed
-
-lemma "range (\<lambda>n. n) \<equiv> UNIV"
-  using [[simp_trace]]
-  by simp
-find_theorems name: "length*rep"
-
-thm ex_new_if_finite finite.emptyI finite_insert insert_iff test.exhaust UNIV_I finite_maxlen length_replicate less_irrefl
-lemma infinite_literal:
-  "infinite (UNIV :: String.literal set)"
-proof -
-  define S where "S = range (\<lambda>n. replicate n CHR ''A'')"
-  have "inj_on String.implode S"
-  proof (rule inj_onI)
-    fix cs ds
-    assume "String.implode cs = String.implode ds"
-    then have "String.explode (String.implode cs) = String.explode (String.implode ds)"
-      by simp
-    moreover assume "cs \<in> S" and "ds \<in> S"
-    ultimately show "cs = ds"
-      by (auto simp add: S_def)
-  qed
-  thm finite_range_imageI [of _ length]
-  moreover have "infinite S"
-    by (auto simp add: S_def dest: finite_range_imageI [of _ length])
-  ultimately have "infinite (String.implode ` S)"
-    thm finite_image_iff
-    by (simp add: finite_image_iff)
-  then show ?thesis
-    thm finite_subset
-    by (auto intro: finite_subset)
-qed
-
-axiomatization a::bool and b::bool
-  where R1: "a \<Longrightarrow> b"
-
-
-lemma "a \<Longrightarrow> b"
-  by (rule R1)
-
-lemma "\<not>b \<Longrightarrow> \<not>a"
-  by (auto intro: R1)
-
-
-thm finite_subset
-
-  
-
-instantiation test :: card_UNIV begin 
-definition "finite_UNIV = Phantom(test) True"
-definition "card_UNIV = Phantom(test) 2"
-instance 
-  apply (intro_classes)
-   apply (simp_all add: finite_UNIV_test_def card_UNIV_test_def)
-  by (metis ex_new_if_finite finite.emptyI finite_insert insert_iff test.exhaust)
-end
-
-
-(* is it possible to get the original definition of f_vars working? *)
-instantiation variable::finite_UNIV 
-begin
-definition "finite_UNIV = Phantom(variable) False"
-lemma "infinite (UNIV::string set)"
-  by (rule infinite_UNIV_listI)
-
-lemma UNIV_var_def: "(UNIV::variable set) = variable.Var ` (UNIV::string set)"
-  apply (rule UNIV_eq_I)
-  subgoal for x
-    apply (cases x)
-    subgoal for s
-      by blast
-    done
-  done
-
-
-lemma inf: "infinite (UNIV::variable set)"
-  unfolding UNIV_var_def
-  find_theorems name: "finite*ran"
-  thm finite_imageD
-  apply (auto dest: finite_range_imageI)
-  apply (drule finite_imageD)
-  using inj_def apply blast
-  by (simp add: infinite_UNIV_listI)
-  find_theorems name: finite_range
-instance 
-  by (intro_classes; simp_all add: finite_UNIV_variable_def inf)
-end
-
-find_theorems name: "String*co"
-
-value "STR ''abc''"
-
-value "STR ''abc'' < STR ''bcd''"
-
-lemma "STR '''' < x"
-
-find_theorems name: "proper_interval*char"
-                         
-instantiation variable::ord begin
-  fun less_eq_variable::"variable \<Rightarrow> variable \<Rightarrow> bool" where
-    "less_eq_variable (variable.Var x) (variable.Var y) = (String.implode x \<le> String.implode y)"
-  
-  fun less_variable::"variable \<Rightarrow> variable \<Rightarrow> bool" where
-    "less_variable (variable.Var x) (variable.Var y) = (String.implode x < String.implode y)"
-instance proof
-qed
-end
-
-lemma "String.implode x < String.implode y \<longleftrightarrow> variable.Var x < variable.Var y"
-  by simp
-
-lemma "x < y \<longleftrightarrow> variable.Var (literal.explode x) < variable.Var (literal.explode y)"
-  by simp
-
-lemma variable_bot: "variable.Var [] \<le> y"
-proof -
-  have "(0::String.literal) \<le> s" for s
-    apply (induction s)
-    subgoal for l
-      find_theorems name: "less*eq*li"
-      unfolding String.less_eq_literal_def
-      by (simp add: zero_literal.rep_eq)
-    done
-  moreover
-  have "literal.explode 0 = []" by (rule zero_literal.rep_eq)
-  ultimately
-  have "\<forall>y. variable.Var [] \<le> variable.Var y"
-    by (metis String.implode_explode_eq less_eq_variable.simps)
-  thus "variable.Var [] \<le> y"
-    by (cases y; auto)
-qed
-
-lemma var_le_not_less: "(x::variable) \<le> y \<Longrightarrow> \<not>(y < x)"
-  by (metis leD less_eq_variable.elims(2) less_variable.elims(2) variable.inject)
-
-lemma inj_var: "inj variable.Var"
-  using inj_def by blast
-lemma surj_var: "surj variable.Var"
-  unfolding surj_def
-  by (rule variable.nchotomy)
-lemma bij_var: "bij variable.Var"
-  using inj_var surj_var bij_def
-  by blast
-
-value "String.implode [CHR 0x00]"
-
-lemma "(x::variable) < y \<longleftrightarrow> x \<le> y \<and> x \<noteq> y"
-  apply (cases x; cases y)
-  subgoal for x' y'
-    apply (rule ssubst[of x], assumption)
-    apply (rule ssubst[of y], assumption)
-    quickcheck
-
-lemma "x \<noteq> [] \<Longrightarrow> \<exists>y. y < variable.Var x"
-proof -
-  assume a: "x \<noteq> []"
-  have "variable.Var [] \<le> variable.Var x"
-    using variable_bot by blast
-  moreover
-  have "variable.Var [] \<noteq> variable.Var x"
-    using bij_var a by blast
-  ultimately
-  have "variable.Var [] < variable.Var x"
-    quickcheck
-qed
-
-instantiation variable::proper_interval begin
-  (* To do: redefine considering that the 7th bit cannot be set *)
-  fun proper_interval_variable::"variable proper_interval" where
-    "proper_interval_variable None None = True"
-  | "proper_interval_variable None (Some (variable.Var x)) = (x \<noteq> [])"
-  | "proper_interval_variable (Some x) None = True"
-  | "proper_interval_variable (Some (variable.Var x)) (Some (variable.Var y)) = 
-    (less (variable.Var x) (variable.Var y) \<and> y \<noteq> (x @ [CHR 0x00]))"
-instance sorry (* proof
-  show "proper_interval (None::variable option) (None::variable option) = True" by simp
-  fix x::variable and y::variable
-  show "proper_interval None (Some y) = (\<exists>z. z < y)" 
-    apply (cases y)
-    subgoal for v
-      apply (rule ssubst[of y], assumption)
-      apply (subst proper_interval_variable.simps(2))
-      using variable_bot[THEN var_le_not_less]
-      apply (cases v)
-       apply blast
-      
-      
-    qed *)
-end
-
-
-instantiation variable::cproper_interval begin
-  fun cproper_interval_variable::"variable proper_interval" where
-    "cproper_interval_variable None None = True"
-  | "cproper_interval_variable None (Some (variable.Var x)) = (x \<noteq> [])"
-  | "cproper_interval_variable (Some x) None = True"
-  | "cproper_interval_variable (Some x) (Some y) = (less x y \<and> not_adj x y)"
-instance sorry (* proof 
-  assume "ID CCOMPARE(variable) \<noteq> None"
-  assume "finite (UNIV::variable set)"
-  fix x::variable and y::variable
-  show "class.proper_interval cless (cproper_interval :: variable proper_interval)"
-  proof
-    fix x::variable and y::variable
-    show "cproper_interval None None = True"
-  qed
-qed *)
-end
-
-fun string_chars::"string \<Rightarrow> char set" where
-  "string_chars (c#cs) = (
-  let cs' = string_chars cs
-  in (if (c \<in> cs') then cs' else insert c cs'))"
-| "string_chars [] = {}"
-
-definition f_chars::"string formula \<Rightarrow> char set" where
-  "f_chars \<phi> = \<Union>(string_chars ` (atoms \<phi>))"
-
-print_derives
-
-derive (eq) ceq instantiated_nf_upd
-derive ccompare upd_op instantiated_nf_upd
-derive (rbt) set_impl instantiated_nf_upd
 
 (* TODO/FIXME: Code_Char was removed from Isabelle-2018! 
   Check for performance regression of generated code!
@@ -3228,11 +2872,11 @@ derive (rbt) set_impl instantiated_nf_upd
 export_code
   (* check_plan *)
   nat_of_integer integer_of_nat Inl Inr
-  (* predAtm *) Eq predicate Pred Either Var Obj PredDecl BigAnd BigOr
+  (* predicateAtm *) Eq pred Pred Either Var Obj PredDecl BigAnd BigOr
   ast_problem_decs.pddl_all_impl ast_problem_decs.pddl_exists_impl
   formula.Not formula.Bot Effect ast_action_schema.Action_Schema
   map_atom Domain Problem DomainDecls ProbDecls PAction
-  valuation f_chars term_val_impl ast_domain.apply_effect_impl
+  valuation term_val_impl ast_domain.apply_effect_impl
   check_all_list check_wf_domain (* f_vars \<comment> Need to instantiate a few classes for symbol, but that is difficult *)
   (* term.CONST *) (* term.VAR *) 
   String.explode String.implode ast_domain.non_int_nf_upd_list check_all_list_index
