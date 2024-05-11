@@ -2852,40 +2852,36 @@ lemmas wf_domain_decs_code =
   ast_domain_decs.wf_pred_decl.simps
   ast_domain_decs.STG_def
   ast_domain_decs.is_of_type'_def
-  ast_domain_decs.wf_atom'.simps(* 
-  ast_domain_decs.wf_predicate_atom'.simps *)
-  ast_domain_decs.wf_fmla'.simps(* 
-  ast_domain_decs.wf_fmla_atom1'.simps *)
-  ast_domain_decs.wf_effect'.simps(* 
-  ast_domain_decs.wf_domain_decs'_def *)
+  ast_domain_decs.wf_atom'.simps
+  ast_domain_decs.wf_fmla'.simps
+  ast_domain_decs.wf_effect'.simps
   ast_domain_decs.mp_constT_def
   ast_domain_decs.subtype_edge.simps
   ast_domain_decs.of_type_impl_def
-ast_domain_decs.ty_term'.simps
-ast_domain_decs.ofs_impl_def
-ast_domain_decs.nfs_impl_def
-ast_domain_decs.wf_cond_effect'_def
-ast_domain_decs.wf_cond_effect_list'_def
-ast_domain_decs.wf_num_comp'.simps 
-ast_domain_decs.wf_predicate_eq.simps
-ast_domain_decs.is_term_of_type'.simps
-ast_domain_decs.wf_num_fluent'.simps 
-ast_domain_decs.wf_pred'.simps 
-ast_domain_decs.obj_fun_sig'_def 
-ast_domain_decs.num_fun_sig'_def 
-ast_domain_decs.wf_predicate_eq'.simps 
-ast_domain_decs.wf_of_upd'.simps 
-ast_domain_decs.wf_nf_upd'.simps
-ast_domain_decs.obj_fun_sig_def
- ast_domain_decs.wf_num_func'.simps 
-ast_domain_decs.wf_predicate'.simps
-ast_domain_decs.sig'_def
+  ast_domain_decs.ty_term'.simps
+  ast_domain_decs.ofs_impl_def
+  ast_domain_decs.nfs_impl_def
+  ast_domain_decs.wf_cond_effect'_def
+  ast_domain_decs.wf_cond_effect_list'_def
+  ast_domain_decs.wf_num_comp'.simps 
+  ast_domain_decs.wf_predicate_eq.simps
+  ast_domain_decs.is_term_of_type'.simps
+  ast_domain_decs.wf_num_fluent'.simps 
+  ast_domain_decs.wf_pred'.simps 
+  ast_domain_decs.obj_fun_sig'_def 
+  ast_domain_decs.num_fun_sig'_def 
+  ast_domain_decs.wf_predicate_eq'.simps 
+  ast_domain_decs.wf_of_upd'.simps 
+  ast_domain_decs.wf_nf_upd'.simps
+  ast_domain_decs.obj_fun_sig_def
+  ast_domain_decs.wf_num_func'.simps 
+  ast_domain_decs.wf_predicate'.simps
+  ast_domain_decs.sig'_def
 
 declare wf_domain_decs_code[code]
 
 lemmas wf_problem_decs_code =
-  ast_problem_decs.wf_goal'_def(* 
-  ast_problem_decs.term_vars_impl.simps *)
+  ast_problem_decs.wf_goal'_def
   ast_problem_decs.f_vars_impl.simps
   ast_problem_decs.t_dom_impl_def
   ast_problem_decs.unique_vars'.simps
@@ -2902,11 +2898,34 @@ lemmas wf_problem_decs_code =
   ast_problem_decs.nf_vars_impl.simps
   ast_problem_decs.mp_objT_def
   ast_problem_decs.objT_impl_def
-  f_vars_def
 
 declare wf_problem_decs_code[code]
 
 lemmas wf_domain_code =
+  ast_problem.resolve_action_schemaE_def
+  ast_problem.action_params_match'_def
+  ast_problem.add_init_int_impl.simps
+  ast_problem_decs.inst_sym.simps
+
+declare wf_domain_code[code]
+
+find_theorems name: "ast_problem*all"
+
+lemmas wf_problem_code =
+  ast_problem.wf_problem'_def
+  ast_problem.wf_plan_action.simps
+  ast_problem.non_int_assign_list.simps
+  ast_problem.valid_plan_fromE.simps
+  ast_problem.wf_init_of_a'.simps
+  ast_problem.wf_init_nf_a'.simps
+  ast_problem.non_int_fun_assign.simps
+  ast_problem.ofi_impl_def
+  ast_problem.nfi_impl_def
+
+declare wf_problem_code[code]
+
+
+lemmas check_code =
   ast_domain.inst_of_upd.simps
   ast_domain.upd_nf_int.simps
   ast_domain.apply_nf_upd.simps
@@ -2920,34 +2939,6 @@ lemmas wf_domain_code =
   ast_domain.well_inst_cond_effect_impl_def
   ast_domain.non_int_cond_eff_list_impl_def
   ast_domain.wf_inst_cond_effect_impl_def
-  ast_problem.resolve_action_schemaE_def
-  ast_problem.action_params_match'_def
-  ast_problem.add_init_int_impl.simps
-  ast_problem_decs.inst_sym.simps
-
-declare wf_domain_code[code]
-
-find_theorems name: "ast_problem*all"
-
-lemmas wf_problem_code =
-  ast_problem.wf_problem'_def
-  ast_problem.inst_goal.simps 
-  ast_problem.wf_plan_action.simps
-  ast_problem.non_int_assign_list.simps
-  ast_problem.valid_plan_fromE.simps
-  ast_problem.wf_init_of_a'.simps
-  ast_problem.wf_init_nf_a'.simps
-  ast_problem.I_impl_def
-  ast_problem.non_int_fun_assign.simps
-  ast_problem_decs.inst_term.simps
-  ast_problem.ofi_impl_def
-  ast_problem.nfi_impl_def
-
-declare wf_problem_code[code]
-
-
-lemmas check_code =
-  ast_problem.valid_plan_def
   ast_problem.en_exE2_def
   ast_problem.resolve_instantiate.simps
   ast_domain.resolve_action_schema_def
@@ -2983,6 +2974,10 @@ lemmas check_code =
   ast_domain.non_int_of_upd_list_def 
   ast_domain.valid_ret_val_inst.simps
   ast_domain.non_int_of_upds.simps
+  f_vars_def
+  ast_problem.inst_goal.simps 
+  ast_problem.I_impl_def
+  ast_problem_decs.inst_term.simps
 
   ast_problem_decs.mp_objT_def
 declare check_code[code]
