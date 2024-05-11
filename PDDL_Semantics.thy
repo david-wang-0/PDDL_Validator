@@ -1121,15 +1121,23 @@ begin
       Some Ts \<Rightarrow> list_all2 (is_of_type objT) as Ts
     | None \<Rightarrow> False)"
 
+  fun non_int_fun_assign::"('f \<times> 'as \<times> 'v) \<Rightarrow> ('f \<times> 'as \<times> 'v) \<Rightarrow> bool" where
+    "non_int_fun_assign (f, as, v) (f', as', v') = (f \<noteq> f' \<or> as \<noteq> as')"
+
+  fun non_int_assign_list::"('f \<times> 'as \<times> 'v) list \<Rightarrow> bool" where
+    "non_int_assign_list xs = pairwise non_int_fun_assign (set xs)"
+
   text \<open>A problem is well-formed if in addition to the domain being well-formed, the goal is\<close>
   definition wf_problem where
     "wf_problem \<equiv>
       wf_domain
     \<and> (\<forall>p \<in> set (init_ps P). wf_pred objT p)
     \<and> (\<forall>a \<in> set (init_ofs P). wf_init_of_a a)
+    \<and> non_int_assign_list (init_ofs P)
     \<and> (\<forall>a \<in> set (init_nfs P). wf_init_nf_a a)
+    \<and> non_int_assign_list (init_nfs P)
     \<and> wf_goal (goal P)
-    "
+    " 
 end
 
 
@@ -1231,7 +1239,7 @@ text \<open>Important: thinking in terms of conditional lists of effects vs filt
   text \<open>We first have to filter out the inactive effects. Following that, we instantiate the 
         active effects. Then the effects are applied individually by a right fold.\<close>
   definition apply_conditional_effect_list where
-    "apply_conditional_effect_list effs M = (foldr (inst_apply_conditional_effect M) effs M)"
+    "apply_conditional_effect_list effs M = (fold (inst_apply_conditional_effect M) effs M)"
 
   text \<open>Execute a ground action\<close>
   definition execute_ground_action :: "ground_action \<Rightarrow> world_model \<Rightarrow> world_model" where
@@ -1308,6 +1316,8 @@ text \<open>Important: thinking in terms of conditional lists of effects vs filt
   
   definition non_int_of_upd_list where
     "non_int_of_upd_list xs \<equiv> pairwise non_int_of_upds (set xs)"
+  (* using these is ok, because the set implementation is guaranteed 
+      to be efficient *)
   
   definition non_int_of_upd_lists where
     "non_int_of_upd_lists xs ys \<equiv> non_int_of_upd_list (xs @ ys)"
@@ -3298,25 +3308,18 @@ begin
   assumes "wf_world_model M"
           "\<forall>eff \<in> set effs. wf_fully_instantiated_effect (inst_effect M eff)"
           "\<forall>eff \<in> set effs. well_inst_effect M eff M"
-    shows "wf_world_model (foldr (inst_apply_effect M) effs M)"
+    shows "wf_world_model (fold (inst_apply_effect M) effs M)"
   proof -
-    have "wf_world_model (foldr (inst_apply_effect eM) effs M)" 
+    have "wf_world_model (fold (inst_apply_effect eM) effs M)" 
       if "wf_world_model M"
          "\<forall>eff \<in> set effs. wf_fully_instantiated_effect (inst_effect eM eff)"
          "\<forall>eff \<in> set effs. well_inst_effect eM eff M" for eM 
       using that
       apply (induction effs arbitrary: M)
        apply simp
-      apply (subst foldr.simps)
-      apply (subst comp_def)
-      apply (rule wf_apply_effect)
-        apply (subst (asm) Ball_set)+
-        apply (subst (asm) list_all_simps(1))+
-        apply (drule conjunct2)+
-        apply assumption
-      sorry
+      by (simp add: well_inst_effect_inv wf_apply_effect)
     from this[OF assms]
-    show "wf_world_model (foldr (inst_apply_effect M) effs M)" .
+    show "wf_world_model (fold (inst_apply_effect M) effs M)" .
   qed
 
 
@@ -3350,18 +3353,17 @@ proof -
     unfolding inst_apply_conditional_effect_def 
       well_inst_cond_effect_def wf_inst_cond_effect_def by auto
  
-  have "wf_world_model (foldr (inst_apply_conditional_effect eM) effs M)"
+  have "wf_world_model (fold (inst_apply_conditional_effect eM) effs M)"
     if "wf_world_model M"
        "wf_inst_cond_effect_list eM effs"
        "well_inst_cond_effect_list eM M effs" 
         for eM M effs
     using that
+    unfolding wf_inst_cond_effect_list_def well_inst_cond_effect_list_def sym[OF Ball_set]
     apply (induction effs arbitrary: M)
-     apply auto[1]
-    unfolding well_inst_cond_effect_list_def wf_inst_cond_effect_list_def
+     apply simp
     using ce_inv
-    sorry (* the right fold should make some things easier *)
-    
+    by (simp add: wf_apply_cond_effect)
   from this[OF assms]
   show "wf_world_model (apply_conditional_effect_list effs M)" 
     unfolding apply_conditional_effect_list_def .

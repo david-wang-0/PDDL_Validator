@@ -181,7 +181,6 @@ datatype exec_world_model =
 definition to_map_map::"('a, ('b, 'c) mapping) mapping \<Rightarrow> 'a \<rightharpoonup> 'b \<rightharpoonup> 'c" where
   "to_map_map = Mapping.lookup o (Mapping.map_values (\<lambda>k v. Mapping.lookup v))"
 
-
 fun exec_wm_to_wm::"exec_world_model \<Rightarrow> world_model" where
   "exec_wm_to_wm (EWM p oi ni) = World_Model p (to_map_map oi) (to_map_map ni)"
 
@@ -834,7 +833,9 @@ begin
       wf_domain' ot ofs nfs obT
     \<and> (\<forall>p \<in> set (init_ps P). wf_pred' ot obT p)
     \<and> (\<forall>a \<in> set (init_ofs P). wf_init_of_a' ot ofs obT a)
+    \<and> non_int_assign_list (init_ofs P)
     \<and> (\<forall>a \<in> set (init_nfs P). wf_init_nf_a' ot nfs obT a)
+    \<and> non_int_assign_list (init_nfs P)
     \<and> wf_goal' ot ofs nfs (goal P)"
 
 abbreviation "wf_problem_impl \<equiv>
@@ -1080,6 +1081,10 @@ lemma to_map_map_SomeE1: assumes "to_map_map M x = Some v"
 lemma to_map_map_Some: "to_map_map M x = Some (Mapping.lookup v) \<longleftrightarrow> Mapping.lookup M x = Some v"
   using to_map_map_SomeE to_map_map_SomeI
   by fast
+
+lemma to_map_map_empty: "to_map_map Mapping.empty = Map.empty"
+  unfolding to_map_map_def 
+  by (metis Mapping.lookup_empty to_map_map_NoneI to_map_map_def)
 
 lemma lookup_inj: "inj Mapping.lookup"
   by (simp add: injI mapping_eqI)
@@ -1484,14 +1489,20 @@ lemma inst_apply_conditional_effect_impl_correct:
   by presburger
 
 definition apply_conditional_effect_list_impl where
-  "apply_conditional_effect_list_impl effs M = foldr (inst_apply_conditional_effect_impl M) effs M"
+  "apply_conditional_effect_list_impl effs M = fold (inst_apply_conditional_effect_impl M) effs M"
 
-lemma apply_conditional_effect_list_impl_correct: 
+lemma fold_apply_conditional_effect_list_impl_correct:
+  "exec_wm_to_wm (fold (inst_apply_conditional_effect_impl eM) effs M)
+  = fold (inst_apply_conditional_effect (exec_wm_to_wm eM)) effs (exec_wm_to_wm M)"
+  by (induction effs arbitrary: M; simp add: inst_apply_conditional_effect_impl_correct)
+
+lemma apply_conditional_effect_list_impl_correct:
   "exec_wm_to_wm (apply_conditional_effect_list_impl effs M) 
     = apply_conditional_effect_list effs (exec_wm_to_wm M)"
-  unfolding apply_conditional_effect_list_impl_def apply_conditional_effect_list_def
-  by (induction effs arbitrary: M; auto simp: inst_apply_conditional_effect_impl_correct)
-
+  unfolding apply_conditional_effect_list_def apply_conditional_effect_list_impl_def
+  using fold_apply_conditional_effect_list_impl_correct
+  by simp
+    
 definition execute_ground_action_impl::"ground_action \<Rightarrow> exec_world_model \<Rightarrow> exec_world_model" where
   "execute_ground_action_impl a M = apply_conditional_effect_list_impl (effects a) M"
 
@@ -2526,7 +2537,7 @@ context ast_problem begin
   text \<open>Next, we use our efficient combined enabledness check and execution
     function, and transfer the implementation to use the error monad: \<close>
   fun valid_plan_fromE
-    :: "nat \<Rightarrow> exec_world_model \<Rightarrow> plan \<Rightarrow> _+unit"
+    :: "nat \<Rightarrow> exec_world_model \<Rightarrow> plan \<Rightarrow> (unit \<Rightarrow> shows) + unit"
   where
     "valid_plan_fromE si s []
       = check (valuation_impl s \<Turnstile> (inst_goal (goal P))) (ERRS ''Postcondition does not hold'')"
@@ -2536,18 +2547,19 @@ context ast_problem begin
         valid_plan_fromE (si+1) s \<pi>s
       }"
 
-lemma (in wf_ast_problem) valid_plan_fromE_correct[return_iff]:
-  shows "valid_plan_fromE n s \<pi>s = Inr () \<longleftrightarrow> valid_plan_from (exec_wm_to_wm s) \<pi>s"
-  apply (subst valid_plan_from1_refine)
-  apply (subst sym[OF valid_plan_from2_refine])
+lemma (in wf_ast_problem) valid_plan_fromE_return_iff':
+  "valid_plan_fromE n s \<pi>s = Inr () \<longleftrightarrow> valid_plan_from2 s \<pi>s"
   apply (induction \<pi>s arbitrary: n s)
    apply (simp add: check_return_iff)
   by (simp add: bind_return_iff en_exE2_return_iff)
-    
+
+lemma (in wf_ast_problem) valid_plan_fromE_return_iff[return_iff]:
+  shows "valid_plan_fromE n s \<pi>s = Inr () \<longleftrightarrow> valid_plan_from (exec_wm_to_wm s) \<pi>s"
+  by (simp add: valid_plan_from1_refine 
+      valid_plan_fromE_return_iff'
+      valid_plan_from2_refine)
 
 end
-
-term Mapping.update
 
 context ast_problem begin
 fun add_init_int_impl::"(func \<times> 'b list \<times> 'c)
@@ -2559,12 +2571,108 @@ fun add_init_int_impl::"(func \<times> 'b list \<times> 'c)
   | None          \<Rightarrow> (Mapping.update f (Mapping.update as v Mapping.empty) fun_int)
 )"
 
-lemma add_init_int_impl_correct: "to_map_map (add_init_int_impl i f) = add_init_int i (to_map_map f)"
+lemma add_init_int_impl_correct: "to_map_map (add_init_int_impl i fi) = add_init_int i (to_map_map fi)"
 proof (induction i)
   case (fields f as v)
-  then show ?case sorry
+  have a: "map_option Mapping.lookup (Mapping.lookup (add_init_int_impl (f, as, v) fi) f')
+    = add_init_int (f, as, v) (to_map_map fi) f'" for f'
+  proof (cases "Mapping.lookup (add_init_int_impl (f, as, v) fi) f'")
+    case None
+    from None
+    have "map_option Mapping.lookup (Mapping.lookup (add_init_int_impl (f, as, v) fi) f') = None"
+      by simp
+    moreover
+    from None 
+    have "f \<noteq> f'" by (auto split: option.splits)
+    with None
+    have "Mapping.lookup fi f' = None" 
+      by (cases "Mapping.lookup fi f"; simp)
+    from this[simplified sym[OF to_map_map_None]] \<open>f \<noteq> f'\<close>
+    have "add_init_int (f, as, v) (to_map_map fi) f' = None"
+      by (cases "to_map_map fi f"; auto)
+    ultimately
+    show ?thesis by simp
+  next
+    case (Some a)
+    show ?thesis
+    proof (cases "f = f'")
+      case True
+      have "map_option Mapping.lookup (Mapping.lookup (add_init_int_impl (f, as, v) fi) f) 
+        = add_init_int (f, as, v) (to_map_map fi) f"
+      proof (cases "Mapping.lookup fi f")
+        case None
+        hence "map_option Mapping.lookup (Mapping.lookup (add_init_int_impl (f, as, v) fi) f) = Some [as \<mapsto> v]"
+          by auto
+        moreover
+        from None
+        have "to_map_map fi f = None" using to_map_map_None by fastforce
+        hence "add_init_int (f, as, v) (to_map_map fi) f = Some [as \<mapsto> v]"
+          by simp
+        ultimately
+        show ?thesis by simp
+      next
+        case (Some a)
+        hence "map_option Mapping.lookup (Mapping.lookup (add_init_int_impl (f, as, v) fi) f)
+          = Some (Mapping.lookup (Mapping.update as v a))" by simp
+        moreover
+        from Some
+        have "to_map_map fi f = Some (Mapping.lookup a)" by (rule to_map_map_SomeI)
+        hence "add_init_int (f, as, v) (to_map_map fi) f = Some ((Mapping.lookup a)(as \<mapsto> v))" by simp
+        ultimately
+        show ?thesis by force
+      qed
+      with True
+      show ?thesis by simp
+    next
+      case False
+      hence "Mapping.lookup (add_init_int_impl (f, as, v) fi) f' = Mapping.lookup fi f'"
+        by (cases "Mapping.lookup fi f"; auto)
+      hence "map_option Mapping.lookup (Mapping.lookup (add_init_int_impl (f, as, v) fi) f') 
+        = map_option Mapping.lookup (Mapping.lookup fi f')" by simp
+      also have "... = to_map_map fi f'" unfolding to_map_map_def
+        by (simp add: lookup_map_values)
+      finally show ?thesis using False by (cases "to_map_map fi f"; auto)
+    qed
+  qed
+  have b: "(Mapping.lookup \<circ>\<circ> Mapping.map_values) (\<lambda>k. Mapping.lookup) mp x = 
+    map_option Mapping.lookup (Mapping.lookup mp x)" for mp x
+    by (simp add: lookup_map_values)
+  show ?case unfolding to_map_map_def a[THEN ext] b[THEN ext] by simp
 qed
 
+
+lemma add_init_int_impl_fold_correct: 
+  "to_map_map (fold add_init_int_impl xs m) = fold add_init_int xs (to_map_map m)"
+  apply (induction xs arbitrary: m)
+   apply simp
+  using add_init_int_impl_correct
+  by (metis List.fold_simps(2))
+  
+
+definition ofi_impl::"mp_ofi" where
+  "ofi_impl = fold add_init_int_impl (init_ofs P) Mapping.empty"
+
+lemma ofi_impl_correct: "to_map_map ofi_impl = ofi"
+  unfolding ofi_impl_def ofi_def
+  apply (subst add_init_int_impl_fold_correct)
+  apply (subst to_map_map_empty)
+  ..
+
+definition nfi_impl::"mp_nfi" where
+  "nfi_impl = fold add_init_int_impl (init_nfs P) Mapping.empty"
+
+lemma nfi_impl_correct: "to_map_map nfi_impl = nfi"
+  unfolding nfi_impl_def nfi_def
+  apply (subst add_init_int_impl_fold_correct)
+  apply (subst to_map_map_empty)
+  ..
+
+definition I_impl::"exec_world_model" where
+  "I_impl = EWM (set (init_ps P)) ofi_impl nfi_impl"
+
+lemma I_impl_correct: "exec_wm_to_wm I_impl = I"
+  unfolding I_impl_def I_def
+  using nfi_impl_correct ofi_impl_correct by simp
 end
 
 subsection \<open>Executable Plan Checker\<close>
@@ -2653,7 +2761,7 @@ lemma check_wf_domain_return_iff[return_iff]:
   apply (subst ast_domain.wf_domain_impl_correct)
   ..
 
-definition "check_wf_problem P\<equiv> do {
+definition "check_wf_problem P \<equiv> do {
   let D = ast_problem.domain P;
   let PD = ast_domain.problem_decs D;
   let DD = ast_problem_decs.domain_decs PD;
@@ -2661,7 +2769,9 @@ definition "check_wf_problem P\<equiv> do {
   check_wf_domain D <+? prepend_err_msg ''Domain not well-formed'';
   check_all_list (ast_domain_decs.wf_pred_impl DD (ast_problem_decs.objT_impl PD)) (init_ps P) ''Predicate not well-formed'' shows;
   check_all_list (ast_problem.wf_init_of_a_impl P) (init_ofs P) ''Malformed initial assignment to object function'' shows;
+  check (ast_problem.non_int_assign_list (init_ofs P)) (ERRS ''Initial function assignments interfere'');
   check_all_list (ast_problem.wf_init_nf_a_impl P) (init_nfs P) ''Malformed initial assignment to numeric function'' shows;
+  check (ast_problem.non_int_assign_list (init_nfs P)) (ERRS ''Initial function assignments interfere'');
   check (ast_problem_decs.wf_goal_impl PD (goal P)) (ERRS ''Malformed goal formula'')
 }"
 
@@ -2690,10 +2800,10 @@ definition "check_plan P \<pi>s \<equiv> do {
   let stg=ast_domain_decs.STG DD;
   let conT = ast_domain_decs.mp_constT DD;
   let mp = ast_problem_decs.mp_objT PD;
+  let init = ast_problem.I_impl P;
   check_wf_problem P;
-
-  ast_problem.valid_plan_fromE P \<pi>s
-} <+? (\<lambda>e. String.implode (e () ''''))"
+  ast_problem.valid_plan_fromE P 0 init \<pi>s
+}"
 
 (* valid_plan_fromE should be as efficient as possible *)
 (* after checking that the problem is valid, we can just pass the 
@@ -2704,9 +2814,11 @@ definition "check_plan P \<pi>s \<equiv> do {
 
 term ast_problem.valid_plan_from
 theorem check_plan_return_iff': "check_plan P \<pi>s = Inr () 
-  \<longleftrightarrow> ast_problem.wf_problem_impl P \<and> ast_problem.valid_plan_from2 P \<pi>s I"
+  \<longleftrightarrow> ast_problem.wf_problem_impl P \<and> ast_problem.valid_plan_from2 P (ast_problem.I_impl P) \<pi>s"
+  unfolding check_plan_def
+  by (auto simp: check_wf_problem_return_iff' ast_problem.wf_problem_impl_correct wf_ast_problem.valid_plan_fromE_return_iff' wf_ast_problem_def)
 
-text \<open>Correctness theorem of the plan checker: It returns @{term "Inr ()"}
+  text \<open>Correctness theorem of the plan checker: It returns @{term "Inr ()"}
   if and only if the problem is well-formed and the plan is valid.
 \<close>
 theorem check_plan_return_iff[return_iff]: "check_plan P \<pi>s = Inr ()
@@ -2715,12 +2827,11 @@ proof -
   interpret ast_problem P .
   thm return_iff
   show ?thesis
-    unfolding check_plan_def 
-    by (auto
-      simp: return_iff wf_world_model_def wf_fmla_atom_alt I_def wf_problem_def wf_domain_def wf_problem_decs_def wf_domain_decs_def isOK_iff 
-      simp: wf_problem'_correct ast_problem.I_def ast_problem.valid_plan_def wm_basic_def
-      simp: Let_def
-      )
+    by (simp add: check_plan_return_iff' 
+        ast_problem.valid_plan_from2_refine 
+        ast_problem.valid_plan_from1_refine
+        wf_problem_impl_correct I_impl_correct 
+        valid_plan_def)
 qed
 
 subsection \<open>Code Setup\<close>
@@ -2805,50 +2916,75 @@ lemmas wf_domain_code =
   ast_domain.apply_effect_impl.simps
   ast_domain.non_int_nf_upds.simps
   ast_domain.non_int_nf_upd_list_def
-(*
-  ast_domain.wf_domain_def
-  ast_domain.wf_action_schema.simps
-  ast_domain.wf_effect.simps
-  ast_domain.wf_fmla.simps
-  ast_domain.wf_atom.simps
-  ast_domain.is_of_type_def
-  ast_domain.of_type_code
-*)
+  ast_domain.apply_conditional_effect_list_impl_def
+  ast_domain.well_inst_cond_effect_impl_def
+  ast_domain.non_int_cond_eff_list_impl_def
+  ast_domain.wf_inst_cond_effect_impl_def
+  ast_problem.resolve_action_schemaE_def
+  ast_problem.action_params_match'_def
+  ast_problem.add_init_int_impl.simps
+  ast_problem_decs.inst_sym.simps
 
 declare wf_domain_code[code]
 
 find_theorems name: "ast_problem*all"
 
 lemmas wf_problem_code =
-  ast_problem.wf_problem'_def(* 
-  ast_problem.is_obj_of_type_alt *)
+  ast_problem.wf_problem'_def
   ast_problem.inst_goal.simps 
   ast_problem.wf_plan_action.simps
-  (*ast_problem.wf_effect_inst_weak.simps*)
-  (*ast_problem.wf_object_def*)
-  (*ast_problem.objT_def*)
+  ast_problem.non_int_assign_list.simps
+  ast_problem.valid_plan_fromE.simps
+  ast_problem.wf_init_of_a'.simps
+  ast_problem.wf_init_nf_a'.simps
+  ast_problem.I_impl_def
+  ast_problem.non_int_fun_assign.simps
+  ast_problem_decs.inst_term.simps
+  ast_problem.ofi_impl_def
+  ast_problem.nfi_impl_def
 
 declare wf_problem_code[code]
 
 
 lemmas check_code =
-  ast_problem.valid_plan_def(* 
-  ast_problem.valid_plan_fromE.simps *)(* 
-  ast_problem.en_exE2_def *)
+  ast_problem.valid_plan_def
+  ast_problem.en_exE2_def
   ast_problem.resolve_instantiate.simps
   ast_domain.resolve_action_schema_def
   ast_problem.I_def
   ast_domain.instantiate_action_schema.simps
-(*
-  ast_domain.apply_effect_exec.simps *)
-  (*ast_domain.apply_effect_exec'.simps*)
-(*   ast_domain.apply_effect_eq_impl_eq
- *)  (*ast_domain.apply_atomic.simps*)
+  ast_domain.inst_apply_conditional_effect_impl_def
+  ast_domain.wf_fully_instantiated_effect'.simps
+  ast_problem.resolve_action_schema_impl_def
+  ast_problem_decs.subst_sym_with_obj.simps
+  ast_domain.non_int_cond_effs_impl_def
+  ast_domain.well_inst_effect_impl_def
+  ast_domain.inst_effect_impl_def
+  ast_problem.params_match'_def
+  ast_domain.inst_apply_effect_impl_def
+  ast_domain.wf_app_predicate_upd'.simps
+  ast_domain.of_upd_rv_corr_impl_def
+  ast_domain.nf_upd_defined_impl_def
+  ast_domain.non_int_effs_def
+  ast_domain.wf_app_of_upd'.simps
+  ast_domain.wf_app_nf_upd'.simps
+  ast_domain.inst_effect'.simps
+  ast_problem.mp_res_as_def
+  ast_domain.int_defines_nf_upd_impl.simps
+  ast_domain.non_int_of_upd_lists_def
+  ast_domain.non_int_nf_upd_lists_def
+  ast_domain.nf_args_well_typed'_def
+  ast_domain.of_upd_rv_corr'.simps
+  ast_domain.inst_of_upd_impl_def
+  ast_domain.inst_nf_upd_impl_def
+  ast_domain.inst_of_upd'.simps
+  ast_domain.inst_nf_upd'.simps
+  ast_domain.is_some.simps
+  ast_domain.non_int_of_upd_list_def 
+  ast_domain.valid_ret_val_inst.simps
+  ast_domain.non_int_of_upds.simps
+
   ast_problem_decs.mp_objT_def
-(*   ast_problem.is_obj_of_type_impl_def
- ast_problem_decs.wf_fmla_atom2'_def
-(*  *)  ast_problem_decs.valuation.simps
- *) 
 declare check_code[code]
 
 subsubsection \<open>Setup for Containers Framework\<close>
@@ -2877,29 +3013,29 @@ lemma [code_unfold]: "distinct = distinct_ds"
 subsubsection \<open>Code Generation\<close>
 
 
-derive (eq) ceq pred func variable object symbol "term" num_fluent num_comp 
-  predicate atom formula instantiated_nf_upd
+derive (eq) ceq rat pred func variable object symbol "term" num_fluent num_comp 
+  predicate atom formula ast_effect instantiated_nf_upd instantiated_of_upd 
 derive (linorder) compare rat 
-derive ccompare func pred variable object "term" symbol upd_op predicate num_fluent num_comp 
-  atom formula instantiated_nf_upd
+derive ccompare rat func pred variable object "term" symbol upd_op predicate num_fluent num_comp 
+  atom formula of_upd nf_upd ast_effect instantiated_of_upd instantiated_nf_upd
 derive (no) cenum variable
-derive (rbt) set_impl variable "term" atom formula instantiated_nf_upd 
+derive (rbt) set_impl rat func variable object "term" atom predicate formula instantiated_nf_upd
+  of_upd nf_upd ast_effect instantiated_of_upd
 derive (rbt) mapping_impl func object pred
 
+print_derives
 
 (* TODO/FIXME: Code_Char was removed from Isabelle-2018! 
   Check for performance regression of generated code!
 *)
 export_code
-  (* check_plan *)
   nat_of_integer integer_of_nat Inl Inr
-  (* predicateAtm *) Eq pred Pred Either Var Obj PredDecl BigAnd BigOr
+  Eq pred Pred Either Var Obj PredDecl BigAnd BigOr
   ast_problem_decs.pddl_all_impl ast_problem_decs.pddl_exists_impl
   formula.Not formula.Bot Effect ast_action_schema.Action_Schema
   map_atom Domain Problem DomainDecls ProbDecls PAction
   valuation term_val_impl ast_domain.apply_effect_impl
-  check_all_list check_wf_domain (* f_vars \<comment> Need to instantiate a few classes for symbol, but that is difficult *)
-  (* term.CONST *) (* term.VAR *) 
+  check_all_list check_wf_domain check_plan 
   String.explode String.implode ast_domain.non_int_nf_upd_list check_all_list_index
   in Scala
   module_name PDDL_Checker_Exported
