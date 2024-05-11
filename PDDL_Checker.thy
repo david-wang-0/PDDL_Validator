@@ -2547,6 +2547,26 @@ lemma (in wf_ast_problem) valid_plan_fromE_correct[return_iff]:
 
 end
 
+term Mapping.update
+
+context ast_problem begin
+fun add_init_int_impl::"(func \<times> 'b list \<times> 'c)
+  \<Rightarrow> (func, ('b list, 'c) mapping) mapping
+  \<Rightarrow> (func, ('b list, 'c) mapping) mapping" where
+"add_init_int_impl (f, as, v) fun_int = (
+  case (Mapping.lookup fun_int f) of
+    Some fun_int' \<Rightarrow> (Mapping.update f (Mapping.update as v fun_int') fun_int)
+  | None          \<Rightarrow> (Mapping.update f (Mapping.update as v Mapping.empty) fun_int)
+)"
+
+lemma add_init_int_impl_correct: "to_map_map (add_init_int_impl i f) = add_init_int i (to_map_map f)"
+proof (induction i)
+  case (fields f as v)
+  then show ?case sorry
+qed
+
+end
+
 subsection \<open>Executable Plan Checker\<close>
 text \<open>We obtain the main plan checker by combining the well-formedness check
   and executability check. \<close>
@@ -2662,7 +2682,7 @@ lemma check_wf_problem_return_iff[return_iff]:
   ..
 
 (* To do: implement executable plan checker *)
-(* 
+
 definition "check_plan P \<pi>s \<equiv> do {
   let D = ast_problem.domain P;
   let PD = ast_domain.problem_decs D;
@@ -2672,7 +2692,7 @@ definition "check_plan P \<pi>s \<equiv> do {
   let mp = ast_problem_decs.mp_objT PD;
   check_wf_problem P;
 
-  ast_problem.valid_plan_fromE P  \<pi>s
+  ast_problem.valid_plan_fromE P \<pi>s
 } <+? (\<lambda>e. String.implode (e () ''''))"
 
 (* valid_plan_fromE should be as efficient as possible *)
@@ -2683,6 +2703,8 @@ definition "check_plan P \<pi>s \<equiv> do {
   needs (what?) *)
 
 term ast_problem.valid_plan_from
+theorem check_plan_return_iff': "check_plan P \<pi>s = Inr () 
+  \<longleftrightarrow> ast_problem.wf_problem_impl P \<and> ast_problem.valid_plan_from2 P \<pi>s I"
 
 text \<open>Correctness theorem of the plan checker: It returns @{term "Inr ()"}
   if and only if the problem is well-formed and the plan is valid.
@@ -2700,7 +2722,6 @@ proof -
       simp: Let_def
       )
 qed
- *)
 
 subsection \<open>Code Setup\<close>
 
@@ -2884,7 +2905,9 @@ export_code
   module_name PDDL_Checker_Exported
   file "PDDL_STRIPS_Checker_Exported.scala"
 
-export_code ast_domain.apply_effect_exec in SML module_name ast_domain
+
+(* 
+export_code ast_domain.apply_effect_exec in SML module_name ast_domain *)
 
 (* Usage example from within Isabelle *)
 (*

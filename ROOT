@@ -1,5 +1,3 @@
-chapter AFP
-
 session PDDL_Sema = HOL +
   description \<open>Semantics of PDDL\<close>
   options [timeout = 600]
