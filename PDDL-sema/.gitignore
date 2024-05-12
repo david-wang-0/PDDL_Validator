@@ -1,0 +1,29 @@
+# Complied source #
+###################
+
+*.hi
+*.o
+
+# TeX-related #
+#############
+
+*.aux
+*.bbl
+*.blg
+*.log
+*.out
+*.gz
+*.toc
+
+# Miscellaneous files #
+#######################
+
+*~
+*.scala
+*.sml
+.vscode/
+.scala-build/
+.metals/
+
+*#*#
+*.marks
