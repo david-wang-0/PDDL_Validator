@@ -1441,11 +1441,6 @@ text \<open>Important: thinking in terms of conditional lists of effects vs filt
   definition active_effects::"world_model \<Rightarrow> (ground_formula \<times> ground_effect) list \<Rightarrow> (ground_formula \<times> ground_effect) list" where
     "active_effects M effs = (filter (\<lambda>(pre, eff). valuation M \<Turnstile> pre) effs)"
 
-
-  lemma inst_apply_cond_fold_alt: "foldr (inst_apply_conditional_effect M') effs M 
-    = foldr apply_effect (map (inst_effect M' \<circ> snd) (active_effects M' effs)) M"
-    sorry (* To do: fix later. Not necessary for implementation *)
-
   text \<open>Unfolded definition of ground_action_path. 
       The precondition of the action is well-formed.
       The list of conditional effects is well-formed.

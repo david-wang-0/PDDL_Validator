@@ -2409,95 +2409,7 @@ proof (induction pa)
     show ?thesis by simp
   qed
 qed
-
-(* 
-proof (induction pa)
-  case (PAction n as)
-  show ?case 
-  proof (cases "en_exE2 (PAction n as) s")
-    case (Inl a)
-    from this[simplified en_exE2_def plan_action.case]
-    have "resolve_action_schemaE n \<bind>
-    (\<lambda>a. check (action_params_match_impl a as) (ERRS ''Parameter mismatch'') \<bind>
-          (\<lambda>_. let ai = instantiate_action_schema a as
-                in check (valuation_impl s \<Turnstile> ground_action.precondition ai) (ERRS ''Precondition not satisfied'') \<bind>
-                   (\<lambda>_. check_all_list (wf_inst_cond_effect_impl s) (ground_action.effects ai) ''Conditional effect cannot be instantiated correctly'' shows \<bind>
-                         (\<lambda>_. check_all_list (well_inst_cond_effect_impl s s) (ground_action.effects ai) ''Conditional effect cannot be instantiated correctly'' shows \<bind>
-                               (\<lambda>_. check (non_int_cond_eff_list_impl s (ground_action.effects ai)) (ERRS ''Effects interfere'') \<bind>
-                                     (\<lambda>_. Inr (apply_conditional_effect_list_impl (ground_action.effects ai) s))))))) = Inl a" .
-    then have "en_exE (PAction n as) s = Inl a"
-      apply -
-      apply (split error_monad_bind_split_asm)
-      subgoal for no_action_schema
-        apply (erule disjE)
-        subgoal 
-          unfolding en_exE_def plan_action.case
-         apply (split error_monad_bind_split)
-          by simp
-        apply (erule exE)
-        subgoal for action_schema
-          apply simp
-          apply (split error_monad_bind_split_asm)
-          subgoal for param_mismatch
-            apply (erule disjE)
-            subgoal 
-              unfolding en_exE_def plan_action.case
-              by simp
-            apply (simp add: Let_def)
-            apply (split error_monad_bind_split_asm)
-            apply simp
-            apply (erule disjE)
-            subgoal for not_prec
-              unfolding en_exE_def plan_action.case
-              apply (subst Let_def)
-              apply simp
-              apply (elim conjE)
-              apply (subst (asm) check_return_iff)
-              apply (subst (asm) resolve_action_schemaE_return_iff)
-              apply (drule resolve_action_wf_impl, drule wf_instantiate_action_schema_impl, assumption)
-              apply (subst (asm) wf_ground_action_impl_def)
-              apply (elim conjE)
-              apply (split error_monad_bind_split)
-              apply (subst check_return_iff)+
-              apply (rule conjI)
-              subgoal by (auto)
-              unfolding wf_cond_effect_list'_def
-              apply (subst (asm) sym[OF check_all_list_return_iff[simplified Ball_set, of _ _ "''Conditional effect not well-formed''" "shows"]])
-              apply (rule allI)
-              subgoal
-                apply (split error_monad_bind_split)
-                by auto
-              done
-            subgoal
-              apply (split error_monad_bind_split_asm)
-              apply simp
-              subgoal for param_mismatch
-                apply (split error_monad_bind_split_asm)
-                apply simp
-                subgoal for not_well_inst
-                  apply (split error_monad_bind_split_asm)
-                  subgoal for int_eff
-                    apply simp
-                    apply (erule disjE)+
-                     apply auto
-                    sorry
-                  sorry
-                sorry
-              sorry
-            sorry
-          done
-        done
-      done
-      with Inl show ?thesis by simp
-  next
-    case (Inr b)
-    hence "valid_plan_action_impl (PAction n as) s \<and> b = execute_plan_action_impl (PAction n as) s" using en_exE2_return_iff by simp
-    hence "en_exE (PAction n as) s = Inr b" using en_exE_return_iff by simp
-    with Inr
-    show ?thesis by simp
-  qed
-qed *)
-      
+  
 end \<comment> \<open>Context of \<open>ast_problem\<close>\<close>
 
 subsubsection \<open>Checking of Plan\<close>
@@ -2978,8 +2890,8 @@ lemmas check_code =
   ast_problem.inst_goal.simps 
   ast_problem.I_impl_def
   ast_problem_decs.inst_term.simps
-
   ast_problem_decs.mp_objT_def
+
 declare check_code[code]
 
 subsubsection \<open>Setup for Containers Framework\<close>
@@ -3032,9 +2944,9 @@ export_code
   valuation term_val_impl ast_domain.apply_effect_impl
   check_all_list check_wf_domain check_plan 
   String.explode String.implode ast_domain.non_int_nf_upd_list check_all_list_index
-  in Scala
+  in SML
   module_name PDDL_Checker_Exported
-  file "PDDL_STRIPS_Checker_Exported.scala"
+  file "PDDL_Checker_Exported.sml"
 
 
 (* 
