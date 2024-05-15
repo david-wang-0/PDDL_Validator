@@ -46,7 +46,7 @@ struct
                           ":constants",
                           ":action", ":parameters", ":precondition", ":effect", "-",
                           ":invariant", ":name", ":vars", ":set-constraint",
-                          "=", "+", "-", "/", "*", "and", "or", "not", "forall", "exists", "number",
+                          "=", "and", "or", "not", "forall", "exists", "number",
                           "increase", "total-cost",
                           "problem", ":domain", ":init", ":objects", ":goal", ":metric", "maximize", "minimize"]
     val reservedOpNames= []
@@ -87,32 +87,6 @@ struct
 
   datatype PDDL_TERM = OBJ_CONS_TERM of PDDL_OBJ_CONS
                        | VAR_TERM of PDDL_VAR
-                       | FUN_TERM of (string, PDDL_TERM)
-  
-  type RAT = string * string
-
-  datatype PDDL_F_EXP = 
-    Num of RAT
-  | F_head of (string * PDDL_TERM)
-  | Sub of (PDDL_F_EXP * PDDL_F_EXP)
-  | Div of (PDDL_F_EXP * PDDL_F_EXP)
-  | Neg of PDDL_F_EXP
-  | Mult of PDDL_F_EXP list
-  | Add of PDDL_F_EXP list
-
-  type PDDL_F_COMP = char * PDDL_F_EXP * PDDL_F_EXP
-
-  datatype 'a PDDL_EFFECT = 
-    Assign of (PDDL_TERM * PDDL_TERM option)
-  | N_Assign of (PDDL_TERM * PDDL_F_EXP)
-  | N_ScaleUp of (PDDL_TERM * PDDL_F_EXP)
-  | N_ScaleDown of (PDDL_TERM * PDDL_F_EXP)
-  | N_Increase of (PDDL_TERM * PDDL_F_EXP)
-  | N_Decrease of (PDDL_TERM * PDDL_F_EXP)
-  | EFF_And of ' PDDL_EFFECT list
-  | EFF_Cond of ('a PDDL_PROP * PDDL_EFFECT)
-  | EFF_All of (PDDL_VAR list * PDDL_PRIM_TYPE list) * 'a PDDL_EFFECT
-
 
   type 'a PDDL_ATOM = 'a PDDL_Checker_Exported.atom; (*string * ('a list) *)
 
@@ -194,30 +168,10 @@ struct
   val functions_def = (in_paren(pddl_reserved ":functions" >>
                                 (function_typed_list atomic_function_skeleton))) ?? "functions def"
 
+  val function_term = in_paren(function_symbol && repeat pddl_var) wth (fn (x, _) => x) ?? "Function term" (*This is only to accommodate costs*)
+
   val term = (pddl_obj_cons wth (fn oc => OBJ_CONS_TERM oc) 
-              || pddl_var wth (fn v => VAR_TERM v) 
-              || in_paren (function_symbol && repeat pddl_term) wth FUN_TERM) ?? "term"
-
-  (* parsing (postive) decimals as string *)
-  val dec_num = ((lexeme ((char #"-" || digit) && (repeat digit) wth (fn (x,xs) => String.implode (x::xs))))
-                && opt ((char #".") >> (digit && lexeme (repeat digit) wth (fn (x,xs) => String.implode (x::xs))))
-                ) ?? "dec_num expression"
-
-  val number = dec_num ?? "d value"
-
-  val f_head = (in_paren (function_symbol || repeat term) wth F_head)
-
-  val f_exp = (f_head 
-            || (in_paren ((char #"-") >> f_exp && f_exp)) wth Sub
-            || (in_paren ((char #"-") >> f_exp)) wth Neg
-            || (in_paren ((char #"/" >> f_exp && f_exp))) wth Div
-            || (in_paren ((char #"+" >> repeat f_exp))) wth Add
-            || (in_paren ((char #"*" >> repeat f_exp))) wth Mult
-            || number wth Num 
-            )
-            
-
-  val f_comp = (char#"<")
+              || pddl_var wth (fn v => VAR_TERM v) (* || function_term *)) ?? "term"
 
   fun atomic_formula t = (in_paren(predicate && repeat t)
                              wth (fn (pred, tlist) => Prop_atom (PredAtm ((Pred (explode (pddl_pred_name pred))), tlist))))
@@ -226,14 +180,16 @@ struct
 
   fun literal t = ((atomic_formula t) || (in_paren(pddl_reserved "not" && atomic_formula t)) wth (fn (_, t) =>  Prop_not t)) ?? "literal"
 
-  fun GD x = fix (fn f => atomic_formula x ||
-                in_paren(pddl_reserved "not" >> f) wth Prop_not  ||
-                in_paren(pddl_reserved "and" >> repeat1 f) wth (fn gd => Prop_and gd) ||
-                in_paren(pddl_reserved "or" >> repeat1 f) wth (fn gd => Prop_or gd) ||
-                in_paren(pddl_reserved "forall" >> (in_paren(typed_list pddl_var) && f)) wth (fn (ps, gd) => Prop_all (ps, gd)) ||
-                in_paren(pddl_reserved "exists" >> (in_paren(typed_list pddl_var) && f)) wth (fn (ps, gd) => Prop_exists (ps, gd))) ?? "GD"
+  (*TODO: The n is disgusting, there must be a way to remove it.*)
 
-  fun pre_GD x = GD x  ?? "pre GD"
+  fun GD x n = (literal x ||
+                in_paren(pddl_reserved "not" >> (if n >= 0 then GD x (n - 1) else literal x)) wth Prop_not  || (* not sure if this is legal *)
+                in_paren(pddl_reserved "and" >> (if n >= 0 then repeat1  (GD x (n - 1)) else repeat1 (literal x))) wth (fn gd => Prop_and gd) ||
+                in_paren(pddl_reserved "or" >> (if n >= 0 then repeat1  (GD x (n - 1)) else repeat1 (literal x))) wth (fn gd => Prop_or gd) ||
+                in_paren(pddl_reserved "forall" >> (in_paren(typed_list pddl_var) && (if n >= 0 then GD x (n - 1) else literal x))) wth (fn (ps, gd) => Prop_all (ps, gd)) ||
+                in_paren(pddl_reserved "exists" >> (in_paren(typed_list pddl_var) && (if n >= 0 then GD x (n - 1) else literal x))) wth (fn (ps, gd) => Prop_exists (ps, gd))) ?? "GD"
+
+  fun pre_GD x = GD x 3 ?? "pre GD"
 
   val assign_op = pddl_reserved "increase" ?? "assign_op"
 
