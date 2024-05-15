@@ -37,7 +37,9 @@ struct
     val opStart        = fail "Operators not supported" : scanner
     val opLetter       = opStart
     val reservedNames  = [":requirements", ":strips", ":equality", ":typing", ":action-costs", 
-                          ":negative-preconditions", ":disjunctive-preconditions", ":existential-preconditions", ":universal-preconditions", ":quantified-preconditions",
+                          ":negative-preconditions", ":disjunctive-preconditions", 
+                          ":existential-preconditions", ":universal-preconditions", ":quantified-preconditions",
+                          ":adl", ":numeric-fluents", ":object-fluents", ":action-costs"
                           "define", "domain",
                           ":predicates", "either", ":functions",
                           ":types", (*"object",*)
@@ -162,6 +164,7 @@ struct
                                             (*action-cost is sometimes witout arguments*)
                                  ?? "atomic function skeleton"
 
+  (* WIP: parse numeric and object functions *)
   val functions_def = (in_paren(pddl_reserved ":functions" >>
                                 (function_typed_list atomic_function_skeleton))) ?? "functions def"
 

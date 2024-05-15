@@ -1,0 +1,50 @@
+(define (problem RechargingRobotsProb)
+(:domain RechargingRobotsDom)
+(:objects
+	robot1 robot2 robot2 - robot
+    room11 room12 room13 room21 room22 room23 room31 room32 room33 - location
+    cfg - config
+    )
+;; 3x3 grid of rooms
+;; robots in two corners and center
+;; guard every room
+(:init
+    (assign (location robot1) room11)
+    (assign (location robot2) room22)
+    (assign (location robot3) room33)
+    (not (stopped robot1))
+    (not (stopped robot2))
+    (not (stopped robot3))
+    (assign (battery-level robot1) 0)
+    (assign (battery-level robot2) 10)
+    (assign (battery-level robot3) 0)
+    (CONNECTED room11 room12)
+    (CONNECTED room12 room13)
+    (CONNECTED room21 room22)
+    (CONNECTED room22 room23)
+    (CONNECTED room31 room32)
+    (CONNECTED room32 room33)
+    (CONNECTED room11 room21)
+    (CONNECTED room21 room31)
+    (CONNECTED room12 room22)
+    (CONNECTED room22 room32)
+    (CONNECTED room13 room23)
+    (CONNECTED room23 room33)
+    (not (config-fullfilled cfg))
+    (GUARD_CONFIG cfg room11)
+    (GUARD_CONFIG cfg room12)
+    (GUARD_CONFIG cfg room13)
+    (GUARD_CONFIG cfg room21)
+    (GUARD_CONFIG cfg room22)
+    (GUARD_CONFIG cfg room23)
+    (GUARD_CONFIG cfg room31)
+    (GUARD_CONFIG cfg room32)
+    (GUARD_CONFIG cfg room33)
+)
+
+(:goal (config-fullfilled cfg)
+    (not (stopped robot1))
+    (not (stopped robot2))
+    (not (stopped robot3))
+    (= (location robot1) room31)
+))
