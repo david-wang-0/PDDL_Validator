@@ -83,21 +83,23 @@ struct
   datatype PDDL_VAR = PDDL_VAR of string
   fun pddl_var_name (PDDL_VAR n) = n
 
-  datatype PDDL_PRIM_TYPE = PDDL_PRIM_TYPE of string
-  fun pddl_prim_type_name (PDDL_PRIM_TYPE n) = n
+  datatype PDDL_PRIM_TYPE = 
+    PDDL_Prim_Type of string
+  | PDDL_Object_Type
 
-  datatype PDDL_PRED = PDDL_PRED of string
-  fun pddl_pred_name (PDDL_PRED pred_name) = pred_name
+  type PDDL_PRED = string
+
+  type PDDL_FUN = string
 
   datatype PDDL_TERM = OBJ_CONS_TERM of PDDL_OBJ_CONS
                        | VAR_TERM of PDDL_VAR
-                       | FUN_TERM of (string * PDDL_TERM list)
+                       | FUN_TERM of (PDDL_FUN * PDDL_TERM list)
   
   type RAT = string * string
 
   datatype PDDL_F_EXP = 
     Num of RAT
-  | F_Head of (string * PDDL_TERM list)
+  | F_Head of (PDDL_FUN * PDDL_TERM list)
   | Sub of (PDDL_F_EXP * PDDL_F_EXP)
   | Div of (PDDL_F_EXP * PDDL_F_EXP)
   | Neg of PDDL_F_EXP
@@ -144,8 +146,8 @@ struct
   datatype PDDL_INIT =
     True_Pred of string PDDL_ATOM
   | False_Pred of string PDDL_ATOM
-  | Init_Num_Func_Asmt of (string * string list * RAT)
-  | Init_Obj_Func_Asmt of (string * string list * string)
+  | Init_Num_Func_Asmt of (PDDL_FUN * PDDL_OBJ_CONS list * RAT)
+  | Init_Obj_Func_Asmt of (PDDL_FUN * PDDL_OBJ_CONS list * PDDL_OBJ_CONS)
 
   structure RTP = TokenParser (PDDLDef)
   open RTP
@@ -163,7 +165,7 @@ struct
   (* identifier ensures that the parsed identifier is not a reserved word *)
   val pddl_name = identifier ?? "pddl identifier" (*First char should be a letter*)
 
-  val pddl_obj_cons = pddl_name wth (fn name => PDDL_OBJ_CONS name) ?? "pddl object or constant"
+  val pddl_obj_cons = pddl_name wth PDDL_OBJ_CONS ?? "pddl object or constant"
 
   fun pddl_reserved wrd = (reserved wrd) ?? "resereved word"
 
@@ -171,16 +173,16 @@ struct
 
   val require_def = (in_paren(pddl_reserved ":requirements" >> repeat1 require_key)) ?? "require_def"
 
-  val primitive_type = (pddl_name wth (fn tp => PDDL_PRIM_TYPE tp)
-                        (*|| (pddl_reserved "object") wth (fn _ => "object")*)) ?? "prim_type"
+  val primitive_type = (pddl_name wth PDDL_PRIM_TYPE
+                        || (pddl_reserved "object") >> success PDDL_Object_Type) ?? "prim_type"
 
-  val type_ = ( in_paren (pddl_reserved "either" >> (repeat1 primitive_type))
+  val type_ = (in_paren (pddl_reserved "either" >> (repeat1 primitive_type))
                || (primitive_type wth (fn tp => (tp::[])))) ?? "type"
 
   fun typed_list x = repeat (((repeat1 x) && (pddl_reserved "-" >> type_))
                               || (repeat1 x) wth (fn tlist => (tlist, [PDDL_PRIM_TYPE "object"]))) ?? "typed_list"
 
-  val pddl_type = pddl_name wth (fn name => PDDL_PRIM_TYPE name) ?? "pddl type"
+  val pddl_type = pddl_name wth PDDL_PRIM_TYPE ?? "pddl type"
 
   val types_def = (in_paren(pddl_reserved ":types" >> typed_list pddl_type)) ?? "types def"
 
@@ -188,7 +190,7 @@ struct
 
   val pddl_var = (((char #"?" ) && pddl_name) wth (fn (c, str) => PDDL_VAR (String.implode [c] ^ str))) ?? "?var_name"
 
-  val predicate = pddl_name wth (fn name => PDDL_PRED name) ?? "pddl type"
+  val predicate = pddl_name wth (fn name => PDDL_PRED name) ?? "predicate"
 
   fun optional_typed_list x = (opt (typed_list x)
                                 wth (fn parsed_typesOPT => (case parsed_typesOPT of (SOME parsed_types) => parsed_types
@@ -315,7 +317,7 @@ struct
 
   val domain = in_paren(pddl_reserved "define" >> in_paren(pddl_reserved "domain" >> pddl_name)
                                                   >> (opt require_def)
-                                                  && (opt types_def)
+                                                  >> (opt types_def)
                                                   && (opt constants_def)
                                                   && (opt predicates_def)
                                                   && (opt functions_def)
@@ -375,11 +377,6 @@ open PDDL()
 
   type PDDL_ACTION_SYMBOL = string
 
-  type PDDL_TYPE = PDDL_PRIM_TYPE list
-
-  type 'a PDDL_TYPED_LIST = (('a list) * PDDL_TYPE) list
-
-  type PDDL_TYPES_DEF = (PDDL_PRIM_TYPE PDDL_TYPED_LIST) option
 
   type PDDL_ACTION = PDDL_ACTION_SYMBOL *
                           (PDDL_VAR PDDL_TYPED_LIST *
@@ -387,7 +384,6 @@ open PDDL()
 
   type PDDL_ACTIONS_DEF = (PDDL_ACTION list)
 
-  type PDDL_CONSTS_DEF = (PDDL_OBJ_CONS PDDL_TYPED_LIST) option
 
   type ATOMIC_FORM_SKEL = PDDL_PRED * (PDDL_VAR PDDL_TYPED_LIST)
 
@@ -399,7 +395,15 @@ open PDDL()
 
   type PDDL_FUNS_DEF = ATOMIC_FUN_SKELETON FUN_TYPED_LIST option
 
-  type PDDL_REQUIRE_DEF = (unit list) option
+  type PDDL_TYPE = PDDL_PRIM_TYPE list
+
+  type 'a PDDL_TYPED_LIST = (('a list) * PDDL_TYPE) list
+
+  type PDDL_TYPES_DEF = (PDDL_PRIM_TYPE PDDL_TYPED_LIST) option
+
+  type PDDL_CONSTS_DEF = (PDDL_OBJ_CONS PDDL_TYPED_LIST) option
+
+  type PDDL_DOMAIN = (PDDL_TYPES_DEF option * PDDL_CONSTS_DEF option * PDDL_PREDS_DEF option * PDDL_FUNS_DEF option * PDDL_STRUCTURE_DEF list)
 
   (* Types for the instance *)
 
