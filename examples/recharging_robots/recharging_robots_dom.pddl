@@ -1,6 +1,6 @@
 (define (domain RechargingRobotsDom)
-(:requirements :negative-preconditions :quantified-preconditions :typing :adl :action-costs :numeric-fluents :object-fluents)
-;; adl -
+(:requirements :negative-preconditions :quantified-preconditions :typing :adl :numeric-fluents :object-fluents)
+
 (:types
     location - object
     robot - object
@@ -24,11 +24,10 @@
 )
 
 (:functions
-    (battery-level ?r - robot)
-    ((location ?r - robot) - location)
-    ((move-cost) - number)
-    ((recharge-cost) - number)
-    ((total-cost) - number)
+    (battery-level ?r - robot) - number
+    (loc ?r - robot) - location
+    move-cost - number
+    recharge-cost - number
 )
 
 ;; Move the robot ?r from the location ?from to the location ?to while
@@ -38,14 +37,14 @@
     :precondition
         (and
             (not (stopped ?r))
-            (or (CONNECTED (location ?r) ?to) (CONNECTED ?to (location ?r)))
+            (or (CONNECTED (loc ?r) ?to) (CONNECTED ?to (loc ?r)))
             (> (battery-level ?r) 0)
         )
     :effect
         (and
             (assign (at ?r) ?to)
             (decrease (battery-level ?r) move-cost)
-            (increase (total-cost) (move-cost))
+            (increase total-cost move-cost)
         )
 )
 
@@ -63,7 +62,7 @@
         (and
             (increase (battery ?rfrom) 1)
             (assign (battery ?rto) ((battery ?rto) - 1))
-            (increase (total-cost) (recharge-cost))
+            (increase total-cost recharge-cost)
         )
 )
 
@@ -79,7 +78,7 @@
     :effect
         (and
             (stopped ?r)
-            (guarded (location ?r))
+            (guarded (loc ?r))
             (forall (?l2 - location)
                 (when (or (CONNECTED ?l ?l2) (CONNECTED ?l2 ?l))
                       (guarded ?l2)
@@ -111,11 +110,11 @@
                     (exists (?l - location) 
                         (and 
                             (GUARD-CONFIG ?c ?l) 
-                            (= (location ?r) ?l)
+                            (= (loc ?r) ?l)
                         ))
                     (and 
                         (not (stopped ?r)) 
-                        (not (guarded (location ?r))))
+                        (not (guarded (loc ?r))))
                 )
             (config-fullfilled ?c)
         )
