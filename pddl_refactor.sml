@@ -52,7 +52,7 @@ struct
                           "=", "+", "-", "/", "*", "and", "or", "not", "forall", "exists", "number",
                           "assign", "scale-up", "scale-down", "increase", "decrease",
                           "problem", ":domain", ":init", ":objects", ":goal", ":metric", "maximize", "minimize",
-                          "undefined"]
+                          "undefined", "total-cost"]
     val reservedOpNames= []
     val caseSensitive  = false
 
@@ -110,12 +110,12 @@ struct
   | PDDL_Gt of (PDDL_F_EXP * PDDL_F_EXP)
   | PDDL_Ge of (PDDL_F_EXP * PDDL_F_EXP)
 
-  datatype PDDL_ATOM = 
-    PDDL_Pred of (string, PDDL_TERM list)
-  | PDDL_Eq of (PDDL_TERM, PDDL_TERM)
+  datatype 't PDDL_ATOM = 
+    PDDL_Pred of (string, 't list)
+  | PDDL_Eq of ('t, 't)
 
   datatype PDDL_FORM =
-    PDDL_Form_Atom of PDDL_ATOM
+    PDDL_Form_Atom of (PDDL_TERM PDDL_ATOM)
   | PDDL_Comp of PDDL_F_COMP
   | PDDL_Not of PDDL_FORM
   | PDDL_And of PDDL_FORM list
@@ -138,8 +138,14 @@ struct
   | EFF_All of (PDDL_VAR list * PDDL_PRIM_TYPE) list * PDDL_EFFECT
 
   (* To do: Check if the first parser in the alternative has higher precedence.
-    If it does not, then the p_effect parser can be ambiguous for N_Assign, because*)
+    If it does not, then the p_effect parser can be ambiguous for N_Assign.*)
 
+
+  datatype PDDL_INIT =
+    True_Pred of string PDDL_ATOM
+  | False_Pred of string PDDL_ATOM
+  | Init_Num_Func_Asmt of (string * string list * RAT)
+  | Init_Obj_Func_Asmt of (string * string list * string)
 
   structure RTP = TokenParser (PDDLDef)
   open RTP
@@ -198,7 +204,7 @@ struct
                                         || (repeat1 x) wth (fn tlist => (tlist, None))) ?? "function_typed_list"
   (* return types are applied to all preceding function declarations *)
 
-  val function_symbol = (pddl_name || pddl_reserved "total-cost" wth (fn _ => "total-cost")) ?? "function symbol"
+  val function_symbol = (pddl_name || pddl_reserved "total-cost") ?? "function symbol"
 
   val atomic_function_skeleton = (in_paren (function_symbol && optional_typed_list pddl_var))
                                  ?? "atomic function skeleton"
@@ -239,15 +245,15 @@ struct
             || (in_paren ((char #">=") >> f_exp && f_exp)) wth PDDL_Ge
             ) wth PDDL_Comp ?? "numeric comparison"
 
-  fun atomic_formula = ((in_paren(predicate && repeat term)
+  fun atomic_formula t = ((in_paren(predicate && repeat t)
                              wth PDDL_Pred)
-                         || in_paren((pddl_reserved "=") >> term && term)
-                               wth PDDL_Eq) wth PDDL_Atom ?? "Atomic formula"
+                         || in_paren((pddl_reserved "=") >> t && t)
+                               wth PDDL_Eq) ?? "Atomic formula"
 
-  (* not needed, because we support negation *)
-  fun literal = ((atomic_formula) || (in_paren(pddl_reserved "not" && atomic_formula)) wth (fn (_, t) =>  PDDL_Not t)) ?? "literal"
+  (* we ignore this ... *)
+  fun literal t = ((atomic_formula t) || (in_paren(pddl_reserved "not" >> atomic_formula t)) wth PDDL_Not t) ?? "literal"
 
-  fun GD = fix (fn f => atomic_formula
+  fun GD = fix (fn f => ((atomic_formula term) wth PDDL_Form_Atom)
             || in_paren(pddl_reserved "not" >> f) wth PDDL_Not
             || in_paren(pddl_reserved "and" >> repeat1 f) wth PDDL_And
             || in_paren(pddl_reserved "or" >> repeat1 f) wth PDDL_Or
@@ -258,8 +264,8 @@ struct
   
   fun pre_GD = GD ?? "pre GD" (* the and in the pre_GD is parsed by GD *)
 
-  val p_effect = ((in_paren (atomic_formula) wth Add)
-                || (in_paren (pddl_reserved "not" >> atomic_formula) wth Del)
+  val p_effect = ((in_paren (atomic_formula term) wth (Add o PDDL_Form_Atom))
+                || (in_paren (pddl_reserved "not" >> atomic_formula term) wth (Del o PDDL_Form_Atom))
                 || (in_paren (pddl_reserved "assign" >> term) wth Unassign)
                 || (in_paren (pddl_reserved "assign" >> term && term) wth Assign)
                 || (in_paren (pddl_reserved "assign" >> f_head && f_exp) wth N_Assign)
@@ -279,7 +285,7 @@ struct
               || (in_paren (pddl_reserved "forall" >> (in_paren (typed_list variable)) && c_eff)) wth EFF_All
               || (in_paren (pddl_reserved "when" >> GD && cond_effect)) wth EFF_Cond
               || cond_effect) ?? "c_effect"
-  
+
   val effect = c_effect ?? "effect"
 
   fun emptyOR x = opt x
@@ -300,7 +306,7 @@ struct
 
   val quantification = (pddl_reserved ":vars" >> in_paren(repeat pddl_var)) ?? "quantification"
 
-  val constraints = (pddl_reserved ":set-constraint" >> (pre_GD term)) ?? "constraint"
+  val constraints = (pddl_reserved ":set-constraint" >> pre_GD) ?? "constraint"
 
   val invariant_def = (in_paren(pddl_reserved ":invariant" >> spaces >>
                                  (invariant_symbol << spaces) &&
@@ -313,19 +319,22 @@ struct
                                                   && (opt constants_def)
                                                   && (opt predicates_def)
                                                   && (opt functions_def)
-                                                  && (repeat structure_def)
-                                                  && (repeat invariant_def)) ?? "domain"
+                                                  && (repeat structure_def)) ?? "domain"
+                                                  (*&& (repeat invariant_def)*)
 
+  
   val object_declar = in_paren(pddl_reserved ":objects" >> (typed_list pddl_obj_cons))
 
-  val basic_fun_term = function_symbol ||
-                       in_paren(function_symbol && repeat pddl_var) wth (fn (x, _) => x) ?? "basic function term"
+  val basic_fun_term = (function_symbol 
+                    || in_paren(function_symbol && repeat pddl_obj_cons)
+                    ) ?? "basic function term"
 
-  val init_el = (literal (pddl_obj_cons)
-                 || in_paren((pddl_reserved "=") && basic_fun_term && pddl_obj_cons)
-                               wth (fn (eq, (t1, t2)) => Fluent) (*if we have x = x in the init state, it will be igonored here, and readded later in initToIsabelle*)
-                 || in_paren((pddl_reserved "=") && basic_fun_term && num)
-                               wth (fn (eq, (t1, t2)) => Fluent)) ?? "init element"
+  val init_el = ((atomic_formula pddl_name) wth True_Pred
+                 || in_paren((pddl_reserved "not") >> atomic_formula pddl_name) wth False_Pred
+                 || in_paren((pddl_reserved "=") >> basic_fun_term && pddl_name)
+                               wth Init_Obj_Func_Asmt
+                 || in_paren((pddl_reserved "=") >> basic_fun_term && (dec_num wth Num))
+                               wth Init_Num_Func_Asmt) ?? "init element"
 
   val init = in_paren(pddl_reserved ":init" >> repeat (init_el))
 
@@ -333,7 +342,7 @@ struct
   (* The rule for goals is exactly as the one in Kovacs. It is wrong, nonetheless, since a goal
      should be only defined on GDs over objects or constants only and not terms!! *)
 
-  val goal = in_paren(pddl_reserved ":goal" >> pre_GD term)
+  val goal = in_paren(pddl_reserved ":goal" >> pre_GD)
 
   val optimisation = (pddl_reserved "maximize" || pddl_reserved "minimize") ?? "Optimisation"
 
@@ -362,9 +371,7 @@ open PDDL()
 
   type PDDL_PRE_GD = PDDL_FORM
 
-  type C_EFFECT = PDDL_FORM option * PDDL_EFFECT
-
-  type PDDL_ACTION_DEF_BODY = (PDDL_PRE_GD option) * ((unit * C_EFFECT) option)
+  type PDDL_ACTION_DEF_BODY = (PDDL_PRE_GD option) * (PDDL_EFFECT option)
 
   type PDDL_ACTION_SYMBOL = string
 
@@ -384,7 +391,7 @@ open PDDL()
 
   type ATOMIC_FORM_SKEL = PDDL_PRED * (PDDL_VAR PDDL_TYPED_LIST)
 
-  type PDDL_PRED_DEF = PDDL_PRED list option
+  type PDDL_PREDS_DEF = ATOMIC_FORM_SKEL list
 
   type 'a FUN_TYPED_LIST = (('a list) * PDDL_TYPE option) list
 
@@ -402,7 +409,7 @@ open PDDL()
 
   type PDDL_INIT = PDDL_INIT_EL list
 
-  type PDDL_GOAL  = PDDL_TERM PDDL_FORM
+  type PDDL_GOAL = PDDL_FORM
 
   type METRIC = string option
 
