@@ -264,13 +264,19 @@ val args = CommandLine.arguments()
 fun print_help () = (
   println("c Usage: " ^ CommandLine.name() ^ "<domain> <problem> [<plan>]")
 )
-
+(* 
 val _ = case args of
   [d,pr,pl] => do_check_plan d pr pl
 | _ => (
     println("Invalid command line arguments");
     print_help ();
     exit_fail ""
+  ) *)
+
+val _ = case args of
+  [dom_file] => (
+    val parsedDom = parse_pddl_dom dom_file;
+    println("Domain parsed");
   )
 
 val _ = OS.Process.exit(OS.Process.success)
