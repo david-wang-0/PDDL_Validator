@@ -77,6 +77,8 @@ struct
     | _ => fail "PDDL_Timesi-line comments not supported"
   val comment        = lineComment <|> mlComment
 
+  type 'a pddl_parser = ('a, SubstringMonoStreamable.elem) parser
+
   datatype PDDL_OBJ_CONS = PDDL_OBJ_CONS of string   (* Object or constant, identified by name *)
   fun pddl_obj_name (PDDL_OBJ_CONS n) = n
 
@@ -88,17 +90,40 @@ struct
 
   type PDDL_TYPE = PDDL_PRIM_TYPE list
 
-  datatype PDDL_FUN_TYPE = Prim_Type of PDDL_PRIM_TYPE
-    | Num_Type
+  datatype PDDL_FUN_TYPE = 
+    Obj_Type of PDDL_TYPE
+  | Num_Type
 
   type PDDL_PRED = string
 
   type PDDL_FUN = string
 
+
+  (* Constants and types *)
+
+  type 'a PDDL_TYPED_LIST = (('a list) * PDDL_TYPE) list
+
+  type PDDL_TYPES_DEF = (PDDL_PRIM_TYPE PDDL_TYPED_LIST)
+
+  type PDDL_CONSTS_DEF = (PDDL_OBJ_CONS PDDL_TYPED_LIST)
+
+
+  (* Predicates *)
+  type ATOMIC_FORM_SKEL = PDDL_PRED * (PDDL_VAR PDDL_TYPED_LIST)
+
+  type PDDL_PREDS_DEF = ATOMIC_FORM_SKEL list
+
   datatype PDDL_TERM = OBJ_CONS_TERM of PDDL_OBJ_CONS
                        | VAR_TERM of PDDL_VAR
                        | FUN_TERM of (PDDL_FUN * PDDL_TERM list)
   
+  (* Functions *)
+  type 'a FUN_TYPED_LIST = (('a list) * PDDL_FUN_TYPE) list
+
+  type ATOMIC_FUN_SKELETON = string * (PDDL_VAR PDDL_TYPED_LIST)
+
+  type PDDL_FUNS_DEF = ATOMIC_FUN_SKELETON FUN_TYPED_LIST (* good *)
+
   type RAT = string * string option
 
   datatype PDDL_F_EXP = 
@@ -121,30 +146,48 @@ struct
   | PDDL_Eq of ('t * 't)
 
   datatype 't PDDL_FORM =
-    PDDL_Form_Atom of 't
+    PDDL_Form_Atom of 't PDDL_ATOM
   | PDDL_Form_Comp of PDDL_F_COMP
   | PDDL_Not of 't PDDL_FORM
   | PDDL_And of 't PDDL_FORM list
   | PDDL_Or of 't PDDL_FORM list
-  | PDDL_All of (PDDL_VAR list * PDDL_TYPE) list * 't PDDL_FORM
-  | PDDL_Exists of (PDDL_VAR list * PDDL_TYPE) list * 't PDDL_FORM
+  | PDDL_All of PDDL_VAR PDDL_TYPED_LIST * 't PDDL_FORM
+  | PDDL_Exists of PDDL_VAR PDDL_TYPED_LIST * 't PDDL_FORM
 
   datatype PDDL_EFFECT = 
     Add of PDDL_TERM PDDL_ATOM
   | Del of PDDL_TERM PDDL_ATOM
   | Unassign of PDDL_TERM
-  | Assign of (PDDL_TERM * PDDL_TERM)
-  | N_Assign of (PDDL_F_EXP * PDDL_F_EXP) 
+  | Assign of (PDDL_TERM * PDDL_TERM) 
   | N_ScaleUp of (PDDL_F_EXP * PDDL_F_EXP)
   | N_ScaleDown of (PDDL_F_EXP * PDDL_F_EXP)
   | N_Increase of (PDDL_F_EXP * PDDL_F_EXP)
   | N_Decrease of (PDDL_F_EXP * PDDL_F_EXP)
   | EFF_And of PDDL_EFFECT list
   | EFF_Cond of (PDDL_TERM PDDL_ATOM PDDL_FORM * PDDL_EFFECT)
-  | EFF_All of (PDDL_VAR list * PDDL_TYPE) list * PDDL_EFFECT
+  | EFF_All of PDDL_VAR PDDL_TYPED_LIST * PDDL_EFFECT
 
   (* To do: Check if the first parser in the alternative has higher precedence.
     If it does not, then the p_effect parser can be ambiguous for N_Assign.*)
+
+  (* Actions *)
+  type PDDL_PRE_GD = PDDL_TERM PDDL_ATOM PDDL_FORM
+
+  type PDDL_ACTION_DEF_BODY = (PDDL_PRE_GD option) * (PDDL_EFFECT option)
+
+  type PDDL_ACTION_SYMBOL = string
+
+  type PDDL_ACTION = PDDL_ACTION_SYMBOL *
+                          (PDDL_VAR PDDL_TYPED_LIST *
+                                     PDDL_ACTION_DEF_BODY)
+
+  type PDDL_ACTIONS_DEF = (PDDL_ACTION list) (* good *)
+
+  type PDDL_DOMAIN = (PDDL_TYPES_DEF option * 
+                        PDDL_CONSTS_DEF option * 
+                          PDDL_PREDS_DEF option * 
+                            PDDL_FUNS_DEF option * 
+                              PDDL_ACTIONS_DEF)
 
 
   datatype PDDL_INIT =
@@ -184,9 +227,11 @@ struct
                               || (repeat1 x) wth (fn tlist => (tlist, [PDDL_PRIM_TYPE "object"]))) ?? "typed_list"
 
 
-  val types_def = (in_paren(pddl_reserved ":types" >> typed_list primitive_type)) ?? "types def"
+  val types_def : PDDL_TYPES_DEF pddl_parser = 
+    (in_paren(pddl_reserved ":types" >> typed_list primitive_type)) ?? "types def"
 
-  val constants_def = (in_paren(pddl_reserved ":constants" >> typed_list pddl_obj_cons)) ?? "consts def"
+  val constants_def : PDDL_CONSTS_DEF pddl_parser =
+    (in_paren(pddl_reserved ":constants" >> typed_list pddl_obj_cons)) ?? "consts def"
 
   val pddl_var = (((pddl_reserved "?") >> pddl_name) wth (fn str => PDDL_VAR ("?" ^ str))) ?? "?var_name"
 
@@ -198,9 +243,10 @@ struct
 
   val atomic_formula_skeleton = (in_paren (predicate && optional_typed_list pddl_var)) ?? "predicate"
 
-  val predicates_def = (in_paren(pddl_reserved ":predicates" >> (repeat (atomic_formula_skeleton)))) ?? "predicates def"
+  val predicates_def: PDDL_PREDS_DEF pddl_parser = 
+    (in_paren (pddl_reserved ":predicates" >> (repeat (atomic_formula_skeleton)))) ?? "predicates def"
 
-  val function_type = pddl_reserved "number" return Num_Type || primitive_type wth Prim_Type ?? "function type"
+  val function_type = pddl_reserved "number" return Num_Type || type_ wth Obj_Type ?? "function type"
 
   (* no return type means number return type *)
   fun function_typed_list x =  repeat1 (((repeat1 x) && (pddl_reserved "-" >> function_type))
@@ -213,8 +259,9 @@ struct
                                  ?? "atomic function skeleton"
   (* every function declaration must be wrapped in parentheses -  *)
 
-  val functions_def = (in_paren(pddl_reserved ":functions" >>
-                                (function_typed_list atomic_function_skeleton))) ?? "functions def"
+  val functions_def: PDDL_FUNS_DEF pddl_parser = 
+    (in_paren(pddl_reserved ":functions" >>
+         (function_typed_list atomic_function_skeleton))) ?? "functions def"
 
   val term = fix (fn pddl_term => pddl_obj_cons wth (fn oc => OBJ_CONS_TERM oc) 
               || pddl_var wth (fn v => VAR_TERM v) 
@@ -228,7 +275,7 @@ struct
   val number = dec_num ?? "d value"
 
   val f_head = (in_paren(function_symbol && repeat term)
-                || function_symbol wth (fn s => (s, [])))wth F_Head ?? "f_head"
+                || function_symbol wth (fn s => (s, []))) wth F_Head ?? "f_head"
 
   fun repeat2 p = p && repeat1 p wth op::
 
@@ -268,8 +315,7 @@ struct
   val p_effect = ((in_paren (atomic_formula term) wth Add)
                 || (in_paren (pddl_reserved "not" >> atomic_formula term) wth Del)
                 || (in_paren (pddl_reserved "assign" >> term) wth Unassign)
-                || (in_paren (pddl_reserved "assign" >> term && term) wth Assign)
-                || (in_paren (pddl_reserved "assign" >> f_head && f_exp) wth N_Assign)
+                || (in_paren (pddl_reserved "assign" >> term && term) wth Assign) (* disambiguate after the declarations of functions have beend parsed *)
                 || (in_paren (pddl_reserved "scale-up" >> f_head && f_exp) wth N_ScaleUp)
                 || (in_paren (pddl_reserved "scale-down" >> f_head && f_exp) wth N_ScaleDown)
                 || (in_paren (pddl_reserved "increase" >> f_head && f_exp) wth N_Increase)
@@ -291,12 +337,12 @@ struct
 
   fun emptyOR x = opt x
 
-  val action_def_body = (opt (pddl_reserved ":precondition" >> emptyOR pre_GD)
-                         && opt (pddl_reserved ":effect" >> emptyOR effect)) ?? "Action def body"
+  val action_def_body: PDDL_ACTION_DEF_BODY pddl_parser = ((pddl_reserved ":precondition" >> emptyOR pre_GD)
+                         && (pddl_reserved ":effect" >> emptyOR effect)) ?? "action_def_body"
 
-  val action_symbol = pddl_name
+  val action_symbol: PDDL_ACTION_SYMBOL pddl_parser = pddl_name
 
-  val action_def = (in_paren(pddl_reserved ":action" >>
+  val action_def: PDDL_ACTION pddl_parser = (in_paren(pddl_reserved ":action" >>
                     action_symbol
                     && (pddl_reserved ":parameters" >> (in_paren(typed_list pddl_var)))
                     && action_def_body)) ?? "action def"
@@ -370,43 +416,6 @@ open PDDL
 
   (*Types for the domain*)
 
-  (* Constants and types *)
-
-  type 'a PDDL_TYPED_LIST = (('a list) * PDDL_TYPE) list
-
-  type PDDL_TYPES_DEF = (PDDL_PRIM_TYPE PDDL_TYPED_LIST) option (* good *)
-
-  type PDDL_CONSTS_DEF = (PDDL_OBJ_CONS PDDL_TYPED_LIST) option (* good *)
-
-
-  (* Predicates *)
-  type ATOMIC_FORM_SKEL = PDDL_PRED * (PDDL_VAR PDDL_TYPED_LIST)
-
-  type PDDL_PREDS_DEF = ATOMIC_FORM_SKEL list (* good *)
-
-
-  (* Functions *)
-  type 'a FUN_TYPED_LIST = (('a list) * PDDL_FUN_TYPE) list
-
-  type ATOMIC_FUN_SKELETON = string * (PDDL_VAR PDDL_TYPED_LIST)
-
-  type PDDL_FUNS_DEF = ATOMIC_FUN_SKELETON FUN_TYPED_LIST option (* good *)
-
-  (* Actions *)
-  type PDDL_PRE_GD = PDDL_TERM PDDL_ATOM PDDL_FORM
-
-  type PDDL_ACTION_DEF_BODY = (PDDL_PRE_GD option) * (PDDL_EFFECT option)
-
-  type PDDL_ACTION_SYMBOL = string
-
-  type PDDL_ACTION = PDDL_ACTION_SYMBOL *
-                          (PDDL_VAR PDDL_TYPED_LIST *
-                                     (PDDL_ACTION_DEF_BODY))
-
-  type PDDL_ACTIONS_DEF = (PDDL_ACTION list) (* good *)
-
-
-  type PDDL_DOMAIN = (PDDL_TYPES_DEF option * PDDL_CONSTS_DEF option * PDDL_PREDS_DEF option * PDDL_FUNS_DEF option * PDDL_ACTIONS_DEF)
 
   (* Domain seems to be good *)
   
@@ -454,12 +463,6 @@ open PDDL
       cat_fn (map (fn (vars, type_) => (map (wrap_var_with_type type_) vars)) typedList)
     end
 
-  fun extractFlatTypedList cat_fn str_fn mk_pair_fn (typedList :PDDL_PRIM_TYPE PDDL_TYPED_LIST) = let
-    fun sng_typ [t] = str_fn (pddl_prim_type_name t)
-      | sng_typ _ = exit_fail "Either-types not supported as supertypes"
-  in (* this does not seem possible given the parser *)
-    cat_fn (map (fn (ts, supt) => map (fn t => mk_pair_fn (str_fn (pddl_prim_type_name t)) (sng_typ supt)) ts) typedList)
-  end
 
 
 (*Some utility functions*)

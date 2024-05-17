@@ -1,8 +1,14 @@
  
 - Define datatypes and synonyms for domains, problems, etc.
-    - Primitive types can be changed from wrappers around strings to some sum type
-    - 
+    - [ ] ~~Primitive types can be changed from wrappers around strings to some sum type~~
+    - [ ] Should PDDL_Atom really have a type parameter?
 - Implement conversion from ML types to Isabelle types
+    - The assignment must be disambiguated after the function declarations have been parsed and proven well-formed.
+        - This can be assumed, since the domain and problem declarations must habe been proven well-formed by the time action schemas are converted.
+    - Domain declarations
+    - Problem declarations
+    - Domain
+    - Problem
 - Recall Agda talk
     - Scopes
     - 

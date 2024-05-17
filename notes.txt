@@ -9,3 +9,5 @@ mlton -mlb-path-var 'ISABELLE_FILES PDDL-sema' -cc-opt -O3 -cc-opt -g0 pddl_vali
 ./validate_pddl_plan.sh ../examples/truck-dom.pddl ../examples/truck-prob.pddl ../examples/truck-plan
 
 mlton -cc-opt -O3 -cc-opt -g0 pddl_validate_plan.mlb
+
+git subtree push --prefix={path/to/subdir} {remote} [branch]

@@ -2936,8 +2936,10 @@ print_derives
   Check for performance regression of generated code!
 *)
 export_code
-  nat_of_integer integer_of_nat Inl Inr
-  Eq pred Pred Either Var Obj PredDecl BigAnd BigOr
+  nat_of_integer integer_of_nat Inl Inr 
+  Predicate Function
+  Either Variable Object Var Const PredDecl BigAnd BigOr
+  ObjFunDecl NumFunDecl PDDL_Semantics.Eq  Ent Fun NFun
   ast_problem_decs.pddl_all_impl ast_problem_decs.pddl_exists_impl
   formula.Not formula.Bot Effect ast_action_schema.Action_Schema
   map_atom Domain Problem DomainDecls ProbDecls PAction

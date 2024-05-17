@@ -8,20 +8,22 @@ open PDDL
   val SMLCharImplode = String.implode;
   val SMLCharExplode = String.explode;
 
+  type isa_prim_type = char list;
+
   val stringToIsabelle = IsabelleStringExplode
   fun stringListToIsabelle ss = (map stringToIsabelle ss)
 
-  fun pddlVarToIsabelle (v:PDDL_VAR) = Var (IsabelleStringExplode (pddl_var_name v))
+  fun pddlVarToIsabelle (v: PDDL_VAR) = Variable (stringToIsabelle (pddl_var_name v))
 
-  fun pddlObjConsToIsabelle (oc:PDDL_OBJ_CONS) = Obj (stringToIsabelle (pddl_obj_name oc))
+  fun pddlObjConsToIsabelle (oc: PDDL_OBJ_CONS) = Object (stringToIsabelle (pddl_obj_name oc))
 
-  fun pddlTermToIsabelle term = 
-    case term of VAR_TERM v => VAR (pddlVarToIsabelle v)
-             | OBJ_CONS_TERM oc => CONST (pddlObjConsToIsabelle oc)
+  fun pddlTermToIsabelle (OBJ_CONS_TERM oc) = Ent (Const (pddlObjConsToIsabelle oc))
+    | pddlTermToIsabelle (VAR_TERM v) = Ent (Var (pddlVarToIsabelle v))
+    | pddlTermToIsabelle (FUN_TERM (f, ts)) = Fun (Function (stringToIsabelle f), map pddlTermToIsabelle ts)
 
   fun pddlVarTermToIsabelle term = 
     case term of VAR_TERM v => pddlVarToIsabelle v
-             | _ => exit_fail ("Var expected, but obejct found: pddlVarTermToIsabelle " ^ (pddlObjConsTermToString term))
+             | _ => exit_fail ("Var expected, but object found: pddlVarTermToIsabelle " ^ (pddlObjConsTermToString term))
 
   fun pddlObjConsTermToIsabelle term = 
     case term of OBJ_CONS_TERM v => pddlObjConsToIsabelle v
@@ -30,44 +32,83 @@ open PDDL
   fun pddlTypeToIsabelle (type_ :PDDL_TYPE) = Either (stringListToIsabelle (map pddl_prim_type_name type_))
 
   fun mk_pair x y = (x,y)
+  fun snd (a, b) = b
+  fun fst (a, b) = a
+  fun map_pair (f1: 'a -> 'c) (f2: 'b -> 'd) (p: ('a * 'b)) : ('c * 'd)
+    = case p of (a, b) => (f1 a, f2 b)
 
-  fun type_str_cat_fun (l:string list list) = (String.concatWith ", ") (map (String.concatWith ", ") l)
+  fun type_str_cat_fun (l: string list list) = (String.concatWith ", ") (map (String.concatWith ", ") l)
 
-  fun pddlTypedListVarsTypesToIsabelle (typedList :PDDL_VAR PDDL_TYPED_LIST) =
-     (pddlTypedListXTypesConv typedList List.concat mk_pair pddlVarToIsabelle pddlTypeToIsabelle)
+  fun flattenTypedList (l: ('a list * 'b) list): ('a * 'b) list =
+    List.concat (map (fn (vs, t) => map (fn v => (v, t)) vs) l)
 
-  fun pddlTypedListObjsConsTypesToIsabelle (typedList :PDDL_OBJ_CONS PDDL_TYPED_LIST) =
-     (pddlTypedListXTypesConv typedList List.concat mk_pair pddlObjConsToIsabelle pddlTypeToIsabelle)
+  fun flatMapTypedList (f: ('a * 'b) -> 'c): ('a list * 'b) list -> 'c list =
+    (map f) o flattenTypedList
 
-  fun pddlTypedListTypesToIsabelle (typedList :'a PDDL_TYPED_LIST) =
-                            map (fn (vars, type_) =>
-                                     (map (fn _ => (pddlTypeToIsabelle type_)) vars))
-                                 typedList;
+  fun flatMapTypedList1 (f1: 'a -> 'c) (f2: 'b -> 'd): ('a list * 'b) list -> ('c * 'd) list = 
+    (map (map_pair f1 f2)) o flattenTypedList
+  
+  val pddlPrimTypeToIsabellePrimType = stringToIsabelle o pddl_prim_type_name;
 
-  fun extractFlatTypedListIsabelle typedList =
-                 extractFlatTypedList List.concat stringToIsabelle mk_pair typedList
+  fun pddlTypesDefToIsabelle (typesDefOPT: PDDL_TYPES_DEF option) =
+    case typesDefOPT of
+      SOME typesDef =>
+        let 
+          val pddlTypeToIsabelleSuperType: PDDL_TYPE -> isa_prim_type = (fn t => case t of
+            [x] => pddlPrimTypeToIsabellePrimType x
+          | _   => exit_fail "'Either' supertypes not supported")
+        in
+          flatMapTypedList1 pddlPrimTypeToIsabellePrimType pddlTypeToIsabelleSuperType typesDef
+        end
+    | _ => []
 
-  fun pddlTypesDefToIsabelle (typesDefOPT :PDDL_TYPES_DEF) =
-                   case typesDefOPT of
-                        SOME typesDef =>
-                             (extractFlatTypedListIsabelle typesDef)
-                      | _ => []
+  fun pddlTypeToIsabelleType (t: PDDL_TYPE): typea =
+    Either (map pddlPrimTypeToIsabellePrimType t)
+
+  fun pddlFunTypeToIsabelleType (t: PDDL_FUN_TYPE): typea =
+    case t of 
+      (Obj_Type t) => pddlTypeToIsabelleType t
+    | _ => exit_fail "Invalid function return type"
 
 
-  fun pddlConstsDefToIsabelle (constsDefOPT :PDDL_CONSTS_DEF) =
-                   case constsDefOPT of
-                        SOME constsDef =>
-                             pddlTypedListObjsConsTypesToIsabelle constsDef
-                      | _ => []
+  fun pddlConstsDefToIsabelle (constsDefOPT: PDDL_CONSTS_DEF option) =
+    case constsDefOPT of
+      SOME constsDef =>
+        flatMapTypedList1 pddlObjConsToIsabelle pddlTypeToIsabelleType constsDef
+    | _ => []
 
-  fun pddlPredToIsabelle (pred, args) = PredDecl (Pred (stringToIsabelle (pddl_pred_name pred)), List.concat (pddlTypedListTypesToIsabelle args))
+  
+  fun pddlTypedListToIsabelleSig (l: 'a PDDL_TYPED_LIST): typea list =
+    flatMapTypedList (pddlTypeToIsabelleType o snd) l;
 
+  fun pddlPredToIsabelle (p: ATOMIC_FORM_SKEL) =
+    let 
+      val (name, params) = p;
+    in  
+      PredDecl (Predicate (stringToIsabelle name),
+        flatMapTypedList (pddlTypeToIsabelleType o snd) params)
+    end
 
-  fun pddlPredDefToIsabelle pred_defOPT =
-                   case pred_defOPT of
-                        SOME pred_def =>
-                              (map pddlPredToIsabelle pred_def)
-                        | _ => []
+  fun pddlPredDefToIsabelle (pred_defOPT: PDDL_PREDS_DEF option): pred_decl list =
+    case pred_defOPT of
+      SOME pred_def =>
+            (map pddlPredToIsabelle pred_def)
+      | _ => []
+  
+  fun pddlFunsDefToIsabelleFuns (funs_defOPT: PDDL_FUNS_DEF option): (obj_func_decl list * num_func_decl list) = 
+    case funs_defOPT of
+      SOME funs_def => 
+      let 
+        val (obj_funs, num_funs) = (List.partition (fn (v, t) => t <> Num_Type) funs_def);
+        val fHead = map_pair (Function o stringToIsabelle) pddlTypedListToIsabelleSig;
+        val fObj = flatMapTypedList (fn (h, r) => 
+          case fHead h of
+           (f, args) => ObjFunDecl (f, args, pddlFunTypeToIsabelleType r));
+        val fNum = flatMapTypedList (NumFunDecl o fHead o fst);
+      in 
+        (fObj obj_funs, fNum num_funs)
+      end
+    | _ => ([], [])
 
   fun pddlEqToIsabelleTerm (term1, term2) = Eqa (pddlVarTermToIsabelle term1, pddlVarTermToIsabelle term2 )
 
@@ -88,19 +129,27 @@ open PDDL
       end
 
   fun pddlFormulaToASTPropIsabelleObj phi =
-      case phi of Prop_atom(atom : PDDL_TERM PDDL_ATOM) =>  Atom (map_atom pddlObjConsTermToIsabelle atom)
-                 | Prop_not(prop: PDDL_TERM PDDL_PROP) =>  Not (pddlFormulaToASTPropIsabelleObj prop)
-                 | Prop_and(propList: PDDL_TERM PDDL_PROP list) => bigAnd (map pddlFormulaToASTPropIsabelleObj propList)
-                 | Prop_or(propList: PDDL_TERM PDDL_PROP list) => bigOr (map pddlFormulaToASTPropIsabelleObj propList)
-                 | _ => Bot (*Fluents and quantifiers shall invalidate the problem*)
+    case phi of 
+        Prop_atom(atom : PDDL_TERM PDDL_ATOM) =>  Atom (map_atom pddlObjConsTermToIsabelle atom)
+      | Prop_not(prop: PDDL_TERM PDDL_PROP) =>  Not (pddlFormulaToASTPropIsabelleObj prop)
+      | Prop_and(propList: PDDL_TERM PDDL_PROP list) => bigAnd (map pddlFormulaToASTPropIsabelleObj propList)
+      | Prop_or(propList: PDDL_TERM PDDL_PROP list) => bigOr (map pddlFormulaToASTPropIsabelleObj propList)
+      | _ => Bot (*Fluents and quantifiers shall invalidate the problem*)
 
   fun pddlPreGDToIsabelle (prob_decs: ast_problem_decs) PreGD =
-      case PreGD of SOME (prop: PDDL_TERM PDDL_PROP) => pddlFormulaToASTPropIsabelleTerm prob_decs prop
-                 | _ => Not Bot (*If we have no precondition, then it is a tautology*)
+    case PreGD of 
+      SOME (prop: PDDL_TERM PDDL_PROP) => pddlFormulaToASTPropIsabelleTerm prob_decs prop
+    | _ => Not Bot (*If we have no precondition, then it is a tautology*)
 
-  fun isProp_atom fmla = case fmla of Prop_atom(atom) => true | _ => false
+  fun isProp_atom fmla = 
+    case fmla of 
+      Prop_atom(atom) => true 
+    | _ => false
 
-  fun isNegProp_atom fmla = case fmla of Prop_not(Prop_atom(atom)) => true | _ => false
+  fun isNegProp_atom fmla = 
+    case fmla of 
+      Prop_not(Prop_atom(atom)) => true 
+    | _ => false
 
   fun strToVarAtom atom = map_atom (fn x => pddlTermToIsabelle x) atom
 
@@ -161,17 +210,16 @@ open PDDL
   fun pddlGoalToIsabelle (prob_decs: ast_problem_decs) (goal:PDDL_GOAL) = pddlFormulaToASTPropIsabelleTerm prob_decs goal
 
   fun pddlDomToIsabelleDomDecs
-                        (reqs:PDDL_REQUIRE_DEF,
-                        (types_def,
-                          (consts_def,
-                              (pred_def,
-                                (fun_def,
-                                  (actions_def,
-                                    constraints_def))))))
-                      = PDDL_Checker_Exported.DomainDecls(
-                          pddlTypesDefToIsabelle types_def,
-                          pddlPredDefToIsabelle pred_def,
-                          pddlConstsDefToIsabelle consts_def)
+      (types_def, (consts_def, (pred_def, (funs_def, actions_def)))) = 
+    let 
+      val (obj_funs, num_funs) = pddlFunsDefToIsabelleFunsfuns_def;
+    in
+      PDDL_Checker_Exported.DomainDecls(
+          pddlTypesDefToIsabelle types_def,
+          pddlConstsDefToIsabelle consts_def,
+          pddlPredDefToIsabelle pred_def,
+          obj_funs, num_funs)
+    end
   
   fun pddlProbAndDomDecsToIsaProbDecs 
                         (reqs:PDDL_REQUIRE_DEF,
@@ -275,8 +323,8 @@ val _ = case args of
 
 val _ = case args of
   [dom_file] => (
-    val parsedDom = parse_pddl_dom dom_file;
-    println("Domain parsed");
+      parse_pddl_dom dom_file;
+      println("Domain parsed")
   )
 
 val _ = OS.Process.exit(OS.Process.success)

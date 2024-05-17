@@ -96,18 +96,18 @@ subsection \<open>Abstract Syntax\<close>
 subsubsection \<open>Deeply embedded types\<close>
 type_synonym name = string
 
-datatype pred = Pred (name: name)
+datatype pred = Predicate (name: name)
 
-datatype func = Func (name: name)
+datatype func = Function (name: name)
 
 text \<open>The terms and types we use have been to reflect the BNF grammar 
   of PDDL's syntax defined by Kovacs.\<close>
 
 text \<open>Variables are identified by their names.\<close>
-datatype variable = varname: Var name
+datatype variable = varname: Variable name
 
 text \<open>Objects and constants are identified by their names.\<close>
-datatype object = name: Obj name
+datatype object = name: Object name
 
 text \<open>\<^term>\<open>symbol\<close>s correspond to variables (\<open>?variable\<close>) present
       in terms/formulas/etc. or objects declared in PDDL domains.\<close>
@@ -276,7 +276,7 @@ datatype pred_decl = PredDecl
   (predicate: pred)
   (argTs: "type list")
 
-datatype obj_fun_decl = ObjFunDecl
+datatype obj_func_decl = ObjFunDecl
   (func: func)
   (argTs: "type list")
   (rT: type)
@@ -291,7 +291,7 @@ text \<open>A domain contains the declarations of primitive types, preds,
 datatype ast_domain_decs = DomainDecls
   (types: "(name \<times> name) list") \<comment> \<open> \<open>(type, supertype)\<close> declarations. \<close>
   (preds: "pred_decl list")
-  (object_funs: "obj_fun_decl list")
+  (object_funs: "obj_func_decl list")
   (num_funs: "num_func_decl list")
   ("consts": "(object \<times> type) list")
 
