@@ -538,7 +538,7 @@ context ast_domain_decs begin
           the signature matches the types of the arguments, the arguments are well-formed,
           and the value that is being assigned is well-formed.\<close>
     fun wf_nf_upd'::"'ent nf_upd \<Rightarrow> bool" where
-    "wf_nf_upd' (NF_Upd f op as v) = (case nfs f of 
+    "wf_nf_upd' (NF_Upd op f as v) = (case nfs f of 
         None \<Rightarrow> False
       | Some Ts \<Rightarrow> 
           list_all2 is_of_type'' as Ts 
@@ -1010,9 +1010,9 @@ fun inst_of_upd'::"object term of_upd \<Rightarrow> instantiated_of_upd" where
   "inst_of_upd' (OF_Upd f args r) = (OFU f (map term_val args) (term_val (the r)))"
 
 fun inst_nf_upd'::"object term nf_upd \<Rightarrow> instantiated_nf_upd" where
-  "inst_nf_upd' (NF_Upd f op args r) = (
+  "inst_nf_upd' (NF_Upd op f args r) = (
     let args' = map term_val args
-    in NFU f op args' (nf_val r))"
+    in NFU op f args' (nf_val r))"
 
 fun inst_effect'::" ground_effect \<Rightarrow> fully_instantiated_effect" where
     "inst_effect' (Effect a d tu nu) = (
@@ -1321,13 +1321,13 @@ qed
   | "upd_nf_int_impl m Decrease args old n = (Mapping.update args (old - n) m)"
 
   fun apply_nf_upd_impl::"instantiated_nf_upd \<Rightarrow> mp_nfi \<Rightarrow> mp_nfi" where
-    "apply_nf_upd_impl (NFU n op as v) ni = (
+    "apply_nf_upd_impl (NFU op n as v) ni = (
       let f' = (case Mapping.lookup ni n of Some f' \<Rightarrow> f' | None \<Rightarrow> Mapping.empty)
       in Mapping.update n (upd_nf_int_impl f' op (map the as) (the (Mapping.lookup f' (map the as))) (the v)) ni)"
 
 fun nf_upd_defined'_impl::"mp_nfi \<Rightarrow> instantiated_nf_upd \<Rightarrow> bool" where
-  "nf_upd_defined'_impl _ (NFU _ Assign _ _) = True"
-| "nf_upd_defined'_impl ni (NFU n _ args _) = (
+  "nf_upd_defined'_impl _ (NFU Assign _ _ _) = True"
+| "nf_upd_defined'_impl ni (NFU _ n args _) = (
     case (Mapping.lookup ni n) of
       Some f' \<Rightarrow> Mapping.lookup f' (map the args) \<noteq> None
     | None \<Rightarrow> False
@@ -1343,13 +1343,13 @@ proof (rule ext; induction u)
   and op::upd_op
   and as::"object option list"
   and v::"rat option"
-  let ?m1 = "to_map_map (apply_nf_upd_impl (NFU n op as v) nfi)"
-  let ?m2 = "apply_nf_upd (NFU n op as v) (to_map_map nfi)"
+  let ?m1 = "to_map_map (apply_nf_upd_impl (NFU op n as v) nfi)"
+  let ?m2 = "apply_nf_upd (NFU op n as v) (to_map_map nfi)"
 
   have case_None: "?m1 x = None \<longleftrightarrow> ?m2 x = None"
   proof
     assume "?m1 x = None"
-    hence 1: "Mapping.lookup (apply_nf_upd_impl (NFU n op as v) nfi) x = None"
+    hence 1: "Mapping.lookup (apply_nf_upd_impl (NFU op n as v) nfi) x = None"
       by (simp add: to_map_map_None)
     hence "n \<noteq> x"
       by (cases "Mapping.lookup nfi n"; auto)
@@ -1368,7 +1368,7 @@ proof (rule ext; induction u)
     have "to_map_map nfi x = None"
       by (cases "to_map_map nfi n"; auto)
     with n
-    have "Mapping.lookup (apply_nf_upd_impl (NFU n op as v) nfi) x = None"
+    have "Mapping.lookup (apply_nf_upd_impl (NFU op n as v) nfi) x = None"
       by (cases "Mapping.lookup nfi n"; auto elim: to_map_map_NoneE)
     thus "?m1 x = None"
       by (auto intro: to_map_map_NoneI)
@@ -1418,7 +1418,7 @@ proof (rule ext; induction u)
       show ?thesis by simp
     next
       case False
-      hence "Mapping.lookup (apply_nf_upd_impl (NFU n op as v) nfi) x = Mapping.lookup nfi x"
+      hence "Mapping.lookup (apply_nf_upd_impl (NFU op n as v) nfi) x = Mapping.lookup nfi x"
         by (cases "Mapping.lookup nfi n"; auto)
       hence "?m1 x = to_map_map nfi x" by (simp add: lookup_map_values to_map_map_def)      
       with False
@@ -1537,7 +1537,7 @@ begin
     "nf_args_well_typed' f args = (case nfs f of None \<Rightarrow> False | Some Ts \<Rightarrow> list_all2 is_obj_of_type' args Ts)"
 
   fun wf_app_nf_upd'::"instantiated_nf_upd \<Rightarrow> bool" where
-      "wf_app_nf_upd' (NFU f op args v) = (
+      "wf_app_nf_upd' (NFU op f args v) = (
           list_all is_some args 
         \<and> is_some v \<and> (op = ScaleDown \<longrightarrow> the v \<noteq> (of_rat 0))
         \<and> nf_args_well_typed' f (map the args))"
@@ -1623,15 +1623,15 @@ lemma of_upd_rv_corr_impl_correct: "of_upd_rv_corr_impl M u = of_upd_rv_corr (ex
   ..
 
 fun int_defines_nf_upd_impl::"mp_nfi \<Rightarrow> instantiated_nf_upd \<Rightarrow> bool" where
-    "int_defines_nf_upd_impl _ (NFU _ Assign _ _) = True"
-  | "int_defines_nf_upd_impl ni (NFU f _ args _) = (
+    "int_defines_nf_upd_impl _ (NFU Assign _ _ _) = True"
+  | "int_defines_nf_upd_impl ni (NFU _ f args _) = (
       case Mapping.lookup ni f of 
         Some f' \<Rightarrow> Mapping.lookup f' (map the args) \<noteq> None
       | None \<Rightarrow> False)"
 
 lemma int_defines_nf_upd_impl_correct: "int_defines_nf_upd_impl nfi upd = int_defines_nf_upd (to_map_map nfi) upd"
   apply (cases upd)
-  subgoal for f op args
+  subgoal for op f args
     apply (cases "Mapping.lookup nfi f")
     subgoal by (frule to_map_map_NoneI; cases op; simp)
     subgoal by (frule to_map_map_SomeI; cases op; simp)
@@ -2145,7 +2145,7 @@ end
 
 instantiation nf_upd::("show") "show" begin
 fun shows_prec_nf_upd::"nat \<Rightarrow> 'a nf_upd \<Rightarrow> shows" where
-  "shows_prec_nf_upd n (NF_Upd f op as v) = shows ''NF_Upd '' o shows f o shows op o shows as o shows v"
+  "shows_prec_nf_upd n (NF_Upd op f as v) = shows ''NF_Upd '' o shows f o shows op o shows as o shows v"
 
 definition shows_list_nf_upd :: "'a nf_upd list \<Rightarrow> shows" where
   "shows_list_nf_upd xs = showsp_list shows_prec 0 xs"
@@ -2752,7 +2752,57 @@ definition is_obj_fun::"func \<Rightarrow> bool" where
       that always returns a result. Well-formedness checks then catch the error.
   - Should be done before.
 *)
+
+
+fun combine_effects::"'a ast_effect \<Rightarrow> 'a ast_effect \<Rightarrow> 'a ast_effect" where
+  "combine_effects (Effect a d ou nu) (Effect a' d' ou' nu') = Effect (a @ a') (d @ d') (ou @ ou') (nu @ nu')"
+
+term "string map"
+
+fun combine_conditional_effects::"('a formula \<times> 'a ast_effect) 
+  \<Rightarrow> ('a formula \<times> 'a ast_effect) 
+  \<Rightarrow> ('a formula \<times> 'a ast_effect) list" where
+  "combine_conditional_effects (pre, eff) (pre', eff') = (
+    if (pre = pre') 
+    then
+      [(pre, combine_effects eff eff')]
+    else 
+      [(pre, eff), (pre', eff')])"
+
+term Mapping.combine_with_key
+
+(*
+  Mapping.combine_with_key
+
+  1. Group effects by precondition
+    1a. Sort effects by precondition
+      1a1. Define an order on effects
+        1a1a. Define an order on formulas
+        1a1b. Lexicographic order on products
+    1b. fold ('a, 'b) list into ('a, 'b list) list
+  2. map fold ('a, 'b list) list into ('a, 'b) list
+
+*)
+(* This is highly inefficient *)
+
+definition compact_conditional_effect_list::"('a formula \<times> 'a ast_effect) list
+  \<Rightarrow> ('a formula \<times> 'a ast_effect) list" where
+  "compact_conditional_effect_list xs = (
+    Mapping.entries (foldr (\<lambda>(pre, eff) mp. Mapping.combine_with_key (Mapping.update pre eff Mapping.empty) mp) xs Mapping.empty)
+)"
+  
 end 
+
+find_theorems name: "Mapping*rep"
+
+value "Mapping.lookup (Mapping.update (1::nat) (0::nat) Mapping.empty) 1"
+
+term "set [0]"
+
+find_theorems name: "Mapping*abs"
+
+lemma "inj (mapping.rep)"
+  by (meson injI rep_inject)
 
 subsection \<open>Code Setup\<close>
 
@@ -2950,7 +3000,6 @@ fun digit_from_char::"char \<Rightarrow> nat" where
 | "digit_from_char (CHR ''7'') = 7"
 | "digit_from_char (CHR ''8'') = 8"
 | "digit_from_char (CHR ''9'') = 9"
-| "digit_from_char _ = undefined"
 
 fun nat_from_string'::"string \<Rightarrow> nat" where
   "nat_from_string' [] = 0"
@@ -3041,7 +3090,7 @@ export_code
   Predicate Function
   Either Variable Object Var Const Ent Fun PredDecl BigAnd BigOr mult_list add_list
   ObjFunDecl NumFunDecl NFun Num_Eq PDDL_Semantics.Eq PDDL_Semantics.PredAtom
-  OF_Upd NF_Upd
+  OF_Upd NF_Upd Assign
   ast_problem_decs.is_obj_fun
   ast_problem_decs.pddl_all_impl ast_problem_decs.pddl_exists_impl
   formula.Bot Effect ast_action_schema.Action_Schema
