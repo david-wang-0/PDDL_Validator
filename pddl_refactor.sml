@@ -164,10 +164,10 @@ struct
   | Del of PDDL_TERM PDDL_ATOM
   | Unassign of F_HEAD
   | Assign of (F_HEAD * PDDL_F_EXP) 
-  | N_ScaleUp of (PDDL_F_EXP * PDDL_F_EXP)
-  | N_ScaleDown of (PDDL_F_EXP * PDDL_F_EXP)
-  | N_Increase of (PDDL_F_EXP * PDDL_F_EXP)
-  | N_Decrease of (PDDL_F_EXP * PDDL_F_EXP)
+  | N_ScaleUp of (F_HEAD * PDDL_F_EXP)
+  | N_ScaleDown of (F_HEAD * PDDL_F_EXP)
+  | N_Increase of (F_HEAD * PDDL_F_EXP)
+  | N_Decrease of (F_HEAD * PDDL_F_EXP)
   | EFF_And of PDDL_EFFECT list
   | EFF_Cond of (PDDL_FORM * PDDL_EFFECT)
   | EFF_All of PDDL_VAR PDDL_TYPED_LIST * PDDL_EFFECT

@@ -111,7 +111,7 @@ open PDDL
   fun pddlObjDefToIsabelle (objs: PDDL_OBJ_DEF): (object * typea) list= 
     flatMapTypedList1 pddlObjConsToIsabelleObject pddlTypeToIsabelleType objs
 
-  fun pddlAtomToIsabelleAtom (atom: PDDL_TERM PDDL_ATOM) = 
+  fun pddlAtomToIsabellePred (atom: PDDL_TERM PDDL_ATOM) = 
     case atom of 
       PDDL_Pred (name, ts) => Pred (Predicate (stringToIsabelle name), map pddlTermToIsabelleTerm ts)
     | PDDL_Pred_Eq (t1, t2)  => Eqa (pddlTermToIsabelleTerm t1, pddlTermToIsabelleTerm t2)
@@ -163,33 +163,59 @@ open PDDL
   fun pddlFHeadToIsabelleFHead ((f, args): F_HEAD): (func * symbol term list) = 
     (Function (stringToIsabelle f), map pddlTermToIsabelleTerm args)
 
+  fun opAndFHeadAndExpToIsaNfUpd (op: upd_op) (h: F_HEAD) (v: PDDL_F_EXP): symbol term nf_upd =
+    NF_Upd (flat4 (Assign, flatl3 (pddlFHeadToIsabelleFHead h, pddlFExpToIsabelleNFluent v)))
+
+  val ofUpdToEff =
+    (fn v => Effect ([], [], [v], []))
+
+  val nfUpdToEff =
+    (fn v => Effect ([], [], [], [v]))
+
+  datatype ('a, 'b) either = 
+    Left of 'a
+  | Right of 'b
+  
+  fun pddlAssignToIsabelleUpd (h: F_HEAD) (v: PDDL_F_EXP): symbol term ast_effect =
+    case v of
+      (F_Head (rh, rts)) => 
+        if (is_obj_fun rh) then 
+          ofUpdToEff (OF_Upd (flatl3 (pddlFHeadToIsabelleFHead h, SOME (pddlTermToIsabelleTerm (FUN_TERM (rh, rts))))))
+        else
+          nfUpdToEff (opAndFHeadAndExpToIsaNfUpd Assign h (F_Head (rh, rts)))
+    | v => nfUpdToEff (opAndFHeadAndExpToIsaNfUpd Assing h v)
+
   fun pddlEffToIsabelleCondEffList 
       (prob_decs: ast_problem_decs) (eff: PDDL_EFFECT option): 
         (symbol term atom formula * symbol term ast_effect) list = 
     let 
-    val f1: PDDL_EFFECT -> (symbol term atom formula * symbol term ast_effect) list =
-      (fn eff => case eff of
-        Add p => (Effect ([pddlAtomToIsabelleAtom p], [], [], []))
-      | Del p => (Effect ([], [pddlAtomToIsabelleAtom p], [], []))
-      | Unassign h => (Effect ([], [], [OF_Upd (flatl3 (pddlFHeadToIsabelleFHead h, None))], []))
-      | Assign h v => (
-
-      )
-      | N_ScaleUp of (PDDL_F_EXP * PDDL_F_EXP)
-      | N_ScaleDown of (PDDL_F_EXP * PDDL_F_EXP)
-      | N_Increase of (PDDL_F_EXP * PDDL_F_EXP)
-      | N_Decrease of (PDDL_F_EXP * PDDL_F_EXP)
-      | EFF_And of PDDL_EFFECT list
-      | EFF_Cond of (PDDL_FORM * PDDL_EFFECT)
-      | EFF_All of PDDL_VAR PDDL_TYPED_LIST * PDDL_EFFECT
-      )
+      fun f1 (eff: PDDL_EFFECT): symbol term ast_effect =
+        (case eff of
+          Add p => Effect ([pddlAtomToIsabelleAtom p], [], [], [])
+        | Del p => Effect ([], [pddlAtomToIsabelleAtom p], [], [])
+        | Unassign h => ofUpdToEff (OF_Upd (flatl3 (pddlFHeadToIsabelleFHead h, NONE)))
+        | Assign (h, v) => pddlAssignToIsabelleUpd h v 
+        | N_ScaleUp (h, v) => nfUpdToEff (opAndFHeadAndExpToIsaNfUpd ScaleUp h v)
+        | N_ScaleDown (h, v) => nfUpdToEff (opAndFHeadAndExpToIsaNfUpd ScaleDown h v)
+        | N_Increase (h, v) => nfUpdToEff (opAndFHeadAndExpToIsaNfUpd Increase h v)
+        | N_Decrease (h, v) => nfUpdToEff (opAndFHeadAndExpToIsaNfUpd Decrease h v)
+        | EFF_And _ => exit_fail "EFF_And does not result in a simple effect"
+        | EFF_Cond _ => exit_fail "EFF_Cond does not result in a simple effect"
+        | EFF_All _ => exit_fail "EFF_All does not result in a simpl_effect"
+        )
+      and f2 (eff: PDDL_EFFECT): (symbol term atom formula * symbol term ast_effect) list =
+        (case eff of
+          EFF_And effs        => exit_fail "EFF_And does not result in a simple effect"
+        | EFF_Cond (pre, eff) => exit_fail "EFF_Cond does not result in a simple effect"
+        | EFF_All (vts, eff)  => exit_fail "EFF_All does not result in a simpl_effect"
+        | eff       => [(Not Bot, f1)]
+        ); (* there are some syntactical restrictions to effects *)
     in
       case eff of 
-        SOME (eff: PDDL_EFFECT) => f1 eff
-      | _                       => (Effect [])
+        SOME (eff: PDDL_EFFECT) => f2 eff
+      | _                       => []
     end
-  fun pddlEffToIsabelleEff 
-
+  
   fun pddlActDefBodyToIsabelle 
       (prob_decs: ast_problem_decs) 
       (pre: PDDL_PRE_GD option, 

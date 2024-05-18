@@ -193,7 +193,8 @@ text \<open>An effect modifies the objects for which a pred holds as well
       return value for a function application.\<close>
 
 datatype (ent: 'ent) of_upd = OF_Upd func "'ent list" (ret_val: "'ent option")
-datatype (ent: 'ent) nf_upd = NF_Upd func upd_op "'ent list" "'ent num_fluent"
+datatype (ent: 'ent) nf_upd = NF_Upd upd_op func "'ent list" "'ent num_fluent"
+(* replace the operator with cases in a datatype? *)
 
 datatype (ent: 'ent) ast_effect = 
   Effect  (adds: "('ent predicate) list") 
@@ -232,7 +233,7 @@ text \<open>The types used to model fully instantiated effects. \<open>adds\<clo
 
       This decision simplifies the well-formedness checks.\<close>
 datatype instantiated_of_upd = OFU func "object option list" (return_value: "object option")
-datatype instantiated_nf_upd = NFU func upd_op "object option list" "rat option"
+datatype instantiated_nf_upd = NFU upd_op func "object option list" "rat option"
 
 datatype fully_instantiated_effect =
   Eff "(object predicate option) list"
@@ -895,7 +896,7 @@ begin
           the signature matches the types of the arguments, the arguments are well-formed,
           and the value that is being assigned is well-formed.\<close>
     fun wf_nf_upd::"'ent nf_upd \<Rightarrow> bool" where
-    "wf_nf_upd (NF_Upd f op as v) = (case num_fun_sig f of 
+    "wf_nf_upd (NF_Upd op f as v) = (case num_fun_sig f of 
         None \<Rightarrow> False
       | Some Ts \<Rightarrow> 
           list_all2 is_of_type as Ts 
@@ -1161,9 +1162,9 @@ text \<open>Important: thinking in terms of conditional lists of effects vs filt
   fun inst_nf_upd::"world_model
     \<Rightarrow> object term nf_upd
     \<Rightarrow> instantiated_nf_upd" where
-    "inst_nf_upd M (NF_Upd f op args t) = (
+    "inst_nf_upd M (NF_Upd op f args t) = (
       let args' = map (term_val M) args
-      in NFU f op args' (nf_val M t))"
+      in NFU op f args' (nf_val M t))"
   
   fun inst_effect :: "world_model \<Rightarrow> ground_effect \<Rightarrow> fully_instantiated_effect" where
     "inst_effect M (Effect a d tu nu) = (
@@ -1195,7 +1196,7 @@ text \<open>Important: thinking in terms of conditional lists of effects vs filt
   fun apply_nf_upd::"instantiated_nf_upd
     \<Rightarrow> numeric_function_interpretation
     \<Rightarrow> numeric_function_interpretation" where
-    "apply_nf_upd (NFU n op as v) ni = (
+    "apply_nf_upd (NFU op n as v) ni = (
       let f' = (case ni n of Some f' \<Rightarrow> f' | None \<Rightarrow> Map.empty)
       in ni(n \<mapsto> (upd_nf_int f' op (map the as) (the (f' (map the as))) (the v))))"
 
@@ -1275,7 +1276,7 @@ text \<open>Important: thinking in terms of conditional lists of effects vs filt
   text \<open>An update to a numeric fluent is well-formed, if the arguments are 
         defined and well-typed, and the return value is defined.\<close>
   fun wf_app_nf_upd::"instantiated_nf_upd \<Rightarrow> bool" where
-    "wf_app_nf_upd (NFU f op args v) = (
+    "wf_app_nf_upd (NFU op f args v) = (
         list_all is_some args 
       \<and> is_some v \<and> (op = ScaleDown \<longrightarrow> the v \<noteq> (of_rat 0))
       \<and> nf_args_well_typed f (map the args))"
@@ -1290,11 +1291,11 @@ text \<open>Important: thinking in terms of conditional lists of effects vs filt
   text \<open>Non-interference of updates to functions is important, since we could obtain lists
         of effects which make no sense.\<close>
   fun int_nf_upds where
-    "int_nf_upds (NFU f op as v) (NFU f' op' as' v') =
+    "int_nf_upds (NFU op f as v) (NFU op' f' as' v') =
     (f = f \<and> as = as' \<and> (op \<noteq> op' \<or> (op = Assign \<and> v \<noteq> v')))"
   
   fun non_int_nf_upds where
-    "non_int_nf_upds (NFU f op as v) (NFU f' op' as' v') = 
+    "non_int_nf_upds (NFU op f as v) (NFU op' f' as' v') = 
       (f \<noteq> f \<or> as \<noteq> as' \<or> (op = op' \<and> (op \<noteq> Assign \<or> v = v')))"
 
   lemma "(\<not>int_nf_upds n n') = non_int_nf_upds n n'"
@@ -1362,8 +1363,8 @@ text \<open>Important: thinking in terms of conditional lists of effects vs filt
         of a list of actions is sufficient.\<close>
 
   fun int_defines_nf_upd::"numeric_function_interpretation \<Rightarrow> instantiated_nf_upd \<Rightarrow> bool" where
-    "int_defines_nf_upd _ (NFU _ Assign _ _) = True"
-  | "int_defines_nf_upd ni (NFU f _ args _) = (
+    "int_defines_nf_upd _ (NFU Assign f _ _) = True"
+  | "int_defines_nf_upd ni (NFU _ f args _) = (
       case ni f of 
         Some f' \<Rightarrow> f' (map the args) \<noteq> None
       | None \<Rightarrow> False)"
@@ -3000,7 +3001,7 @@ begin
                 "int_defines_nf_upd ni nu"
           shows "wf_nf_int (apply_nf_upd nu ni)" (is "wf_nf_int ?ni'")
   proof (cases nu)
-    case [simp]: (NFU n op as v)
+    case [simp]: (NFU op n as v)
     from \<open>wf_app_nf_upd nu\<close>
     obtain Ts where
       "num_fun_sig n = Some Ts" 
@@ -3106,8 +3107,8 @@ begin
   proof -
     from assms
     obtain n op as v n' op' as' v' where
-      [simp]: "nu = NFU n op as v"
-      "nu' = NFU n' op' as' v'"
+      [simp]: "nu = NFU op n as v"
+      "nu' = NFU op' n' as' v'"
       by (cases nu; cases nu'; simp)
     from \<open>int_defines_nf_upd ni nu\<close>
     have 1: "op \<noteq> Assign \<Longrightarrow> (\<exists>f. ni n = Some f \<and> f (map the as) \<noteq> None)" by (cases op; cases "ni n"; auto)
