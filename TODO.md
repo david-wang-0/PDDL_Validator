@@ -1,8 +1,11 @@
  
 - Define datatypes and synonyms for domains, problems, etc.
     - [ ] ~~Primitive types can be changed from wrappers around strings to some sum type~~
-    - [ ] Should PDDL_Atom really have a type parameter?
+    - [x] Should PDDL_Atom really have a type parameter?
+        - Yes, because initial assignments are predicates of object, while formulas have atoms of term
+        - PDDL_FORMULAS do not need a parameter
 - Implement conversion from ML types to Isabelle types
+    - [ ] Is there some existing function that converts strings to rational numbers?
     - The assignment must be disambiguated after the function declarations have been parsed and proven well-formed.
         - This can be assumed, since the domain and problem declarations must habe been proven well-formed by the time action schemas are converted.
     - Domain declarations

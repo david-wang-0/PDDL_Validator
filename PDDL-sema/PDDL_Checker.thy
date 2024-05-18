@@ -359,7 +359,7 @@ context ast_domain_decs begin
 
   text \<open>Implementation of the signatures for functions.\<close>
   definition obj_fun_sig'::"(func, (type list \<times> type)) mapping" where
-    "obj_fun_sig' = Mapping.of_alist (map (\<lambda>ObjFunDecl f ts t \<Rightarrow> (f, (ts, t))) (object_funs DD))"
+    "obj_fun_sig' = Mapping.of_alist (map (\<lambda>ObjFunDecl f ts t \<Rightarrow> (f, (ts, t))) (obj_funs DD))"
   
   definition "ofs_impl = Mapping.lookup obj_fun_sig'"
     
@@ -1982,31 +1982,7 @@ definition "wf_of_int_impl oi = wf_of_int'' of_type_impl ofs_impl objT_impl (Map
      wf_of_int_refine_correct[simplified wf_of_int_refine_def]
      wf_nf_int_refine_correct[simplified wf_nf_int_refine_def]
       apply (subst objT_impl_correct)
-    ..
-(* 
-  text \<open>We refine the typecheck to use the mapping\<close>
-
-  definition "is_obj_of_type_impl stg mp n T = (
-    case Mapping.lookup mp n of None \<Rightarrow> False | Some oT \<Rightarrow> of_type_impl stg oT T
-  )"
-
-  lemma is_obj_of_type_impl_correct[simp]:
-    "is_obj_of_type_impl STG mp_objT = is_obj_of_type"
-    apply (intro ext)
-    apply (auto simp: is_obj_of_type_impl_def is_obj_of_type_def of_type_impl_correct split: option.split)
-    done
-  text \<open>Instantiating actions will yield well-founded effects.
-    Corollary of @{thm wf_instantiate_action_schema}.\<close>
-  lemma wf_effect_inst_weak:
-    fixes a args
-    defines "ai \<equiv> instantiate_action_schema a args"
-    assumes A: "action_params_match a args"
-      "wf_action_schema a"
-    shows "wf_effect_inst (effect ai)"
-    using wf_instantiate_action_schema[OF A] unfolding ai_def[symmetric]
-    by (cases ai) (auto simp: wf_effect_inst)
-  find_theorems name: "wf*effe" *)
-
+    .. 
 end \<comment> \<open>Context of \<open>ast_problem\<close>\<close>
 
 
@@ -2607,6 +2583,7 @@ lemma check_wf_types_return_iff[return_iff]: "check_wf_types DD = Inr () \<longl
 definition "check_wf_domain_decs DD \<equiv> do {
   check_wf_types DD;
   check (distinct (map (pred_decl.predicate) (preds DD))) (ERRS ''Duplicate pred declaration'');
+  check (distinct (map OFName (obj_funs DD) @ map NFName (num_funs DD))) (ERRS ''Duplicate function declaration'');
   check_all_list (ast_domain_decs.wf_pred_decl DD) (preds DD) ''Malformed pred declaration'' (shows o pred.name o pred_decl.predicate);
   check (distinct (map fst (consts DD))) (ERRS  ''Duplicate constant declaration'');
   check (\<forall>(n,T)\<in>set (consts DD). ast_domain_decs.wf_type DD T) (ERRS ''Malformed type'')
@@ -2746,6 +2723,37 @@ proof -
         valid_plan_def)
 qed
 
+subsubsection \<open>TODO\<close>
+context ast_problem_decs
+begin
+
+definition "object_function_names = set (map OFName (obj_funs DD))"
+
+definition "numeric_function_names = set (map NFName (num_funs DD))"
+
+lemma (in wf_problem_decs) f_exclusively_numeric_or_object: 
+  "f \<notin> numeric_function_names \<or> f \<notin> object_function_names"
+proof (cases "f \<in> numeric_function_names")
+  case True
+  then show ?thesis unfolding numeric_function_names_def object_function_names_def
+    using wf_problem_decs unfolding wf_problem_decs_def wf_domain_decs_def
+    by auto
+next
+  case False
+  then show ?thesis by simp
+qed
+
+definition is_obj_fun::"func \<Rightarrow> bool" where
+  "is_obj_fun f \<equiv> f \<in> object_function_names"
+
+(* To do: 
+  - Better error message for assignment/update to undefined functions? 
+  - Currently handled implicitly? Disambiguation could be implemented in a manner
+      that always returns a result. Well-formedness checks then catch the error.
+  - Should be done before.
+*)
+end 
+
 subsection \<open>Code Setup\<close>
 
 text \<open>In this section, we set up the code generator to generate verified
@@ -2810,6 +2818,8 @@ lemmas wf_problem_decs_code =
   ast_problem_decs.nf_vars_impl.simps
   ast_problem_decs.mp_objT_def
   ast_problem_decs.objT_impl_def
+  ast_problem_decs.is_obj_fun_def
+  ast_problem_decs.object_function_names_def
 
 declare wf_problem_decs_code[code]
 
@@ -2894,7 +2904,6 @@ lemmas check_code =
 
 declare check_code[code]
 
-subsubsection \<open>Setup for Containers Framework\<close>
 
 subsubsection \<open>More Efficient Distinctness Check for Linorders\<close>
 (* TODO: Can probably be optimized even more. *)
@@ -2917,9 +2926,101 @@ lemma [code_unfold]: "distinct = distinct_ds"
   apply (auto simp: sorted_no_stutter_eq_distinct)
   done
 
-subsubsection \<open>Code Generation\<close>
+value "10::int"
+
+value "00005.4::rat"
+
+find_theorems name: "Enum"
+
+value "(CHR ''1'')"
 
 
+print_syntax 
+
+find_consts name: "_constify"
+
+fun digit_from_char::"char \<Rightarrow> nat" where
+  "digit_from_char (CHR ''0'') = 0"
+| "digit_from_char (CHR ''1'') = 1"
+| "digit_from_char (CHR ''2'') = 2"
+| "digit_from_char (CHR ''3'') = 3"
+| "digit_from_char (CHR ''4'') = 4"
+| "digit_from_char (CHR ''5'') = 5"
+| "digit_from_char (CHR ''6'') = 6"
+| "digit_from_char (CHR ''7'') = 7"
+| "digit_from_char (CHR ''8'') = 8"
+| "digit_from_char (CHR ''9'') = 9"
+| "digit_from_char _ = undefined"
+
+fun nat_from_string'::"string \<Rightarrow> nat" where
+  "nat_from_string' [] = 0"
+| "nat_from_string' (x#xs) = digit_from_char x + nat_from_string' xs"
+
+fun nfs1::"string \<Rightarrow> nat \<Rightarrow> nat" where
+  "nfs1 [] acc = acc"
+| "nfs1 (x#xs) acc = nfs1 xs (10 * acc + digit_from_char x)"
+
+definition nat_from_string::"string \<Rightarrow> nat" where
+  "nat_from_string s \<equiv> nfs1 s 0"
+
+fun int_from_string::"string \<Rightarrow> int" where
+  "int_from_string (CHR ''-'' # n) = - (nat_from_string n)" 
+| "int_from_string n = nat_from_string n"
+
+definition pos_int_from_string::"string \<Rightarrow> int" where
+  "pos_int_from_string = nat_from_string"
+
+fun wf_digit::"char \<Rightarrow> bool" where
+  "wf_digit (CHR ''0'') = True"
+| "wf_digit (CHR ''1'') = True"
+| "wf_digit (CHR ''2'') = True"
+| "wf_digit (CHR ''3'') = True"
+| "wf_digit (CHR ''4'') = True"
+| "wf_digit (CHR ''5'') = True"
+| "wf_digit (CHR ''6'') = True"
+| "wf_digit (CHR ''7'') = True"
+| "wf_digit (CHR ''8'') = True"
+| "wf_digit (CHR ''9'') = True"
+| "wf_digit _ = False"
+
+fun wf_int::"string \<Rightarrow> bool" where
+  "wf_int (CHR ''-'' # s) = list_all wf_digit s"
+| "wf_int s = list_all wf_digit s"
+
+definition "wf_dec = list_all wf_digit"
+
+fun reverse'::"'a list \<Rightarrow> 'a list \<Rightarrow> 'a list" where
+  "reverse' [] acc = acc"
+| "reverse' (x#xs) acc = reverse' xs (x#acc)"
+
+definition "reverse xs \<equiv> reverse' xs []"
+
+fun trim'::"string \<Rightarrow> string" where
+  "trim' (CHR ''0'' # s) = s"
+| "trim' s = s"
+
+definition "trim \<equiv> reverse o trim' o reverse"
+
+definition rat_from_strings'::"string \<Rightarrow> string \<Rightarrow> rat" where
+  "rat_from_strings' i d =  (
+  let
+    td = trim d;
+    l = length td
+  in 
+    Fract ((pos_int_from_string i) * (10 ^ l)) (pos_int_from_string td))"
+
+fun rat_from_strings::"string \<Rightarrow> string option \<Rightarrow> rat" where
+  "rat_from_strings i None = rat_from_strings' i ''''"
+| "rat_from_strings i (Some d) = rat_from_strings' i d"
+
+(* TODO: prove correct *)
+definition mult_list::"'a num_fluent list \<Rightarrow> 'a num_fluent" where
+  "mult_list l = foldr Mult l (Num 1)"
+
+definition add_list::"'a num_fluent list \<Rightarrow> 'a num_fluent" where
+  "add_list l = foldr Add l (Num 0)"
+
+subsubsection \<open>Setup for Containers Framework\<close>
 derive (eq) ceq rat pred func variable object symbol "term" num_fluent num_comp 
   predicate atom formula ast_effect instantiated_nf_upd instantiated_of_upd 
 derive (linorder) compare rat 
@@ -2938,13 +3039,15 @@ print_derives
 export_code
   nat_of_integer integer_of_nat Inl Inr 
   Predicate Function
-  Either Variable Object Var Const PredDecl BigAnd BigOr
-  ObjFunDecl NumFunDecl PDDL_Semantics.Eq  Ent Fun NFun
+  Either Variable Object Var Const Ent Fun PredDecl BigAnd BigOr mult_list add_list
+  ObjFunDecl NumFunDecl NFun Num_Eq PDDL_Semantics.Eq PDDL_Semantics.PredAtom
+  OF_Upd NF_Upd
+  ast_problem_decs.is_obj_fun
   ast_problem_decs.pddl_all_impl ast_problem_decs.pddl_exists_impl
-  formula.Not formula.Bot Effect ast_action_schema.Action_Schema
+  formula.Bot Effect ast_action_schema.Action_Schema
   map_atom Domain Problem DomainDecls ProbDecls PAction
   valuation term_val_impl ast_domain.apply_effect_impl
-  check_all_list check_wf_domain check_plan 
+  check_all_list check_wf_domain check_plan rat_from_strings
   String.explode String.implode ast_domain.non_int_nf_upd_list check_all_list_index
   in SML
   module_name PDDL_Checker_Exported

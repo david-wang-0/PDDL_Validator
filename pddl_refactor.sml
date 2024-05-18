@@ -98,6 +98,7 @@ struct
 
   type PDDL_FUN = string
 
+  (* Parsed types in the domain *)
 
   (* Constants and types *)
 
@@ -113,9 +114,11 @@ struct
 
   type PDDL_PREDS_DEF = ATOMIC_FORM_SKEL list
 
+  type F_HEAD = (PDDL_FUN * PDDL_TERM list)
+
   datatype PDDL_TERM = OBJ_CONS_TERM of PDDL_OBJ_CONS
                        | VAR_TERM of PDDL_VAR
-                       | FUN_TERM of (PDDL_FUN * PDDL_TERM list)
+                       | FUN_TERM of F_HEAD
   
   (* Functions *)
   type 'a FUN_TYPED_LIST = (('a list) * PDDL_FUN_TYPE) list
@@ -124,11 +127,12 @@ struct
 
   type PDDL_FUNS_DEF = ATOMIC_FUN_SKELETON FUN_TYPED_LIST (* good *)
 
+  (* other things *)
   type RAT = string * string option
 
   datatype PDDL_F_EXP = 
-    Num of RAT
-  | F_Head of (PDDL_FUN * PDDL_TERM list)
+    PDDL_Num of RAT
+  | F_Head of F_HEAD
   | PDDL_Minus of (PDDL_F_EXP * PDDL_F_EXP)
   | PDDL_Div of (PDDL_F_EXP * PDDL_F_EXP)
   | PDDL_Neg of PDDL_F_EXP
@@ -136,53 +140,55 @@ struct
   | PDDL_Plus of PDDL_F_EXP list
 
   datatype PDDL_F_COMP = 
-    PDDL_Lt of (PDDL_F_EXP * PDDL_F_EXP)
-  | PDDL_Le of (PDDL_F_EXP * PDDL_F_EXP)
-  | PDDL_Gt of (PDDL_F_EXP * PDDL_F_EXP)
-  | PDDL_Ge of (PDDL_F_EXP * PDDL_F_EXP)
+    PDDL_Num_Lt of (PDDL_F_EXP * PDDL_F_EXP)
+  | PDDL_Num_Le of (PDDL_F_EXP * PDDL_F_EXP)
+  | PDDL_Num_Eq of (PDDL_F_EXP * PDDL_F_EXP)
+  | PDDL_Num_Gt of (PDDL_F_EXP * PDDL_F_EXP)
+  | PDDL_Num_Ge of (PDDL_F_EXP * PDDL_F_EXP)
 
   datatype 't PDDL_ATOM = 
     PDDL_Pred of (string * 't list)
-  | PDDL_Eq of ('t * 't)
+  | PDDL_Pred_Eq of ('t * 't)
 
-  datatype 't PDDL_FORM =
-    PDDL_Form_Atom of 't PDDL_ATOM
+  datatype PDDL_FORM =
+    PDDL_Form_Atom of PDDL_TERM PDDL_ATOM
   | PDDL_Form_Comp of PDDL_F_COMP
-  | PDDL_Not of 't PDDL_FORM
-  | PDDL_And of 't PDDL_FORM list
-  | PDDL_Or of 't PDDL_FORM list
-  | PDDL_All of PDDL_VAR PDDL_TYPED_LIST * 't PDDL_FORM
-  | PDDL_Exists of PDDL_VAR PDDL_TYPED_LIST * 't PDDL_FORM
+  | PDDL_Not of PDDL_FORM
+  | PDDL_And of PDDL_FORM list
+  | PDDL_Or of PDDL_FORM list
+  | PDDL_All of PDDL_VAR PDDL_TYPED_LIST * PDDL_FORM
+  | PDDL_Exists of PDDL_VAR PDDL_TYPED_LIST * PDDL_FORM
 
   datatype PDDL_EFFECT = 
     Add of PDDL_TERM PDDL_ATOM
   | Del of PDDL_TERM PDDL_ATOM
-  | Unassign of PDDL_TERM
-  | Assign of (PDDL_TERM * PDDL_TERM) 
+  | Unassign of F_HEAD
+  | Assign of (F_HEAD * PDDL_F_EXP) 
   | N_ScaleUp of (PDDL_F_EXP * PDDL_F_EXP)
   | N_ScaleDown of (PDDL_F_EXP * PDDL_F_EXP)
   | N_Increase of (PDDL_F_EXP * PDDL_F_EXP)
   | N_Decrease of (PDDL_F_EXP * PDDL_F_EXP)
   | EFF_And of PDDL_EFFECT list
-  | EFF_Cond of (PDDL_TERM PDDL_ATOM PDDL_FORM * PDDL_EFFECT)
+  | EFF_Cond of (PDDL_FORM * PDDL_EFFECT)
   | EFF_All of PDDL_VAR PDDL_TYPED_LIST * PDDL_EFFECT
 
   (* To do: Check if the first parser in the alternative has higher precedence.
     If it does not, then the p_effect parser can be ambiguous for N_Assign.*)
 
   (* Actions *)
-  type PDDL_PRE_GD = PDDL_TERM PDDL_ATOM PDDL_FORM
+  type PDDL_PRE_GD = PDDL_FORM
 
-  type PDDL_ACTION_DEF_BODY = (PDDL_PRE_GD option) * (PDDL_EFFECT option)
+  type PDDL_ACTION_DEF_BODY = (PDDL_PRE_GD option * PDDL_EFFECT option)
 
   type PDDL_ACTION_SYMBOL = string
 
-  type PDDL_ACTION = PDDL_ACTION_SYMBOL *
-                          (PDDL_VAR PDDL_TYPED_LIST *
-                                     PDDL_ACTION_DEF_BODY)
+  type PDDL_ACTION = (PDDL_ACTION_SYMBOL * 
+                        PDDL_VAR PDDL_TYPED_LIST *
+                          PDDL_ACTION_DEF_BODY)
 
   type PDDL_ACTIONS_DEF = (PDDL_ACTION list) (* good *)
 
+  (* The actual domain *)
   type PDDL_DOMAIN = (PDDL_TYPES_DEF option * 
                         PDDL_CONSTS_DEF option * 
                           PDDL_PREDS_DEF option * 
@@ -190,11 +196,23 @@ struct
                               PDDL_ACTIONS_DEF)
 
 
+  (* Parsed types in the problem *)
   datatype PDDL_INIT =
     True_Pred of PDDL_OBJ_CONS PDDL_ATOM
   | False_Pred of PDDL_OBJ_CONS PDDL_ATOM
   | Init_Num_Func_Asmt of (PDDL_FUN * PDDL_OBJ_CONS list * RAT)
   | Init_Obj_Func_Asmt of (PDDL_FUN * PDDL_OBJ_CONS list * PDDL_OBJ_CONS)
+
+  
+  type PDDL_OBJ_DEF = PDDL_OBJ_CONS PDDL_TYPED_LIST
+
+  type PDDL_INIT = PDDL_INIT list
+
+  type PDDL_GOAL = PDDL_FORM
+
+  type PDDL_PROBLEM = (PDDL_OBJ_DEF option *
+                        PDDL_INIT *
+                          PDDL_GOAL)
 
   structure RTP = TokenParser (PDDLDef)
   open RTP
@@ -275,12 +293,12 @@ struct
   val number = dec_num ?? "d value"
 
   val f_head = (in_paren(function_symbol && repeat term)
-                || function_symbol wth (fn s => (s, []))) wth F_Head ?? "f_head"
+                || function_symbol wth (fn s => (s, []))) ?? "f_head"
 
   fun repeat2 p = p && repeat1 p wth op::
 
-  val f_exp = fix (fn f => dec_num wth Num 
-              || f_head
+  val f_exp = fix (fn f => dec_num wth PDDL_Num 
+              || f_head wth F_Head
               || in_paren(pddl_reserved "-" >> f) wth PDDL_Neg
               || in_paren(pddl_reserved "-" >> f && f) wth PDDL_Minus
               || in_paren(pddl_reserved "/" >> f && f) wth PDDL_Div
@@ -288,21 +306,22 @@ struct
               || in_paren(pddl_reserved "+" >> repeat2 f) wth PDDL_Plus
               ) ?? "f_exp"
 
-  val f_comp = ((in_paren ((pddl_reserved "<") >> f_exp && f_exp)) wth PDDL_Lt
-            || (in_paren ((pddl_reserved "<=") >> f_exp && f_exp)) wth PDDL_Le
-            || (in_paren ((pddl_reserved ">") >> f_exp && f_exp)) wth PDDL_Gt
-            || (in_paren ((pddl_reserved ">=") >> f_exp && f_exp)) wth PDDL_Ge
+  val f_comp = ((in_paren ((pddl_reserved "<") >> f_exp && f_exp)) wth PDDL_Num_Lt
+            || (in_paren ((pddl_reserved "<=") >> f_exp && f_exp)) wth PDDL_Num_Le
+            || (in_paren ((pddl_reserved "=") >> f_exp && f_exp)) wth PDDL_Num_Eq
+            || (in_paren ((pddl_reserved ">") >> f_exp && f_exp)) wth PDDL_Num_Gt
+            || (in_paren ((pddl_reserved ">=") >> f_exp && f_exp)) wth PDDL_Num_Ge
             ) ?? "numeric comparison"
 
   fun atomic_formula t = ((in_paren(predicate && repeat t)
                              wth PDDL_Pred)
                          || in_paren((pddl_reserved "=") >> t && t)
-                               wth PDDL_Eq) ?? "Atomic formula"
+                               wth PDDL_Pred_Eq) ?? "Atomic formula"
 
-  (* We only use this to parse effects *)
+  (* Not used *)
   fun literal t = ((atomic_formula t) wth PDDL_Form_Atom || (in_paren(pddl_reserved "not" >> atomic_formula t)) wth PDDL_Not o PDDL_Form_Atom) ?? "literal"
 
-  val GD = fix (fn f => (atomic_formula term) wth PDDL_Form_Atom
+  val GD: PDDL_FORM pddl_parser = fix (fn f => (atomic_formula term) wth PDDL_Form_Atom
             || in_paren(pddl_reserved "not" >> f) wth PDDL_Not
             || in_paren(pddl_reserved "and" >> repeat1 f) wth PDDL_And
             || in_paren(pddl_reserved "or" >> repeat1 f) wth PDDL_Or
@@ -312,10 +331,10 @@ struct
   
   val pre_GD = GD ?? "pre GD" (* the and in the pre_GD is parsed by GD *)
 
-  val p_effect = ((in_paren (atomic_formula term) wth Add)
+  val p_effect: PDDL_EFFECT pddl_parser = ((in_paren (atomic_formula term) wth Add)
                 || (in_paren (pddl_reserved "not" >> atomic_formula term) wth Del)
-                || (in_paren (pddl_reserved "assign" >> term) wth Unassign)
-                || (in_paren (pddl_reserved "assign" >> term && term) wth Assign) (* disambiguate after the declarations of functions have beend parsed *)
+                || (in_paren (pddl_reserved "assign" >> f_head) wth Unassign)
+                || (in_paren (pddl_reserved "assign" >> f_head && f_exp) wth Assign) (* disambiguate after the declarations of functions have beend parsed *)
                 || (in_paren (pddl_reserved "scale-up" >> f_head && f_exp) wth N_ScaleUp)
                 || (in_paren (pddl_reserved "scale-down" >> f_head && f_exp) wth N_ScaleDown)
                 || (in_paren (pddl_reserved "increase" >> f_head && f_exp) wth N_Increase)
@@ -345,7 +364,7 @@ struct
   val action_def: PDDL_ACTION pddl_parser = (in_paren(pddl_reserved ":action" >>
                     action_symbol
                     && (pddl_reserved ":parameters" >> (in_paren(typed_list pddl_var)))
-                    && action_def_body)) ?? "action def"
+                    && action_def_body)) wth flat3 ?? "action def"
 
   val structure_def = (action_def (*|| durative_action_def || derived_def*) )?? "struct def"
 
@@ -360,34 +379,39 @@ struct
                                  (quantification << spaces) &&
                                  (constraints << spaces))) ?? "invariants def"
 
-  val domain = in_paren(pddl_reserved "define" >> in_paren(pddl_reserved "domain" >> pddl_name)
+  val domain: PDDL_DOMAIN pddl_parser  = in_paren(pddl_reserved "define" >> in_paren(pddl_reserved "domain" >> pddl_name)
                                                   >> (opt require_def)
                                                   >> (opt types_def)
                                                   && (opt constants_def)
                                                   && (opt predicates_def)
                                                   && (opt functions_def)
-                                                  && (repeat structure_def)) ?? "domain"
+                                                  && (repeat structure_def)) wth flat5 ?? "domain"
                                                   (*&& (repeat invariant_def)*)
 
   
   val object_declar = in_paren(pddl_reserved ":objects" >> (typed_list pddl_obj_cons))
-(* 
-  val basic_fun_term = (function_symbol 
+
+  val basic_fun_term = (function_symbol wth (fn f => (f, []))
                     || in_paren(function_symbol && repeat pddl_obj_cons)
                     ) ?? "basic function term"
 
-  val init_el = ((atomic_formula pddl_name) wth True_Pred
-                 || in_paren((pddl_reserved "not") >> atomic_formula pddl_name) wth False_Pred
-                 || in_paren((pddl_reserved "=") >> basic_fun_term && pddl_name)
-                               wth Init_Obj_Func_Asmt
-                 || in_paren((pddl_reserved "=") >> basic_fun_term && (dec_num wth Num))
-                               wth Init_Num_Func_Asmt) ?? "init element"
+  fun flatl3 ((a, b), c) = (a, b, c)
+
+  (* We do not implement the literal parser. Instead, we distinguish the true and false cases explicitly *)
+  val init_el = ((atomic_formula pddl_obj_cons) wth True_Pred
+                 || in_paren((pddl_reserved "not") >> atomic_formula pddl_obj_cons) wth False_Pred 
+                 || in_paren((pddl_reserved "=") >> basic_fun_term && pddl_obj_cons)
+                               wth (Init_Obj_Func_Asmt o flatl3)
+                 || in_paren((pddl_reserved "=") >> basic_fun_term && dec_num)
+                               wth (Init_Num_Func_Asmt o flatl3)) ?? "init element"
 
   val init = in_paren(pddl_reserved ":init" >> repeat (init_el))
 
 
   (* The rule for goals is exactly as the one in Kovacs. It is wrong, nonetheless, since a goal
-     should be only defined on GDs over objects or constants only and not terms!! *)
+     should be only defined on GDs over objects or constants only and not terms (symbols?, these used to be called terms) !! *)
+
+  (* I think the above comment applies to STRIPS planning and not ADL planning, since we need symbols for quantified goals. *)
 
   val goal = in_paren(pddl_reserved ":goal" >> pre_GD)
 
@@ -397,38 +421,20 @@ struct
 
   val metric_spec = in_paren(pddl_reserved ":metric" >> optimisation >> in_paren(metric_f_exp))
 
-  val problem = in_paren(pddl_reserved "define" >> in_paren(pddl_reserved "problem" >> pddl_name)
+  val problem: PDDL_PROBLEM pddl_parser = in_paren(pddl_reserved "define" >> in_paren(pddl_reserved "problem" >> pddl_name)
                                                 >> in_paren(pddl_reserved ":domain" >> pddl_name)
-                                                >> (opt (require_def))
-                                                  && (object_declar)
-                                                  && init
-                                                  && goal
-                                                  && opt metric_spec) ?? "problem"
+                                                >> (opt (require_def)) (* My assumption is that this will fail with an error message when the requirements are malformed *)
+                                                >> (opt object_declar)
+                                                && init
+                                                && goal
+                                                (*&& opt metric_spec*)) wth flat3 ?? "problem"
 
   val plan_action = in_paren(pddl_name && repeat pddl_obj_cons)
-  val plan = repeat plan_action *)
+  val plan = repeat plan_action
 
 end
 
 open PDDL
-
-  (* These are the data types of the objects parsed above. *)
-
-  (*Types for the domain*)
-
-
-  (* Domain seems to be good *)
-  
-  (* Types for the instance *)
-
-  type PDDL_OBJ_DEF = PDDL_OBJ_CONS PDDL_TYPED_LIST
-
-  type PDDL_INIT_EL = PDDL_OBJ_CONS PDDL_FORM
-
-  type PDDL_INIT = PDDL_INIT_EL list
-
-  type PDDL_GOAL = PDDL_TERM PDDL_ATOM PDDL_FORM
-
   type METRIC = string option
 
   (*Types for the plan*)

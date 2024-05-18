@@ -277,12 +277,12 @@ datatype pred_decl = PredDecl
   (argTs: "type list")
 
 datatype obj_func_decl = ObjFunDecl
-  (func: func)
+  (OFName: func)
   (argTs: "type list")
   (rT: type)
 
 datatype num_func_decl = NumFunDecl
-  (func: func)
+  (NFName: func)
   (argTs: "type list")
 
 text \<open>A domain contains the declarations of primitive types, preds,
@@ -291,7 +291,7 @@ text \<open>A domain contains the declarations of primitive types, preds,
 datatype ast_domain_decs = DomainDecls
   (types: "(name \<times> name) list") \<comment> \<open> \<open>(type, supertype)\<close> declarations. \<close>
   (preds: "pred_decl list")
-  (object_funs: "obj_func_decl list")
+  (obj_funs: "obj_func_decl list")
   (num_funs: "num_func_decl list")
   ("consts": "(object \<times> type) list")
 
@@ -718,7 +718,7 @@ begin
         of types and the subtype relationship are carried over from the work
         of Abdulaziz and Lammich.\<close>
   definition obj_fun_sig::"func \<rightharpoonup> (type list \<times> type)" where
-  "obj_fun_sig \<equiv> map_of (map (\<lambda>ObjFunDecl f ts t \<Rightarrow> (f, (ts, t))) (object_funs DD))"
+  "obj_fun_sig \<equiv> map_of (map (\<lambda>ObjFunDecl f ts t \<Rightarrow> (f, (ts, t))) (obj_funs DD))"
   
   definition num_fun_sig::"func \<rightharpoonup> type list" where
   "num_fun_sig \<equiv> map_of (map (\<lambda>NumFunDecl f ts \<Rightarrow> (f, ts)) (num_funs DD))"
@@ -1002,6 +1002,7 @@ end \<comment> \<open>Context fixing \<open>ty_ent\<close>\<close>
     "wf_domain_decs \<equiv>
       wf_types
     \<and> distinct (map (pred_decl.predicate) (preds DD))
+    \<and> distinct (map OFName (obj_funs DD) @ map NFName (num_funs DD))
     \<and> (\<forall>p\<in>set (preds DD). wf_pred_decl p)
     \<and> distinct (map fst (consts DD)) 
     \<and> (\<forall>(c, T) \<in> set (consts DD). wf_type T)"

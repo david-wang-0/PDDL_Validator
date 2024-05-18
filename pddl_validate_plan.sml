@@ -13,23 +13,13 @@ open PDDL
   val stringToIsabelle = IsabelleStringExplode
   fun stringListToIsabelle ss = (map stringToIsabelle ss)
 
-  fun pddlVarToIsabelle (v: PDDL_VAR) = Variable (stringToIsabelle (pddl_var_name v))
+  fun pddlVarToIsabelleVariable (v: PDDL_VAR): PDDL_Checker_Exported.variable = Variable (stringToIsabelle (pddl_var_name v))
 
-  fun pddlObjConsToIsabelle (oc: PDDL_OBJ_CONS) = Object (stringToIsabelle (pddl_obj_name oc))
+  fun pddlObjConsToIsabelleObject (oc: PDDL_OBJ_CONS): PDDL_Checker_Exported.object = Object (stringToIsabelle (pddl_obj_name oc))
 
-  fun pddlTermToIsabelle (OBJ_CONS_TERM oc) = Ent (Const (pddlObjConsToIsabelle oc))
-    | pddlTermToIsabelle (VAR_TERM v) = Ent (Var (pddlVarToIsabelle v))
-    | pddlTermToIsabelle (FUN_TERM (f, ts)) = Fun (Function (stringToIsabelle f), map pddlTermToIsabelle ts)
-
-  fun pddlVarTermToIsabelle term = 
-    case term of VAR_TERM v => pddlVarToIsabelle v
-             | _ => exit_fail ("Var expected, but object found: pddlVarTermToIsabelle " ^ (pddlObjConsTermToString term))
-
-  fun pddlObjConsTermToIsabelle term = 
-    case term of OBJ_CONS_TERM v => pddlObjConsToIsabelle v
-             | _ => exit_fail ("Object expected, but variable found: pddlObjConsTermToIsabelle " ^ (pddlVarTermToString term))
-
-  fun pddlTypeToIsabelle (type_ :PDDL_TYPE) = Either (stringListToIsabelle (map pddl_prim_type_name type_))
+  fun pddlTermToIsabelleTerm (OBJ_CONS_TERM oc) = Ent (Const (pddlObjConsToIsabelleObject oc))
+    | pddlTermToIsabelleTerm (VAR_TERM v) = Ent (Var (pddlVarToIsabelleVariable v))
+    | pddlTermToIsabelleTerm (FUN_TERM (f, ts)) = Fun (Function (stringToIsabelle f), map pddlTermToIsabelleTerm ts)
 
   fun mk_pair x y = (x,y)
   fun snd (a, b) = b
@@ -74,14 +64,14 @@ open PDDL
   fun pddlConstsDefToIsabelle (constsDefOPT: PDDL_CONSTS_DEF option) =
     case constsDefOPT of
       SOME constsDef =>
-        flatMapTypedList1 pddlObjConsToIsabelle pddlTypeToIsabelleType constsDef
+        flatMapTypedList1 pddlObjConsToIsabelleObject pddlTypeToIsabelleType constsDef
     | _ => []
 
   
   fun pddlTypedListToIsabelleSig (l: 'a PDDL_TYPED_LIST): typea list =
     flatMapTypedList (pddlTypeToIsabelleType o snd) l;
 
-  fun pddlPredToIsabelle (p: ATOMIC_FORM_SKEL) =
+  fun pddlPredDeclToIsabelle (p: ATOMIC_FORM_SKEL) =
     let 
       val (name, params) = p;
     in  
@@ -92,9 +82,16 @@ open PDDL
   fun pddlPredDefToIsabelle (pred_defOPT: PDDL_PREDS_DEF option): pred_decl list =
     case pred_defOPT of
       SOME pred_def =>
-            (map pddlPredToIsabelle pred_def)
+            (map pddlPredDeclToIsabelle pred_def)
       | _ => []
   
+
+  (* According to Kovacs, the number return type is deprecated and inferred as a default since PDDL 3.1.
+      The usual semantics (? not sure) of typed lists indicate that a type annotation applies to 
+      all preceding elements. Therefore, the numeric return type would only be inferred for functions
+      declared at the end of the list of declarations if we followed Kovac's definition. Instead, we
+      support the number return type. 
+      E.g.: in (f1 ... f2 ... - object f3. .. - number f5 ... - object f6 ...) only f3 and f6 are numeric *)
   fun pddlFunsDefToIsabelleFuns (funs_defOPT: PDDL_FUNS_DEF option): (obj_func_decl list * num_func_decl list) = 
     case funs_defOPT of
       SOME funs_def => 
@@ -110,89 +107,112 @@ open PDDL
       end
     | _ => ([], [])
 
-  fun pddlEqToIsabelleTerm (term1, term2) = Eqa (pddlVarTermToIsabelle term1, pddlVarTermToIsabelle term2 )
 
-  fun pddlEqToIsabelleObj (term1, term2) = Eqa (pddlObjConsToIsabelle term1, pddlObjConsToIsabelle term2)
+  fun pddlObjDefToIsabelle (objs: PDDL_OBJ_DEF): (object * typea) list= 
+    flatMapTypedList1 pddlObjConsToIsabelleObject pddlTypeToIsabelleType objs
 
-  fun pddlFormulaToASTPropIsabelleTerm (prob_decs: ast_problem_decs) phi =
+  fun pddlAtomToIsabelleAtom (atom: PDDL_TERM PDDL_ATOM) = 
+    case atom of 
+      PDDL_Pred (name, ts) => Pred (Predicate (stringToIsabelle name), map pddlTermToIsabelleTerm ts)
+    | PDDL_Pred_Eq (t1, t2)  => Eqa (pddlTermToIsabelleTerm t1, pddlTermToIsabelleTerm t2)
+
+  fun pddlFExpToIsabelleNFluent (exp: PDDL_F_EXP) =
+    case exp of
+      PDDL_Num (i, d) => Num (rat_from_strings (stringToIsabelle i) (Option.map stringToIsabelle d))
+    | F_Head (f, args) => NFun (Function (stringToIsabelle f), map pddlTermToIsabelleTerm args)
+    | PDDL_Neg e => pddlFExpToIsabelleNFluent (PDDL_Minus (PDDL_Num ("0", NONE), e))
+    | PDDL_Minus (e1, e2) => Sub (pddlFExpToIsabelleNFluent e1, pddlFExpToIsabelleNFluent e2) 
+    | PDDL_Div (e1, e2) => Div (pddlFExpToIsabelleNFluent e1, pddlFExpToIsabelleNFluent e2)
+    | PDDL_Times es => mult_list (map pddlFExpToIsabelleNFluent es)
+    | PDDL_Plus es => add_list (map pddlFExpToIsabelleNFluent es)
+
+  fun pddlCompToIsabelleComp (comp: PDDL_F_COMP) =
+    case comp of
+      PDDL_Num_Lt (e1, e2) => Num_Lt (pddlFExpToIsabelleNFluent e1, pddlFExpToIsabelleNFluent e2)
+    | PDDL_Num_Le (e1, e2) => Num_Le (pddlFExpToIsabelleNFluent e1, pddlFExpToIsabelleNFluent e2)
+    | PDDL_Num_Eq (e1, e2) => Num_Eq (pddlFExpToIsabelleNFluent e1, pddlFExpToIsabelleNFluent e2)
+    | PDDL_Num_Gt (e1, e2) => Num_Le (pddlFExpToIsabelleNFluent e2, pddlFExpToIsabelleNFluent e1)
+    | PDDL_Num_Ge (e1, e2) => Num_Lt (pddlFExpToIsabelleNFluent e2, pddlFExpToIsabelleNFluent e1)
+
+  val pddlVarParamsToIsabelleParams: (PDDL_VAR PDDL_TYPED_LIST) -> (PDDL_Checker_Exported.variable * typea) list =
+          flatMapTypedList1 pddlVarToIsabelleVariable pddlTypeToIsabelleType;
+
+
+  fun pddlFormToIsabelleForm (prob_decs: ast_problem_decs) (phi: PDDL_FORM) =
       let 
-        fun f1 (phi: PDDL_TERM PDDL_PROP): term atom formula = 
-          case phi of Prop_atom(atom : PDDL_TERM PDDL_ATOM) =>  Atom (map_atom pddlTermToIsabelle atom)
-                 | Prop_not(prop: PDDL_TERM PDDL_PROP) =>  Not (f1 prop)
-                 | Prop_and(propList: PDDL_TERM PDDL_PROP list) => bigAnd (map f1 propList)
-                 | Prop_or(propList: PDDL_TERM PDDL_PROP list) => bigOr (map f1 propList)
-                 | Prop_all(args: PDDL_VAR PDDL_TYPED_LIST, prop: PDDL_TERM PDDL_PROP) => pddl_all_impl prob_decs (pddlTypedListVarsTypesToIsabelle args) (f1 prop)
-                 | Prop_exists(args: PDDL_VAR PDDL_TYPED_LIST, prop: PDDL_TERM PDDL_PROP) => pddl_exists_impl prob_decs (pddlTypedListVarsTypesToIsabelle args) (f1 prop)
-                 | _ => Bot (*Fluents shall invalidate the problem*)
+        fun f1 (phi: PDDL_FORM): symbol term atom formula = case phi of 
+          PDDL_Form_Atom atom   => Atom (PredAtom (pddlAtomToIsabelleAtom atom))
+        | PDDL_Form_Comp comp   => Atom (NumComp (pddlCompToIsabelleComp comp))
+        | PDDL_Not f            => Not (f1 f)
+        | PDDL_And fs           => bigAnd (map f1 fs)
+        | PDDL_Or fs            => bigOr (map f1 fs)
+        | PDDL_All (vts, f)     => pddl_all_impl prob_decs (pddlVarParamsToIsabelleParams vts) (f1 f)
+        | PDDL_Exists (vts, f)  => pddl_exists_impl prob_decs (pddlVarParamsToIsabelleParams vts) (f1 f)
+        | _ => Bot (*Fluents shall invalidate the problem*)
       in
         f1 phi
       end
 
-  fun pddlFormulaToASTPropIsabelleObj phi =
-    case phi of 
-        Prop_atom(atom : PDDL_TERM PDDL_ATOM) =>  Atom (map_atom pddlObjConsTermToIsabelle atom)
-      | Prop_not(prop: PDDL_TERM PDDL_PROP) =>  Not (pddlFormulaToASTPropIsabelleObj prop)
-      | Prop_and(propList: PDDL_TERM PDDL_PROP list) => bigAnd (map pddlFormulaToASTPropIsabelleObj propList)
-      | Prop_or(propList: PDDL_TERM PDDL_PROP list) => bigOr (map pddlFormulaToASTPropIsabelleObj propList)
-      | _ => Bot (*Fluents and quantifiers shall invalidate the problem*)
+  fun pddlPreToIsabelleForm 
+    (prob_decs: ast_problem_decs) 
+    (pre: PDDL_PRE_GD option) = 
+      case pre of 
+        SOME (pre: PDDL_PRE_GD) => pddlFormToIsabelleForm prob_decs pre
+      | _ => Not Bot (* If we have no precondition, the precondition is always true *)
 
-  fun pddlPreGDToIsabelle (prob_decs: ast_problem_decs) PreGD =
-    case PreGD of 
-      SOME (prop: PDDL_TERM PDDL_PROP) => pddlFormulaToASTPropIsabelleTerm prob_decs prop
-    | _ => Not Bot (*If we have no precondition, then it is a tautology*)
+  fun pddlFHeadToIsabelleFHead ((f, args): F_HEAD): (func * symbol term list) = 
+    (Function (stringToIsabelle f), map pddlTermToIsabelleTerm args)
 
-  fun isProp_atom fmla = 
-    case fmla of 
-      Prop_atom(atom) => true 
-    | _ => false
+  fun pddlEffToIsabelleCondEffList 
+      (prob_decs: ast_problem_decs) (eff: PDDL_EFFECT option): 
+        (symbol term atom formula * symbol term ast_effect) list = 
+    let 
+    val f1: PDDL_EFFECT -> (symbol term atom formula * symbol term ast_effect) list =
+      (fn eff => case eff of
+        Add p => (Effect ([pddlAtomToIsabelleAtom p], [], [], []))
+      | Del p => (Effect ([], [pddlAtomToIsabelleAtom p], [], []))
+      | Unassign h => (Effect ([], [], [OF_Upd (flatl3 (pddlFHeadToIsabelleFHead h, None))], []))
+      | Assign h v => (
 
-  fun isNegProp_atom fmla = 
-    case fmla of 
-      Prop_not(Prop_atom(atom)) => true 
-    | _ => false
+      )
+      | N_ScaleUp of (PDDL_F_EXP * PDDL_F_EXP)
+      | N_ScaleDown of (PDDL_F_EXP * PDDL_F_EXP)
+      | N_Increase of (PDDL_F_EXP * PDDL_F_EXP)
+      | N_Decrease of (PDDL_F_EXP * PDDL_F_EXP)
+      | EFF_And of PDDL_EFFECT list
+      | EFF_Cond of (PDDL_FORM * PDDL_EFFECT)
+      | EFF_All of PDDL_VAR PDDL_TYPED_LIST * PDDL_EFFECT
+      )
+    in
+      case eff of 
+        SOME (eff: PDDL_EFFECT) => f1 eff
+      | _                       => (Effect [])
+    end
+  fun pddlEffToIsabelleEff 
 
-  fun strToVarAtom atom = map_atom (fn x => pddlTermToIsabelle x) atom
-
-  fun strToObjAtom atom = map_atom (fn x => pddlObjConsTermToIsabelle x) atom
-
-  fun pddlPropLiteralToIsabelleAtom lit = 
-      case lit of Prop_atom atom => Atom (strToVarAtom atom)
-               | Prop_not(Prop_atom atom) => Atom (strToVarAtom atom)
-               | _ => exit_fail "Literal expected"
-
-  fun pddlPropToASTEffIsabelle (Prop: PDDL_TERM PDDL_PROP) =
-      case Prop of Prop_atom atom => ([Atom (strToVarAtom atom)],[])
-                 | Prop_not (Prop_atom atom) => ([],[Atom (strToVarAtom atom)])
-                 | Prop_and propList
-                     => (let val adds = (List.filter isProp_atom propList);
-                             val dels = (List.filter isNegProp_atom propList);
-                         in (map pddlPropLiteralToIsabelleAtom adds, map pddlPropLiteralToIsabelleAtom dels)
-                         end)
-                 | _ => ([], [])
-
-  fun pddlCEffectToIsabelle CEff =
-      case CEff of SOME (prop: PDDL_TERM PDDL_PROP) => Effect (pddlPropToASTEffIsabelle prop)
-                 | _ => Effect ([],[])
-
-  fun actDefBodyPreToIsabelle (prob_decs: ast_problem_decs) pre = case pre of SOME (u, pre: PDDL_PRE_GD) => pddlPreGDToIsabelle prob_decs pre
-                                            | _ => Not Bot
-  fun actDefBodyEffToIsabelle eff = case eff of SOME (u, eff: C_EFFECT) => pddlCEffectToIsabelle eff
-                                            | _ => Effect ([],[])
-  fun pddlActDefBodyToIsabelle (prob_decs: ast_problem_decs) (pre, eff) = ((actDefBodyPreToIsabelle prob_decs pre), (actDefBodyEffToIsabelle eff))
+  fun pddlActDefBodyToIsabelle 
+      (prob_decs: ast_problem_decs) 
+      (pre: PDDL_PRE_GD option, 
+        eff: PDDL_EFFECT option) = 
+    (pddlPreToIsabelleForm prob_decs pre, pddlEffToIsabelleCondEffList prob_decs eff)
 
   fun pddlIsabelleActName actName = SMLCharImplode (map (fn c => if c = #"-" then #"_" else c) (SMLCharExplode actName))
 
-  fun pddlActToIsabelle (prob_decs: ast_problem_decs) (actName, (args, defBody)) =
-      Action_Schema(IsabelleStringExplode actName,
-                    pddlTypedListVarsTypesToIsabelle args,
-                    fst (pddlActDefBodyToIsabelle prob_decs defBody),
-                    snd (pddlActDefBodyToIsabelle prob_decs defBody))
+  fun pddlActToIsabelle 
+      (prob_decs: ast_problem_decs) 
+      (actName: PDDL_ACTION_SYMBOL, 
+        args: PDDL_VAR PDDL_TYPED_LIST, 
+        defBody: PDDL_ACTION_DEF_BODY) =
+    Action_Schema
+      (flat3 (stringToIsabelle actName,
+        pddlVarParamsToIsabelleParams args,
+        pddlActDefBodyToIsabelle prob_decs defBody))
 
 
-  fun pddlActionsDefToIsabelle (prob_decs: ast_problem_decs) (actsDef : PDDL_ACTION list) =
-                    (map (pddlActToIsabelle prob_decs) actsDef)
-
-  fun objDefToIsabelle (objs:PDDL_OBJ_DEF) = pddlTypedListObjsConsTypesToIsabelle objs
+  fun pddlActionsDefToIsabelle 
+      (prob_decs: ast_problem_decs) 
+      (actsDef : PDDL_ACTION list) =
+    map (pddlActToIsabelle prob_decs) actsDef
 
   fun isntFluent x = (case x of Fluent => false | _ => true)
 
@@ -209,40 +229,40 @@ open PDDL
 
   fun pddlGoalToIsabelle (prob_decs: ast_problem_decs) (goal:PDDL_GOAL) = pddlFormulaToASTPropIsabelleTerm prob_decs goal
 
-  fun pddlDomToIsabelleDomDecs
-      (types_def, (consts_def, (pred_def, (funs_def, actions_def)))) = 
+  fun pddlDomToIsabelleDomDecs 
+      (types_def: PDDL_TYPES_DEF option, 
+        consts_def: PDDL_CONSTS_DEF option, 
+        pred_def: PDDL_PREDS_DEF option, 
+        funs_def: PDDL_FUNS_DEF option, 
+        actions_def: PDDL_ACTIONS_DEF) = 
     let 
-      val (obj_funs, num_funs) = pddlFunsDefToIsabelleFunsfuns_def;
+      val (obj_funs, num_funs) = pddlFunsDefToIsabelleFuns funs_def;
     in
-      PDDL_Checker_Exported.DomainDecls(
-          pddlTypesDefToIsabelle types_def,
-          pddlConstsDefToIsabelle consts_def,
-          pddlPredDefToIsabelle pred_def,
-          obj_funs, num_funs)
+      PDDL_Checker_Exported.DomainDecls 
+       (pddlTypesDefToIsabelle types_def,
+        pddlConstsDefToIsabelle consts_def,
+        pddlPredDefToIsabelle pred_def,
+        obj_funs, 
+        num_funs)
     end
   
   fun pddlProbAndDomDecsToIsaProbDecs 
-                        (reqs:PDDL_REQUIRE_DEF,
-                        (objs: PDDL_OBJ_DEF,
-                          (init: PDDL_INIT,
-                            (goal_form: PDDL_GOAL, metric))))
-                        (dom_decs: ast_domain_decs)
-                      = PDDL_Checker_Exported.ProbDecls(
-                          dom_decs, 
-                          objDefToIsabelle objs)
+      (dom_decs: ast_domain_decs)
+      (objs: PDDL_OBJ_DEF option,
+        init: PDDL_INIT,
+        goal: PDDL_GOAL) =
+    PDDL_Checker_Exported.ProbDecls
+     (dom_decs, 
+      pddlObjDefToIsabelle objs)
   
   fun pddlDomAndProbDecsToIsaDom 
-                        (reqs:PDDL_REQUIRE_DEF,
-                        (types_def,
-                          (consts_def,
-                              (pred_def,
-                                (fun_def,
-                                  (actions_def,
-                                    constraints_def))))))
-                        (prob_decs: ast_problem_decs)
-                      = PDDL_Checker_Exported.Domain (
-                          prob_decs,
-                          pddlActionsDefToIsabelle prob_decs actions_def)
+      (prob_decs: ast_problem_decs)
+      (types_def: PDDL_TYPES_DEF option, 
+        consts_def: PDDL_CONSTS_DEF option, 
+        pred_def: PDDL_PREDS_DEF option, 
+        funs_def: PDDL_FUNS_DEF option, 
+        actions_def: PDDL_ACTIONS_DEF) =
+    PDDL_Checker_Exported.Domain (prob_decs, pddlActionsDefToIsabelle prob_decs actions_def)
 
   fun pddlProbAndIsaDomToIsabelleProb 
                           (reqs:PDDL_REQUIRE_DEF,
