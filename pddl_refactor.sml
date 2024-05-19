@@ -45,26 +45,26 @@ struct
     val commentLine    = SOME ";"
     val nestedComments = false
 
-    val identLetter    = alphaNum <|> oneOf (String.explode "_-,:;=") (*Idents can be separated with " " or \n and can contain [Aa-Zz], [0-9], "-", "_"*)
+    val identLetter    = alphaNum <|> oneOf (String.explode "_-,:;=") 
+      (*Idents can be separated with " " or \n and can contain [Aa-Zz], [0-9], "-", "_"*)
     val identStart     = identLetter
     val opStart        = fail "Operators not supported" : scanner
     val opLetter       = opStart
 
-    val reservedNames  = requirementKeywords @ ["define", "domain",
+    val reservedNames  = (requirementKeywords @ ["define", "domain",
                           ":predicates", "either", ":functions",
-                          ":types", (*"object",*)
-                          ":constants",
+                          ":types", ":constants",
                           ":action", ":parameters", ":precondition", ":effect", "-",
                           ":invariant", ":name", ":vars", ":set-constraint",
                           "=", "+", "-", "/", "*", "and", "or", "not", "forall", "exists", "number",
                           "assign", "scale-up", "scale-down", "increase", "decrease",
                           "problem", ":domain", ":init", ":objects", ":goal", ":metric", "maximize", "minimize",
-                          "undefined", "total-cost", "?"]
+                          "undefined", "total-cost", "?"])
     val reservedOpNames= []
     val caseSensitive  = false
 
   end
-
+  (* From parcom.tokparse. Not included in the exported signature. *)
   val lineComment   =
   let fun comLine _  = newLine <|> done #"\n" <|> (anyChar >> $ comLine)
   in case PDDLDef.commentLine of
@@ -81,7 +81,7 @@ struct
     val bcU = try (string st) >> repeat (not (string ed) >> anyChar) >> string ed return ()
       in if PDDLDef.nestedComments then $ bcNest else bcU
       end
-    | _ => fail "PDDL_Timesi-line comments not supported"
+    | _ => fail "Multi-line comments not supported"
   val comment        = lineComment <|> mlComment
 
   type 'a pddl_parser = ('a, SubstringMonoStreamable.elem) parser
@@ -222,21 +222,22 @@ struct
   structure RTP = TokenParser (PDDLDef)
   open RTP
 
-  fun pddl_reserved wrd = ((reserved wrd) return wrd) ?? "reserved word"
+  fun pddl_reserved wrd = ((reserved wrd) return wrd) ?? "reserved word '" ^ wrd ^ "'"
 
-  val lparen = (pddl_reserved"(" ) ?? "lparen"
-  val rparen = (pddl_reserved")" ) ?? "rparen"
+  val lparen = (char #"(") ?? "lparen"
+  val rparen = (char #")" ) ?? "rparen"
 
-  val spaces_comm = repeatSkip (space wth (fn _ => ())|| comment)
+  val spaces_comm = repeatSkip (space wth (fn _ => ()) || comment)
 
-  fun in_paren p = spaces_comm >> lparen >> spaces_comm >> p << spaces_comm << rparen << spaces_comm
+  fun in_paren p = spaces_comm >> lparen >> spaces_comm >> p << spaces_comm << rparen << spaces_comm ?? "in_paren"
 
   (* identifier ensures that the parsed identifier is not a reserved word *)
   val pddl_name = identifier ?? "pddl identifier" (*First char should be a letter*)
 
   val pddl_obj_cons = pddl_name wth PDDL_OBJ_CONS ?? "pddl object or constant"
 
-  val require_key = (foldr (fn (kw, p) => pddl_reserved kw || p) (exit_fail "Requirements are ill-defined in the source code.") requirementKeywords) ?? "require_key"
+  val require_key = 
+    (foldr (fn (kw, p) => pddl_reserved kw || p) (fail "") requirementKeywords) ?? "require_key"
 
   val require_def = (in_paren(pddl_reserved ":requirements" >> repeat1 require_key)) ?? "require_def"
 
@@ -251,10 +252,10 @@ struct
 
 
   val types_def : PDDL_TYPES_DEF pddl_parser = 
-    (in_paren(pddl_reserved ":types" >> typed_list primitive_type)) ?? "types def"
+    (in_paren (pddl_reserved ":types" >> typed_list primitive_type)) ?? "types def"
 
   val constants_def : PDDL_CONSTS_DEF pddl_parser =
-    (in_paren(pddl_reserved ":constants" >> typed_list pddl_obj_cons)) ?? "consts def"
+    (in_paren (pddl_reserved ":constants" >> typed_list pddl_obj_cons)) ?? "consts def"
 
   val pddl_var = (((pddl_reserved "?") >> pddl_name) wth (fn str => PDDL_VAR ("?" ^ str))) ?? "?var_name"
 
@@ -384,15 +385,16 @@ struct
                                  (quantification << spaces) &&
                                  (constraints << spaces))) ?? "invariants def"
 
-  val domain: PDDL_DOMAIN pddl_parser  = in_paren(pddl_reserved "define" 
-                                                  >> in_paren(pddl_reserved "domain" >> pddl_name)
-                                                  >> (opt require_def)
-                                                  >> (opt types_def)
-                                                  && (opt constants_def)
-                                                  && (opt predicates_def)
-                                                  && (opt functions_def)
-                                                  && (repeat structure_def)) wth flat5 ?? "domain"
-                                                  (*&& (repeat invariant_def)*)
+  val domain: PDDL_DOMAIN pddl_parser = 
+    in_paren (pddl_reserved "define" 
+      >> in_paren(pddl_reserved "domain" >> pddl_name)
+      >> (opt require_def)
+      >> (opt types_def)
+      && (opt constants_def)
+      && (opt predicates_def)
+      && (opt functions_def)
+      && (repeat structure_def)) wth flat5 ?? "domain"
+      (*&& (repeat invariant_def)*)
 
   
   val object_declar = in_paren(pddl_reserved ":objects" >> (typed_list pddl_obj_cons))
@@ -426,13 +428,15 @@ struct
 
   val metric_spec = in_paren(pddl_reserved ":metric" >> optimisation >> in_paren(metric_f_exp))
 
-  val problem: PDDL_PROBLEM pddl_parser = in_paren(pddl_reserved "define" >> in_paren(pddl_reserved "problem" >> pddl_name)
-                                                >> in_paren(pddl_reserved ":domain" >> pddl_name)
-                                                >> (opt (require_def)) (* My assumption is that this will fail with an error message when the requirements are malformed *)
-                                                >> (opt object_declar)
-                                                && init
-                                                && goal
-                                                (*&& opt metric_spec*)) wth flat3 ?? "problem"
+  val problem: PDDL_PROBLEM pddl_parser = 
+    in_paren (
+      pddl_reserved "define" 
+      >> in_paren(pddl_reserved "problem" >> pddl_name)
+      >> in_paren(pddl_reserved ":domain" >> pddl_name)
+      >> (opt require_def) (* My assumption is that this will fail with an error message when the requirements are malformed *)
+      >> (opt object_declar)
+      && init
+      && goal) wth flat3 ?? "problem"
 
   val plan_action = in_paren(pddl_name && repeat pddl_obj_cons)
   val plan = repeat plan_action

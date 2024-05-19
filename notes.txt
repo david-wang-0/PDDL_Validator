@@ -1,4 +1,4 @@
-./bin/validate_pddl_plan.sh ./examples/recharging_robots/recharging_robots_dom.pddl ./examples/recharging_robots/recharging_robots_prob.pddl ./examples/recharging_robots/recharging_robots_plan
+./bin/validate_pddl_plan.sh examples/recharging_robots/recharging_robots_dom.pddl examples/recharging_robots/recharging_robots_prob.pddl examples/recharging_robots/recharging_robots_plan
 
 mlton -mlb-path-var 'ISABELLE_FILES PDDL-sema' -cc-opt -O3 -cc-opt -g0 pddl_validate_plan.mlb
 

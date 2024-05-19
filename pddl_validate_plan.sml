@@ -38,15 +38,22 @@ open PDDL
   fun flatMapTypedList1 (f1: 'a -> 'c) (f2: 'b -> 'd): ('a list * 'b) list -> ('c * 'd) list = 
     (map (map_pair f1 f2)) o flattenTypedList
   
-  val pddlPrimTypeToIsabellePrimType = stringToIsabelle o pddl_prim_type_name;
+  val pddlPrimTypeToIsabellePrimType: PDDL_PRIM_TYPE -> isa_prim_type = stringToIsabelle o pddl_prim_type_name;
 
   fun pddlTypesDefToIsabelle (typesDefOPT: PDDL_TYPES_DEF option) =
     case typesDefOPT of
       SOME typesDef =>
         let 
-          val pddlTypeToIsabelleSuperType: PDDL_TYPE -> isa_prim_type = (fn t => case t of
-            [x] => pddlPrimTypeToIsabellePrimType x
-          | _   => exit_fail "'Either' supertypes not supported")
+          val pddlTypeToIsabelleSuperType: PDDL_TYPE -> isa_prim_type = 
+            (fn t => case t of
+              [x] => pddlPrimTypeToIsabellePrimType x
+            | _   => exit_fail "'Either' supertypes not supported")
+          val pddlPrimTypeToIsabelleSubType: PDDL_PRIM_TYPE -> isa_prim_type = 
+            (fn t => case t of
+              PDDL_PRIM_TYPE "object" => 
+                exit_fail "'object' cannot be a subtype"
+            | t => 
+                pddlPrimTypeToIsabellePrimType t)
         in
           flatMapTypedList1 pddlPrimTypeToIsabellePrimType pddlTypeToIsabelleSuperType typesDef
         end
@@ -166,8 +173,8 @@ open PDDL
   fun pddlFHeadToIsabelleFHead ((f, args): F_HEAD): (func * (symbol term list)) = 
     (Function (stringToIsabelle f), map pddlTermToIsabelleTerm args)
 
-  fun opAndFHeadAndExpToIsaNfUpd (op: upd_op) (h: F_HEAD) (v: PDDL_F_EXP): symbol term nf_upd =
-    NF_Upd (flat43 (op, flatl3 (pddlFHeadToIsabelleFHead h, pddlFExpToIsabelleNFluent v)))
+  fun opAndFHeadAndExpToIsaNfUpd (oper: upd_op) (h: F_HEAD) (v: PDDL_F_EXP): symbol term nf_upd =
+    NF_Upd (flat43 (oper, flatl3 (pddlFHeadToIsabelleFHead h, pddlFExpToIsabelleNFluent v)))
 
   val ofUpdToEff =
     (fn v => Effect ([], [], [v], []))
@@ -391,9 +398,11 @@ val parse_pddl_plan = parse_wrapper PDDL.plan
 fun do_check_plan dom_file prob_file plan_file = let
   val _ = println "here";
   val parsedDom = parse_pddl_dom dom_file
+  val _ = println "1";
   val parsedProb = parse_pddl_prob prob_file
+  val _ = println "2";
   val parsedPlan = parse_pddl_plan plan_file
-
+  val _ = println "3";
   val isaDomDecs = pddlDomToIsabelleDomDecs parsedDom
   val isaProbDecs = pddlProbAndDomDecsToIsaProbDecs isaDomDecs parsedProb
   val isaDom = pddlDomAndProbDecsToIsaDom isaProbDecs parsedDom

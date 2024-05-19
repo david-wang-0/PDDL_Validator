@@ -1,4 +1,5 @@
-(define (domain RechargingRobotsDom)
+(define 
+    (domain RechargingRobotsDom)
     (:requirements :negative-preconditions :quantified-preconditions :typing :adl :numeric-fluents :object-fluents)
 
     (:types
