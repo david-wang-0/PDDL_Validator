@@ -277,24 +277,19 @@ datatype pred_decl = PredDecl
   (predicate: pred)
   (argTs: "type list")
 
-datatype obj_func_decl = ObjFunDecl
-  (OFName: func)
-  (argTs: "type list")
-  (rT: type)
+datatype obj_func_decl = ObjFunDecl (OFName: func) "type list" type
 
-datatype num_func_decl = NumFunDecl
-  (NFName: func)
-  (argTs: "type list")
+datatype num_func_decl = NumFunDecl (NFName: func) "type list"
 
 text \<open>A domain contains the declarations of primitive types, preds,
   and action schemas.\<close>
 
 datatype ast_domain_decs = DomainDecls
   (types: "(name \<times> name) list") \<comment> \<open> \<open>(type, supertype)\<close> declarations. \<close>
+  ("consts": "(object \<times> type) list")
   (preds: "pred_decl list")
   (obj_funs: "obj_func_decl list")
   (num_funs: "num_func_decl list")
-  ("consts": "(object \<times> type) list")
 
 
 subsubsection \<open>Problems\<close>
@@ -599,6 +594,9 @@ lemma f_subst_replaces:
   "v \<notin> f_vars (f_subst v c \<phi>)"
   unfolding f_vars_def f_subst_def
   by (simp add: formula.set_map atom_subst_replaces)
+
+
+(* To do: prove that the substitution function for effects replaces variables *)
 
 subsection \<open>Semantics of terms\<close>
 text \<open>\<open>undefined\<close> is interpreted as nothing. Due to the limitation imposed upon
