@@ -1,4 +1,4 @@
-(define (domain recharging-robots)
+(define (domain RechargingRobots)
 (:requirements :typing :adl :action-costs)
 (:types
     location - object

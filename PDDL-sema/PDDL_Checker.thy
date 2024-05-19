@@ -905,40 +905,40 @@ context ast_problem_decs begin
   | "nf_vars_impl (Sub a b) = nf_vars_impl a \<union> nf_vars_impl b"
   | "nf_vars_impl (Mult a b) = nf_vars_impl a \<union> nf_vars_impl b"
   | "nf_vars_impl (Div a b) = nf_vars_impl a \<union> nf_vars_impl b"
-
-lemma nf_vars_impl_correct: "nf_vars_impl x = nf_vars x"
-proof (induction x)
-  case (NFun f as)
-    have "nf_vars (NFun f as) = \<Union> (term_vars_impl ` (set as))"
-      unfolding nf_vars_def
-      using term_vars_impl_correct by simp
-    also have "... = fold (\<union>) (map term_vars_impl as) {}"
-        by (simp add: SUP_set_fold fold_map)
-    finally show ?case 
-      by (simp add: fold_map)
-qed (auto simp: nf_vars_def)
-
-fun nc_vars_impl::"symbol term num_comp \<Rightarrow> variable set" where
-  "nc_vars_impl (Num_Eq a b) = nf_vars_impl a \<union> nf_vars_impl b"
-| "nc_vars_impl (Num_Le a b) = nf_vars_impl a \<union> nf_vars_impl b"
-| "nc_vars_impl (Num_Lt a b) = nf_vars_impl a \<union> nf_vars_impl b"
-
-lemma nc_vars_impl_correct: "nc_vars_impl x = nc_vars x"
-  by (induction x; simp add: nc_vars_def nf_vars_def nf_vars_impl_correct)
-
-fun atom_vars_impl::"symbol term atom \<Rightarrow> variable set" where
-  "atom_vars_impl (PredAtom p) = predicate_vars_impl p"
-| "atom_vars_impl (NumComp nc) = nc_vars_impl nc"
-
-lemma atom_vars_impl_correct: "atom_vars_impl x = atom_vars x"
-  unfolding atom_vars_def
-proof (induction x)
-  case (PredAtom p)
-  then show ?case using predicate_vars_impl_correct atom_vars_def predicate_vars_def by simp
-next
-  case (NumComp nc)
-  then show ?case using nc_vars_impl_correct atom_vars_def nc_vars_def by simp
-qed
+  
+  lemma nf_vars_impl_correct: "nf_vars_impl x = nf_vars x"
+  proof (induction x)
+    case (NFun f as)
+      have "nf_vars (NFun f as) = \<Union> (term_vars_impl ` (set as))"
+        unfolding nf_vars_def
+        using term_vars_impl_correct by simp
+      also have "... = fold (\<union>) (map term_vars_impl as) {}"
+          by (simp add: SUP_set_fold fold_map)
+      finally show ?case 
+        by (simp add: fold_map)
+  qed (auto simp: nf_vars_def)
+  
+  fun nc_vars_impl::"symbol term num_comp \<Rightarrow> variable set" where
+    "nc_vars_impl (Num_Eq a b) = nf_vars_impl a \<union> nf_vars_impl b"
+  | "nc_vars_impl (Num_Le a b) = nf_vars_impl a \<union> nf_vars_impl b"
+  | "nc_vars_impl (Num_Lt a b) = nf_vars_impl a \<union> nf_vars_impl b"
+  
+  lemma nc_vars_impl_correct: "nc_vars_impl x = nc_vars x"
+    by (induction x; simp add: nc_vars_def nf_vars_def nf_vars_impl_correct)
+  
+  fun atom_vars_impl::"symbol term atom \<Rightarrow> variable set" where
+    "atom_vars_impl (PredAtom p) = predicate_vars_impl p"
+  | "atom_vars_impl (NumComp nc) = nc_vars_impl nc"
+  
+  lemma atom_vars_impl_correct: "atom_vars_impl x = atom_vars x"
+    unfolding atom_vars_def
+  proof (induction x)
+    case (PredAtom p)
+    then show ?case using predicate_vars_impl_correct atom_vars_def predicate_vars_def by simp
+  next
+    case (NumComp nc)
+    then show ?case using nc_vars_impl_correct atom_vars_def nc_vars_def by simp
+  qed
 
 
   primrec f_vars_impl::"symbol term atom formula \<Rightarrow> variable set" where
@@ -951,6 +951,44 @@ qed
 
   lemma f_vars_impl_correct: "f_vars_impl \<phi> = f_vars \<phi>"
     by (induction \<phi>; auto simp: f_vars_def atom_vars_impl_correct)
+
+  fun of_upd_vars_impl::"symbol term of_upd \<Rightarrow> variable set" where
+    "of_upd_vars_impl (OF_Upd n as (Some t)) = (fold (\<union>) (map term_vars_impl as) {}) \<union> (term_vars_impl t)"
+  | "of_upd_vars_impl (OF_Upd n as None) = fold (\<union>) (map term_vars_impl as) {}"
+  
+  lemma of_upd_vars_impl_correct: "of_upd_vars_impl u = of_upd_vars u"
+    apply (cases u)
+    subgoal for n as v
+      by (cases v, auto simp: of_upd_vars_def term_vars_impl_correct[THEN ext] SUP_set_fold fold_map)
+    done
+  
+  primrec nf_upd_vars_impl::"symbol term nf_upd \<Rightarrow> variable set" where
+    "nf_upd_vars_impl (NF_Upd op n as v) = (fold (\<union>) (map term_vars_impl as) {}) \<union> nf_vars_impl v"
+  
+  
+  lemma nf_upd_vars_impl_correct: "nf_upd_vars_impl u = nf_upd_vars u"
+    by (cases u; simp add: nf_upd_vars_def term_vars_impl_correct[THEN ext] nf_vars_impl_correct nf_vars_def SUP_set_fold fold_map)
+  
+  primrec eff_vars_impl::"symbol term ast_effect \<Rightarrow> variable set" where
+    "eff_vars_impl (Effect a d ou nu) = (
+      fold (\<union>) (map predicate_vars_impl a) {}
+    \<union> fold (\<union>) (map predicate_vars_impl d) {}
+    \<union> fold (\<union>) (map of_upd_vars_impl ou) {}
+    \<union> fold (\<union>) (map nf_upd_vars_impl nu) {}
+  )"
+  
+  lemma eff_vars_impl_correct: "eff_vars_impl e = eff_vars e"
+    by (cases e, auto simp: 
+          predicate_vars_impl_correct[THEN ext]
+          of_upd_vars_impl_correct[THEN ext]
+          nf_upd_vars_impl_correct[THEN ext]
+          SUP_set_fold fold_map) 
+  
+  primrec ce_vars_impl::"(symbol term atom formula \<times> symbol term ast_effect) \<Rightarrow> variable set" where
+    "ce_vars_impl (f, e) = f_vars_impl f \<union> eff_vars_impl e"
+  
+  lemma ce_vars_impl_correct: "ce_vars_impl x = cond_effect_vars x"
+    by (cases x; auto simp: f_vars_impl_correct eff_vars_impl_correct)
 
   definition t_dom_impl::"type \<Rightarrow> object list" where    
     "t_dom_impl typ = map fst (filter (\<lambda>(c, t). of_type_impl t typ) (consts DD @ objects PD))"
@@ -980,6 +1018,7 @@ qed
   definition pddl_all_impl::"(variable \<times> type) list \<Rightarrow> schematic_formula \<Rightarrow> schematic_formula" where
     "pddl_all_impl vts \<phi> = foldr (\<lambda>(v, t) f. all_impl v t f) vts \<phi>"
 
+
   definition pddl_exists_impl::"(variable \<times> type) list \<Rightarrow> schematic_formula \<Rightarrow> schematic_formula" where
     "pddl_exists_impl vts \<phi> = foldr (\<lambda>(v, t) f. exists_impl v t f) vts \<phi>"
 
@@ -992,6 +1031,32 @@ qed
     unfolding pddl_exists_def pddl_exists_impl_def
     using exists_impl_correct
     by presburger
+
+
+  definition univ_effect_impl::"variable \<Rightarrow> type 
+    \<Rightarrow> (schematic_formula \<times> schematic_effect) 
+    \<Rightarrow> (schematic_formula \<times> schematic_effect) list" where
+    "univ_effect_impl v t ce = (
+      if (v \<notin> ce_vars_impl ce) 
+      then [ce] 
+      else (map (\<lambda>c. cond_effect_subst v c ce) (t_dom_impl t)))"
+
+lemma univ_effect_impl_correct: "univ_effect_impl v t eff = univ_effect v t eff"
+  by (cases eff, auto simp: univ_effect_def univ_effect_impl_def If_def ce_vars_impl_correct t_dom_impl_correct)
+
+  definition univ_effect_list_impl::"variable \<Rightarrow> type \<Rightarrow> (schematic_formula \<times> schematic_effect) list 
+    \<Rightarrow> (schematic_formula \<times> schematic_effect) list"  where 
+  "univ_effect_list_impl v t effs \<equiv> (flatmap (univ_effect_impl v t) effs)"
+
+lemma univ_effect_list_impl_correct: "univ_effect_list_impl v t eff = univ_effect_list v t eff"
+  by (auto simp: univ_effect_list_def univ_effect_list_impl_def univ_effect_impl_correct[THEN ext])
+
+  definition pddl_univ_effect_list_impl::"(variable \<times> type) list \<Rightarrow> (schematic_formula \<times> schematic_effect) list
+    \<Rightarrow> (schematic_formula \<times> schematic_effect) list" where
+  "pddl_univ_effect_list_impl vts effs \<equiv> (foldr (\<lambda>(v, t) effs. univ_effect_list_impl v t effs) vts effs)"
+
+lemma pddl_univ_effect_list_impl_correct: "pddl_univ_effect_list_impl vts effs = pddl_univ_effect_list vts effs"
+  by (auto simp: pddl_univ_effect_list_def pddl_univ_effect_list_impl_def univ_effect_list_impl_correct)
 
 end
 
@@ -2664,6 +2729,8 @@ definition "check_wf_problem P \<equiv> do {
   check (ast_problem_decs.wf_goal_impl PD (goal P)) (ERRS ''Malformed goal formula'')
 }"
 
+term Error_Monad.update_error
+
 lemma check_wf_problem_return_iff':
   "check_wf_problem P = Inr () \<longleftrightarrow> ast_problem.wf_problem_impl P"
 proof -
@@ -2692,7 +2759,7 @@ definition "check_plan P \<pi>s \<equiv> do {
   let init = ast_problem.I_impl P;
   check_wf_problem P;
   ast_problem.valid_plan_fromE P 0 init \<pi>s
-}"
+} <+? (\<lambda>x. String.implode (x () ''''))"
 
 (* valid_plan_fromE should be as efficient as possible *)
 (* after checking that the problem is valid, we can just pass the 
@@ -2723,6 +2790,17 @@ proof -
         valid_plan_def)
 qed
 
+subsubsection \<open>Setup for Containers Framework\<close>
+derive (eq) ceq rat pred func variable object symbol "term" num_fluent num_comp 
+  predicate atom formula ast_effect instantiated_nf_upd instantiated_of_upd 
+derive (linorder) compare rat 
+derive ccompare type rat func pred variable object "term" symbol upd_op predicate num_fluent num_comp 
+  atom formula of_upd nf_upd ast_effect instantiated_of_upd instantiated_nf_upd
+derive (no) cenum variable formula
+derive (rbt) set_impl rat func variable object "term" atom predicate formula instantiated_nf_upd
+  of_upd nf_upd ast_effect instantiated_of_upd
+derive (rbt) mapping_impl func object pred
+
 subsubsection \<open>TODO\<close>
 context ast_problem_decs
 begin
@@ -2746,6 +2824,9 @@ qed
 definition is_obj_fun::"func \<Rightarrow> bool" where
   "is_obj_fun f \<equiv> f \<in> object_function_names"
 
+definition is_num_fun::"func \<Rightarrow> bool" where
+  "is_num_fun f \<equiv> f \<in> numeric_function_names"
+
 (* To do: 
   - Better error message for assignment/update to undefined functions? 
   - Currently handled implicitly? Disambiguation could be implemented in a manner
@@ -2757,40 +2838,37 @@ definition is_obj_fun::"func \<Rightarrow> bool" where
 fun combine_effects::"'a ast_effect \<Rightarrow> 'a ast_effect \<Rightarrow> 'a ast_effect" where
   "combine_effects (Effect a d ou nu) (Effect a' d' ou' nu') = Effect (a @ a') (d @ d') (ou @ ou') (nu @ nu')"
 
-term "string map"
-
-fun combine_conditional_effects::"('a formula \<times> 'a ast_effect) 
-  \<Rightarrow> ('a formula \<times> 'a ast_effect) 
-  \<Rightarrow> ('a formula \<times> 'a ast_effect) list" where
-  "combine_conditional_effects (pre, eff) (pre', eff') = (
-    if (pre = pre') 
-    then
-      [(pre, combine_effects eff eff')]
-    else 
-      [(pre, eff), (pre', eff')])"
-
-term Mapping.combine_with_key
-
 (*
   Mapping.combine_with_key
 
   1. Group effects by precondition
-    1a. Sort effects by precondition
-      1a1. Define an order on effects
+    1a. Sort effects by precondition 
+      1a1. Find a sort implementation in Isabelle
+      1a2. Define an order on effects
         1a1a. Define an order on formulas
         1a1b. Lexicographic order on products
+      1a3. Define the effects abstractly
     1b. fold ('a, 'b) list into ('a, 'b list) list
   2. map fold ('a, 'b list) list into ('a, 'b) list
 
 *)
 (* This is highly inefficient *)
 
-definition compact_conditional_effect_list::"('a formula \<times> 'a ast_effect) list
+definition compact_conditional_effect_list::"(('a::ccompare) formula \<times> 'a ast_effect) list
   \<Rightarrow> ('a formula \<times> 'a ast_effect) list" where
   "compact_conditional_effect_list xs = (
-    Mapping.entries (foldr (\<lambda>(pre, eff) mp. Mapping.combine_with_key (Mapping.update pre eff Mapping.empty) mp) xs Mapping.empty)
-)"
-  
+    csorted_list_of_set 
+      (Mapping.entries 
+        (foldr 
+          (\<lambda>(pre, eff) mp. 
+            Mapping.combine_with_key 
+              (\<lambda>_ . combine_effects)  
+              (Mapping.update pre eff Mapping.empty) 
+              mp) 
+          xs Mapping.empty)))"
+
+find_theorems name: Set
+          
 end 
 
 find_theorems name: "Mapping*rep"
@@ -2858,8 +2936,14 @@ lemmas wf_problem_decs_code =
   ast_problem_decs.all_impl_def
   ast_problem_decs.exists_impl_def
   ast_problem_decs.pddl_all_impl_def
-  ast_problem_decs.pddl_all_def
   ast_problem_decs.pddl_exists_impl_def
+  ast_problem_decs.of_upd_vars_impl.simps
+  ast_problem_decs.nf_upd_vars_impl_def
+  ast_problem_decs.eff_vars_impl_def
+  ast_problem_decs.ce_vars_impl_def
+  ast_problem_decs.univ_effect_impl_def
+  ast_problem_decs.univ_effect_list_impl_def
+  ast_problem_decs.pddl_univ_effect_list_impl_def
   ast_problem_decs.wf_action_schema'.simps
   ast_problem_decs.atom_vars_impl.simps
   ast_problem_decs.predicate_vars_impl.simps
@@ -2869,7 +2953,10 @@ lemmas wf_problem_decs_code =
   ast_problem_decs.mp_objT_def
   ast_problem_decs.objT_impl_def
   ast_problem_decs.is_obj_fun_def
+  ast_problem_decs.is_num_fun_def
   ast_problem_decs.object_function_names_def
+  ast_problem_decs.compact_conditional_effect_list_def
+  ast_problem_decs.numeric_function_names_def
 
 declare wf_problem_decs_code[code]
 
@@ -3069,17 +3156,6 @@ definition mult_list::"'a num_fluent list \<Rightarrow> 'a num_fluent" where
 definition add_list::"'a num_fluent list \<Rightarrow> 'a num_fluent" where
   "add_list l = foldr Add l (Num 0)"
 
-subsubsection \<open>Setup for Containers Framework\<close>
-derive (eq) ceq rat pred func variable object symbol "term" num_fluent num_comp 
-  predicate atom formula ast_effect instantiated_nf_upd instantiated_of_upd 
-derive (linorder) compare rat 
-derive ccompare rat func pred variable object "term" symbol upd_op predicate num_fluent num_comp 
-  atom formula of_upd nf_upd ast_effect instantiated_of_upd instantiated_nf_upd
-derive (no) cenum variable
-derive (rbt) set_impl rat func variable object "term" atom predicate formula instantiated_nf_upd
-  of_upd nf_upd ast_effect instantiated_of_upd
-derive (rbt) mapping_impl func object pred
-
 print_derives
 
 (* TODO/FIXME: Code_Char was removed from Isabelle-2018! 
@@ -3091,8 +3167,9 @@ export_code
   Either Variable Object Var Const Ent Fun PredDecl BigAnd BigOr mult_list add_list
   ObjFunDecl NumFunDecl NFun Num_Eq PDDL_Semantics.Eq PDDL_Semantics.PredAtom
   OF_Upd NF_Upd Assign
-  ast_problem_decs.is_obj_fun
+  ast_problem_decs.is_obj_fun ast_problem_decs.is_num_fun
   ast_problem_decs.pddl_all_impl ast_problem_decs.pddl_exists_impl
+  ast_problem_decs.pddl_univ_effect_list_impl
   formula.Bot Effect ast_action_schema.Action_Schema
   map_atom Domain Problem DomainDecls ProbDecls PAction
   valuation term_val_impl ast_domain.apply_effect_impl

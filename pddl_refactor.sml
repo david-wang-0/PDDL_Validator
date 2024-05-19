@@ -9,6 +9,13 @@ fun exit_fail msg = (
   OS.Process.exit(OS.Process.failure)
 )
 
+fun flatl3 ((a, b), c) = (a, b, c)
+fun flat43 (a, (b, c, d)) = (a, b, c, d)
+fun flat42 (a, b, (c, d)) = (a, b, c, d)
+fun flat535 (a, (b, c, d), e) = (a, b, c, d, e)
+
+fun invflat3 (a, b, c) = (a, (b, c))
+
 structure PDDL =
 (* An implementation that uses token parser. *)
 struct
@@ -114,11 +121,9 @@ struct
 
   type PDDL_PREDS_DEF = ATOMIC_FORM_SKEL list
 
-  type F_HEAD = (PDDL_FUN * PDDL_TERM list)
-
   datatype PDDL_TERM = OBJ_CONS_TERM of PDDL_OBJ_CONS
                        | VAR_TERM of PDDL_VAR
-                       | FUN_TERM of F_HEAD
+                       | FUN_TERM of (PDDL_FUN * PDDL_TERM list)
   
   (* Functions *)
   type 'a FUN_TYPED_LIST = (('a list) * PDDL_FUN_TYPE) list
@@ -128,6 +133,9 @@ struct
   type PDDL_FUNS_DEF = ATOMIC_FUN_SKELETON FUN_TYPED_LIST (* good *)
 
   (* other things *)
+
+  type F_HEAD = (PDDL_FUN * PDDL_TERM list)
+
   type RAT = string * string option
 
   datatype PDDL_F_EXP = 
@@ -163,7 +171,7 @@ struct
     Add of PDDL_TERM PDDL_ATOM
   | Del of PDDL_TERM PDDL_ATOM
   | Unassign of F_HEAD
-  | Assign of (F_HEAD * PDDL_F_EXP) 
+  | PDDL_Assign of (F_HEAD * PDDL_F_EXP) 
   | N_ScaleUp of (F_HEAD * PDDL_F_EXP)
   | N_ScaleDown of (F_HEAD * PDDL_F_EXP)
   | N_Increase of (F_HEAD * PDDL_F_EXP)
@@ -173,7 +181,7 @@ struct
   | EFF_All of PDDL_VAR PDDL_TYPED_LIST * PDDL_EFFECT
 
   (* To do: Check if the first parser in the alternative has higher precedence.
-    If it does not, then the p_effect parser can be ambiguous for N_Assign.*)
+    If it does not, then the p_effect parser can be ambiguous for N_PDDL_Assign.*)
 
   (* Actions *)
   type PDDL_PRE_GD = PDDL_FORM
@@ -203,15 +211,12 @@ struct
   | Init_Num_Func_Asmt of (PDDL_FUN * PDDL_OBJ_CONS list * RAT)
   | Init_Obj_Func_Asmt of (PDDL_FUN * PDDL_OBJ_CONS list * PDDL_OBJ_CONS)
 
-  
   type PDDL_OBJ_DEF = PDDL_OBJ_CONS PDDL_TYPED_LIST
-
-  type PDDL_INIT = PDDL_INIT list
 
   type PDDL_GOAL = PDDL_FORM
 
   type PDDL_PROBLEM = (PDDL_OBJ_DEF option *
-                        PDDL_INIT *
+                        PDDL_INIT list *
                           PDDL_GOAL)
 
   structure RTP = TokenParser (PDDLDef)
@@ -334,7 +339,7 @@ struct
   val p_effect: PDDL_EFFECT pddl_parser = ((in_paren (atomic_formula term) wth Add)
                 || (in_paren (pddl_reserved "not" >> atomic_formula term) wth Del)
                 || (in_paren (pddl_reserved "assign" >> f_head) wth Unassign)
-                || (in_paren (pddl_reserved "assign" >> f_head && f_exp) wth Assign) (* disambiguate after the declarations of functions have beend parsed *)
+                || (in_paren (pddl_reserved "assign" >> f_head && f_exp) wth PDDL_Assign) (* disambiguate after the declarations of functions have beend parsed *)
                 || (in_paren (pddl_reserved "scale-up" >> f_head && f_exp) wth N_ScaleUp)
                 || (in_paren (pddl_reserved "scale-down" >> f_head && f_exp) wth N_ScaleDown)
                 || (in_paren (pddl_reserved "increase" >> f_head && f_exp) wth N_Increase)
@@ -379,7 +384,8 @@ struct
                                  (quantification << spaces) &&
                                  (constraints << spaces))) ?? "invariants def"
 
-  val domain: PDDL_DOMAIN pddl_parser  = in_paren(pddl_reserved "define" >> in_paren(pddl_reserved "domain" >> pddl_name)
+  val domain: PDDL_DOMAIN pddl_parser  = in_paren(pddl_reserved "define" 
+                                                  >> in_paren(pddl_reserved "domain" >> pddl_name)
                                                   >> (opt require_def)
                                                   >> (opt types_def)
                                                   && (opt constants_def)
@@ -395,10 +401,9 @@ struct
                     || in_paren(function_symbol && repeat pddl_obj_cons)
                     ) ?? "basic function term"
 
-  fun flatl3 ((a, b), c) = (a, b, c)
 
   (* We do not implement the literal parser. Instead, we distinguish the true and false cases explicitly *)
-  val init_el = ((atomic_formula pddl_obj_cons) wth True_Pred
+  val init_el: PDDL_INIT pddl_parser = ((atomic_formula pddl_obj_cons) wth True_Pred
                  || in_paren((pddl_reserved "not") >> atomic_formula pddl_obj_cons) wth False_Pred 
                  || in_paren((pddl_reserved "=") >> basic_fun_term && pddl_obj_cons)
                                wth (Init_Obj_Func_Asmt o flatl3)
