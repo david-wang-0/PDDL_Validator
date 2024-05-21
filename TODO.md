@@ -16,4 +16,5 @@
     - Problem
 - Recall Agda talk
     - Scopes
-    - 
+- Skolem normal form?
+- Explain what you have done from the three-months report and why you have not done what you have not done.

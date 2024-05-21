@@ -3,6 +3,8 @@
      It also calls the function exported by Isabelle to check the validity of a plan.*)
 open PDDL
 
+  (* To do: recursively transform abstract syntax trees while returning error messages *)
+
   val IsabelleStringImplode = implode;
   val IsabelleStringExplode = explode;
   val SMLCharImplode = String.implode;
@@ -102,7 +104,11 @@ open PDDL
   fun pddlFunsDefToIsabelleFuns (funs_defOPT: PDDL_FUNS_DEF option): (obj_func_decl list * num_func_decl list) = 
     case funs_defOPT of
       SOME funs_def => 
-      let 
+      let
+        val _ = map (fn (h, r) => case (h, r) of
+          (("total-cost", (x::xs)), _) => exit_fail "Reserved function 'total-cost' cannot take arguments"
+        | (("total-cost", _), Obj_Type _) => exit_fail "Reserved function 'total-cost' must return a number"
+        )
         val (obj_funs, num_funs) = (List.partition (fn (v, t) => t <> Num_Type) funs_def);
         val fHead = map_pair (Function o stringToIsabelle) pddlTypedListToIsabelleSig;
         val fObj = flatMapTypedList (fn (h, r) => 
@@ -127,10 +133,21 @@ open PDDL
   val pddlTermAtomToIsabellePredicate: PDDL_TERM PDDL_ATOM -> symbol term predicate = 
     pddlAtomToIsabellePredicate pddlTermToIsabelleTerm
 
+  
+  (* sketchy *)
+  fun pddlTermToIsabelleFHead (t: PDDL_TERM): symbol term num_fluent =
+    case t of
+      (OBJ_CONS_TERM (PDDL_OBJ_CONS s)) => F_Head (s, [])
+    | (FUN_TERM (n, args)) => F_Head (n, args)
+    | (VAR_TERM (PDDL_VAR v))=> exit_fail (
+          "Variables do not have numeric values. "
+          ^ "Attempted to update numeric function return value with variable: " ^ v ^ ".")
+
+
   fun pddlFExpToIsabelleNFluent (exp: PDDL_F_EXP) =
     case exp of
       PDDL_Num (i, d) => Num (rat_from_strings (stringToIsabelle i) (Option.map stringToIsabelle d))
-    | F_Head (f, args) => NFun (Function (stringToIsabelle f), map pddlTermToIsabelleTerm args)
+    | F_Head h => NFun (Function (stringToIsabelle f), map pddlTermToIsabelleTerm args)
     | PDDL_Neg e => pddlFExpToIsabelleNFluent (PDDL_Minus (PDDL_Num ("0", NONE), e))
     | PDDL_Minus (e1, e2) => Sub (pddlFExpToIsabelleNFluent e1, pddlFExpToIsabelleNFluent e2) 
     | PDDL_Div (e1, e2) => Div (pddlFExpToIsabelleNFluent e1, pddlFExpToIsabelleNFluent e2)
@@ -170,12 +187,6 @@ open PDDL
         SOME (pre: PDDL_PRE_GD) => pddlFormToIsabelleForm prob_decs pre
       | _ => Not Bot (* If we have no precondition, the precondition is always true *)
 
-  fun pddlFHeadToIsabelleFHead ((f, args): F_HEAD): (func * (symbol term list)) = 
-    (Function (stringToIsabelle f), map pddlTermToIsabelleTerm args)
-
-  fun opAndFHeadAndExpToIsaNfUpd (oper: upd_op) (h: F_HEAD) (v: PDDL_F_EXP): symbol term nf_upd =
-    NF_Upd (flat43 (oper, flatl3 (pddlFHeadToIsabelleFHead h, pddlFExpToIsabelleNFluent v)))
-
   val ofUpdToEff =
     (fn v => Effect ([], [], [v], []))
 
@@ -185,19 +196,37 @@ open PDDL
   datatype ('a, 'b) either = 
     Left of 'a
   | Right of 'b
-  
-  fun pddlAssignToIsabelleUpd (prob_decs: ast_problem_decs) (h: F_HEAD) (v: PDDL_F_EXP): symbol term ast_effect =
-    case v of
-      (F_Head (rh, rts)) => 
+
+  fun pddlFHeadToIsabelleFHead ((f, args): F_HEAD): (func * (symbol term list)) = 
+    (Function (stringToIsabelle f), map pddlTermToIsabelleTerm args)
+
+  fun opAndFHeadAndExpToIsaNfUpd (oper: upd_op) (h: F_HEAD) (v: PDDL_F_EXP): symbol term nf_upd =
+    NF_Upd (flat43 (oper, flatl3 (pddlFHeadToIsabelleFHead h, pddlFExpToIsabelleNFluent v)))
+
+  (* 0-ary functions are indistinguishable from objects, which means we have to add the well-formedness condition
+      that no 0-ary function has the same name as an object. Additionally, we implicitly rely on the parser to 
+      correctly parse a function head with no arguments, even if it could be an object. The LHS must be a function,
+      so at least we know that we can look for it in the sets of numeric and object functions. Following that, we
+      can convert the RHS to a term or leave it as a F_EXP. If it is converted to a term, then we have to check whether 
+      it is a 0-ary function. If it is a 0-ary function, we have to check whether it is actually a constant/object. 
+      
+      We also have to take care of the case where we assign an object the value of a variable. This means
+      *)
+  fun pddlAssignToIsabelleUpd 
+      (prob_decs: ast_problem_decs) 
+      (h: F_HEAD) 
+      (v: PDDL_TERM): symbol term ast_effect =
+    case h of
+      ((n, args)) => 
         let
-          val rh1 = Function (stringToIsabelle rh)
+          val isa_n = Function (stringToIsabelle n)
         in
-          case (is_obj_fun prob_decs rh1, is_num_fun prob_decs rh1) of
-            (True, _) => ofUpdToEff (OF_Upd (flatl3 (pddlFHeadToIsabelleFHead h, SOME (pddlTermToIsabelleTerm (FUN_TERM (rh, rts))))))
-          | (_, True) => nfUpdToEff (opAndFHeadAndExpToIsaNfUpd Assign h (F_Head (rh, rts)))
-          | _  => exit_fail ("Function" ^ rh ^ "is undefined")
+          case (is_obj_fun prob_decs isa_n, is_num_fun prob_decs isa_n) of
+            (True, _) => ofUpdToEff (OF_Upd (flatl3 (pddlFHeadToIsabelleFHead h, SOME (pddlTermToIsabelleTerm v))))
+          | (_, True) => nfUpdToEff (opAndFHeadAndExpToIsaNfUpd Assign h (pddlTermToFHead v))
+          | _  => exit_fail ("Function '" ^ n ^ "' is undefined")
         end
-    | v => nfUpdToEff (opAndFHeadAndExpToIsaNfUpd Assign h v)
+    | _ => nfUpdToEff (opAndFHeadAndExpToIsaNfUpd Assign h (pddlTermToFHead v))
 
   fun pddlEffToIsabelleCondEffList 
       (prob_decs: ast_problem_decs) (eff: PDDL_EFFECT option): 
@@ -424,7 +453,15 @@ fun print_help () = (
   println("c Usage: " ^ CommandLine.name() ^ "<domain> <problem> [<plan>]")
 )
 val _ = case args of
-  [d,pr,pl] => do_check_plan d pr pl
+  ("--test"::(f::xs)) => 
+    let 
+      val _ = println ("parsing: " ^ f)
+      val parse_GD = parse_wrapper PDDL.effect
+      val _ = parse_GD f
+    in
+      println "here"
+    end
+| [d,pr,pl] => do_check_plan d pr pl
 | _ => (
     println("Invalid command line arguments");
     print_help ();

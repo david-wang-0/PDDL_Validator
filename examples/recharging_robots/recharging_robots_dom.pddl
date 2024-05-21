@@ -36,14 +36,11 @@
     ;; consuming the battery -- it is decreased by one from ?fpre to ?fpost
     (:action move
         :parameters (?r - robot ?to - location)
-        :precondition
-            (and
+        :precondition (and
                 (not (stopped ?r))
                 (or (CONNECTED (loc ?r) ?to) (CONNECTED ?to (loc ?r)))
-                (> (battery-level ?r) 0)
-            )
-        :effect
-            (and
+                (> (battery-level ?r) 0))
+        :effect (and
                 (assign (at ?r) ?to)
                 (decrease (battery-level ?r) move-cost)
                 (increase total-cost move-cost)))
