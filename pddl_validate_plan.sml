@@ -19,6 +19,10 @@ open PDDL
 
   fun pddlObjConsToIsabelleObject (oc: PDDL_OBJ_CONS): PDDL_Checker_Exported.object = Object (stringToIsabelle (pddl_obj_name oc))
 
+  (* This is not clean *)
+  fun pddlObjToIsabelleTerm (oc: PDDL_OBJ_CONS) : symbol term =
+    
+
   fun pddlTermToIsabelleTerm (OBJ_CONS_TERM oc) = Ent (Const (pddlObjConsToIsabelleObject oc))
     | pddlTermToIsabelleTerm (VAR_TERM v) = Ent (Var (pddlVarToIsabelleVariable v))
     | pddlTermToIsabelleTerm (FUN_TERM (f, ts)) = Fun (Function (stringToIsabelle f), map pddlTermToIsabelleTerm ts)
@@ -134,11 +138,13 @@ open PDDL
     pddlAtomToIsabellePredicate pddlTermToIsabelleTerm
 
   
-  (* sketchy *)
-  fun pddlTermToIsabelleFHead (t: PDDL_TERM): symbol term num_fluent =
+  (* sketchy -- hidden assumption that fun-terms must have at least one argument --
+    only true if the term parser is implemented in that manner (repeat1 args) -- 
+    objects and 0-ary functions are indistinguishable *)
+  fun pddlTermToIsabelleFHead (t: PDDL_TERM): (func * (symbol term list)) =
     case t of
-      (OBJ_CONS_TERM (PDDL_OBJ_CONS s)) => F_Head (s, [])
-    | (FUN_TERM (n, args)) => F_Head (n, args)
+      (OBJ_CONS_TERM (PDDL_OBJ_CONS s)) => (Function (stringToIsabelle s), [])
+    | (FUN_TERM (n, args)) => (Function (stringToIsabelle n), map pddlTermToIsabelleTerm args)
     | (VAR_TERM (PDDL_VAR v))=> exit_fail (
           "Variables do not have numeric values. "
           ^ "Attempted to update numeric function return value with variable: " ^ v ^ ".")
@@ -147,7 +153,7 @@ open PDDL
   fun pddlFExpToIsabelleNFluent (exp: PDDL_F_EXP) =
     case exp of
       PDDL_Num (i, d) => Num (rat_from_strings (stringToIsabelle i) (Option.map stringToIsabelle d))
-    | F_Head h => NFun (Function (stringToIsabelle f), map pddlTermToIsabelleTerm args)
+    | F_Head h => NFun (pddlTermToIsabelleFHead h)
     | PDDL_Neg e => pddlFExpToIsabelleNFluent (PDDL_Minus (PDDL_Num ("0", NONE), e))
     | PDDL_Minus (e1, e2) => Sub (pddlFExpToIsabelleNFluent e1, pddlFExpToIsabelleNFluent e2) 
     | PDDL_Div (e1, e2) => Div (pddlFExpToIsabelleNFluent e1, pddlFExpToIsabelleNFluent e2)
@@ -187,6 +193,10 @@ open PDDL
         SOME (pre: PDDL_PRE_GD) => pddlFormToIsabelleForm prob_decs pre
       | _ => Not Bot (* If we have no precondition, the precondition is always true *)
 
+  fun pddlFHeadToIsabelleTerm (exp: PDDL_F_EXP): symbol term =
+    case exp of
+      F_Head t = 
+
   val ofUpdToEff =
     (fn v => Effect ([], [], [v], []))
 
@@ -222,11 +232,11 @@ open PDDL
           val isa_n = Function (stringToIsabelle n)
         in
           case (is_obj_fun prob_decs isa_n, is_num_fun prob_decs isa_n) of
-            (True, _) => ofUpdToEff (OF_Upd (flatl3 (pddlFHeadToIsabelleFHead h, SOME (pddlTermToIsabelleTerm v))))
-          | (_, True) => nfUpdToEff (opAndFHeadAndExpToIsaNfUpd Assign h (pddlTermToFHead v))
+            (True, _) => ofUpdToEff (OF_Upd (flatl3 (pddlFHeadToIsabelleFHead h, SOME (pddlN v))))
+          | (_, True) => nfUpdToEff (opAndFHeadAndExpToIsaNfUpd Assign h v)
           | _  => exit_fail ("Function '" ^ n ^ "' is undefined")
         end
-    | _ => nfUpdToEff (opAndFHeadAndExpToIsaNfUpd Assign h (pddlTermToFHead v))
+    | _ => nfUpdToEff (opAndFHeadAndExpToIsaNfUpd Assign h v)
 
   fun pddlEffToIsabelleCondEffList 
       (prob_decs: ast_problem_decs) (eff: PDDL_EFFECT option): 

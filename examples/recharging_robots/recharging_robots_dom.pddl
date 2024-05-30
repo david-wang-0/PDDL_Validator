@@ -97,14 +97,9 @@
             (and
                 (forall (?r - robot) 
                     (when 
-                        (exists (?l - location) 
-                            (and 
-                                (GUARD-CONFIG ?c ?l) 
-                                (= (loc ?r) ?l)
-                            ))
+                        (GUARD-CONFIG ?c (loc ?r)) 
                         (and 
                             (not (stopped ?r)) 
-                            (not (guarded (loc ?r))))
-                    )
+                            (not (guarded (loc ?r)))))
                 (config-fullfilled ?c))))
 )

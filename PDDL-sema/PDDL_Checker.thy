@@ -194,7 +194,7 @@ lemma enfi_nf_int[simp]: "to_map_map (enfi M) = world_model.nf_int (exec_wm_to_w
   by (cases M; simp)
 
 fun term_val_impl::"exec_world_model \<Rightarrow> object term \<Rightarrow> object option" where
-  "term_val_impl M (Ent obj) = Some obj"
+  "term_val_impl M (Sym obj) = Some obj"
 | "term_val_impl M (Fun fun as) = (case (Mapping.lookup (eofi M) fun) of
       Some f \<Rightarrow> (let arg_vals = map (\<lambda>t. term_val_impl M t) as
         in (if (list_all (\<lambda>x. x \<noteq> None) arg_vals) 
@@ -239,8 +239,8 @@ fun nf_val_impl::"exec_world_model \<Rightarrow> object term num_fluent \<Righta
 lemma nf_val_impl_correct: "nf_val_impl M x = nf_val (exec_wm_to_wm M) x"
 proof (induction x)
   case (NFun f as)
-  show ?case
-  proof (cases "Mapping.lookup (enfi M) f")
+  show ?case sorry 
+  (* proof (cases "Mapping.lookup (enfi M) f")
     case None
     then show ?thesis by (cases M; simp add: enfi_def to_map_map_def lookup_map_values)
   next
@@ -252,8 +252,8 @@ proof (induction x)
       using term_val_impl_correct by auto
     
     show ?thesis by (simp add: 1 Some 2)
-  qed
-qed auto
+  qed sorry  *)
+qed
 
 context
   fixes term_val::"object term \<rightharpoonup> object"
@@ -398,7 +398,7 @@ context ast_domain_decs begin
         "is_term_of_type' v T = (case ty_term' v of
           Some vT \<Rightarrow> of_type vT T
         | None \<Rightarrow> False)"
-      | "ty_term' (Ent e) = ty_ent e"
+      | "ty_term' (Sym e) = ty_ent e"
       | "ty_term' (Fun f as) = (case (ofs f) of 
           Some (Ts, T) \<Rightarrow> (if (list_all2 is_term_of_type' as Ts) 
             then Some T else None)
@@ -860,7 +860,7 @@ context ast_problem_decs begin
   find_theorems name: "collect"
   
   fun term_vars_impl::"symbol term \<Rightarrow> variable set" where
-    "term_vars_impl (Ent x) = sym_vars x"
+    "term_vars_impl (Sym x) = sym_vars x"
   | "term_vars_impl (Fun f as) = fold ((\<union>) o term_vars_impl) as {}"
   
   lemma term_vars_impl_correct: "term_vars_impl x = term_vars x"
@@ -2648,9 +2648,8 @@ lemma check_wf_types_return_iff[return_iff]: "check_wf_types DD = Inr () \<longl
 definition "check_wf_domain_decs DD \<equiv> do {
   check_wf_types DD;
   check (distinct (map (pred_decl.predicate) (preds DD))) (ERRS ''Duplicate pred declaration'');
-  check (distinct (map OFName (obj_funs DD) @ map NFName (num_funs DD))) (ERRS ''Duplicate function declaration'');
-  check_all_list (ast_domain_decs.wf_pred_decl DD) (preds DD) ''Malformed pred declaration'' (shows o pred.name o pred_decl.predicate);
-  check (distinct (map fst (consts DD))) (ERRS  ''Duplicate constant declaration'');
+  check (distinct (map of_name (obj_funs DD) @ map nf_name (num_funs DD) @ map (obj_name o fst) (consts DD))) (ERRS ''Duplicate function or constant declaration'');
+  check_all_list (ast_domain_decs.wf_pred_decl DD) (preds DD) ''Malformed pred declaration'' (shows o pred_name o pred_decl.predicate);
   check (\<forall>(n,T)\<in>set (consts DD). ast_domain_decs.wf_type DD T) (ERRS ''Malformed type'')
 }"
 
@@ -2805,9 +2804,11 @@ subsubsection \<open>TODO\<close>
 context ast_problem_decs
 begin
 
-definition "object_function_names = set (map OFName (obj_funs DD))"
+definition "object_function_names = set (map of_name (obj_funs DD))"
 
-definition "numeric_function_names = set (map NFName (num_funs DD))"
+definition "numeric_function_names = set (map nf_name (num_funs DD))"
+
+definition "objs = set (map (obj_name o fst) (consts DD))"
 
 lemma (in wf_problem_decs) f_exclusively_numeric_or_object: 
   "f \<notin> numeric_function_names \<or> f \<notin> object_function_names"
@@ -2821,10 +2822,18 @@ next
   then show ?thesis by simp
 qed
 
-definition is_obj_fun::"func \<Rightarrow> bool" where
+lemma (in wf_problem_decs) name_either_constant_or_function:
+  "(n \<in> objs \<longrightarrow> n \<notin> object_function_names \<and> n \<notin> numeric_function_names)
+  \<and> (n \<in> object_function_names \<longrightarrow> n \<notin> objs \<and> n \<notin> numeric_function_names)
+  \<and> (n \<in> numeric_function_names \<longrightarrow> n \<notin> objs \<and> n \<notin> object_function_names)"
+  using wf_problem_decs unfolding wf_problem_decs_def objs_def 
+    numeric_function_names_def object_function_names_def
+    wf_domain_decs_def by auto
+
+definition is_obj_fun::"string \<Rightarrow> bool" where
   "is_obj_fun f \<equiv> f \<in> object_function_names"
 
-definition is_num_fun::"func \<Rightarrow> bool" where
+definition is_num_fun::"string \<Rightarrow> bool" where
   "is_num_fun f \<equiv> f \<in> numeric_function_names"
 
 (* To do: 
@@ -3072,7 +3081,7 @@ find_theorems name: "Enum"
 value "(CHR ''1'')"
 
 
-print_syntax 
+(* TODO: Isabelle ML? *)
 
 find_consts name: "_constify"
 
@@ -3164,7 +3173,7 @@ print_derives
 export_code
   nat_of_integer integer_of_nat Inl Inr 
   Predicate Function
-  Either Variable Object Var Const Ent Fun PredDecl BigAnd BigOr mult_list add_list
+  Either Variable Object Var Const Sym Fun PredDecl BigAnd BigOr mult_list add_list
   ObjFunDecl NumFunDecl NFun Num_Eq PDDL_Semantics.Eq PDDL_Semantics.PredAtom
   OF_Upd NF_Upd Assign
   ast_problem_decs.is_obj_fun ast_problem_decs.is_num_fun

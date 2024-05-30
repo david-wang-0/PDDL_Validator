@@ -47,6 +47,8 @@ struct
 
     val identLetter    = alphaNum <|> oneOf (String.explode "_-") 
       (*Idents can be separated with " " or \n and can contain [Aa-Zz], [0-9], "-", "_"*)
+
+    (* identStart is the first letter of any name. We rely on parcom being correct. *)
     val identStart     = letter (* <|> oneOf (String.explode "?") *)
       (* Variables start with "?", other things start with *)
     val opLetter      = letter <|> oneOf (String.explode "-/+*=><.")
@@ -157,6 +159,9 @@ struct
       to parse the new value. These are equivalent, meaning that they cannot be distinguished
       syntactically. Furthermore, this also entails that objects and object functions must be
       distinguished between.
+
+      Solution: remove the object/constant term. The disambiguation can then be done within 
+      Isabelle and will no longer be unreliable.
       *)
 
   datatype PDDL_F_EXP = 
