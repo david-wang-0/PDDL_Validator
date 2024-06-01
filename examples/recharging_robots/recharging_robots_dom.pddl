@@ -33,17 +33,21 @@
     )
 
     ;; Move the robot ?r from the location ?from to the location ?to while
-    ;; consuming the battery -- it is decreased by one from ?fpre to ?fpost
+    ;; consuming the battery
     (:action move
         :parameters (?r - robot ?to - location)
-        :precondition (and
+        :precondition 
+            (and
                 (not (stopped ?r))
                 (or (CONNECTED (loc ?r) ?to) (CONNECTED ?to (loc ?r)))
-                (> (battery-level ?r) 0))
-        :effect (and
+                (> (battery-level ?r) 0)
+            )
+        :effect 
+            (and
                 (assign (at ?r) ?to)
                 (decrease (battery-level ?r) move-cost)
-                (increase total-cost move-cost)))
+                (increase total-cost move-cost))
+            )
 
     ;; Recharge robot ?rto at location ?loc by transfering one unit of battery
     ;; charge from the robot ?rfrom
@@ -53,12 +57,15 @@
             (and
                 (not (= ?rfrom ?rto))
                 (= (at ?rfrom) (at ?rto))
-                (> (battery-level ?rfrom) 0))
+                (> (battery-level ?rfrom) 0)
+            )
         :effect
             (and
                 (increase (battery ?rfrom) 1)
                 (assign (battery ?rto) ((battery ?rto) - 1))
-                (increase total-cost recharge-cost)))
+                (increase total-cost recharge-cost)
+            )
+    )
 
     ;; Stop the robot at its current location and guard the neighborhood.
     ;; Once the robot stopped it can move again only when the configuration is
@@ -75,7 +82,11 @@
                 (guarded (loc ?r))
                 (forall (?l2 - location)
                     (when (or (CONNECTED ?l ?l2) (CONNECTED ?l2 ?l))
-                        (guarded ?l2)))))
+                        (guarded ?l2)
+                    )
+                )
+            )
+        )
 
     ;; Verify that the given configuration is fullfilled, i.e., robots guard
     ;; all locations from the configuration.
@@ -97,9 +108,18 @@
             (and
                 (forall (?r - robot) 
                     (when 
-                        (GUARD-CONFIG ?c (loc ?r)) 
+                        (exists (?l - location) 
+                            (and 
+                                (GUARD-CONFIG ?c ?l) 
+                                (= (loc ?r) ?l)
+                            )
+                        )
                         (and 
                             (not (stopped ?r)) 
-                            (not (guarded (loc ?r)))))
-                (config-fullfilled ?c))))
+                            (not (guarded (loc ?r)))
+                        )
+                    )
+                (config-fullfilled ?c))
+            )
+    )
 )
