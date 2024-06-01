@@ -1694,6 +1694,8 @@ begin
     by blast
   text \<open>lifting type preservation from entities to terms\<close>
 
+  (* Using the mutual induction rule resulted in an uglier proof *)
+
   lemma ty_term_is_of_type_lift':
   assumes f_ent: "\<And>e T. e \<in> sym t \<Longrightarrow> is_of_type Q e T \<Longrightarrow> is_of_type R (f e) T"
             and "is_term_of_type Q t T"
@@ -3415,6 +3417,8 @@ qed
     shows "wf_world_model M'"
     using assms
     by (induction \<pi>s arbitrary: M) (auto intro: wf_execute)
+
+  (* TODO: prove that the plan action path starting from I leads to a well-formed world model. *)
 
 
   (* We might want to connect the following facts as lemmas rather than definitions:
