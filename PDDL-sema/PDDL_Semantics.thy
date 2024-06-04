@@ -1019,6 +1019,7 @@ end \<comment> \<open>Context fixing \<open>ty_ent\<close>\<close>
     \<and> (\<forall>p\<in>set (preds DD). wf_pred_decl p)
     \<and> (\<forall>(c, T) \<in> set (consts DD). wf_type T)"
 
+  (* all functions must be distinct from constants, because otherwise equality checks become ambiguous *)
   
 
   (* Functions in the domain cannot have the same name as objects *)
@@ -2555,7 +2556,7 @@ context ast_problem begin
     where "valid_plan \<equiv> valid_plan_from I"
 
   text \<open>Concise definition used in paper:\<close>
-  lemma "valid_plan \<pi>s \<equiv> \<exists>M'. plan_action_path I \<pi>s M' \<and> valuation M' \<Turnstile> inst_goal (goal P)"
+  lemma valid_plan_alt: "valid_plan \<pi>s \<equiv> \<exists>M'. plan_action_path I \<pi>s M' \<and> valuation M' \<Turnstile> inst_goal (goal P)"
     unfolding valid_plan_def valid_plan_from_def by auto
 
 end \<comment> \<open>Context of \<open>ast_problem\<close>\<close>
@@ -3418,8 +3419,14 @@ qed
     using assms
     by (induction \<pi>s arbitrary: M) (auto intro: wf_execute)
 
-  (* TODO: prove that the plan action path starting from I leads to a well-formed world model. *)
-
+  theorem valid_plan: "valid_plan \<pi>s \<equiv>
+    \<exists>M'. plan_action_path I \<pi>s M' 
+    \<and> valuation M' \<Turnstile> inst_goal (goal P) 
+    \<and> wf_world_model M'"
+    apply (subst valid_plan_alt)
+    apply (rule eq_reflection)
+    using wf_plan_action_path[OF wf_I]
+    by blast
 
   (* We might want to connect the following facts as lemmas rather than definitions:
       - The initial world model I is always well-formed (checked)
