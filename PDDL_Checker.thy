@@ -233,14 +233,21 @@ fun nf_val_impl::"exec_world_model \<Rightarrow> object term num_fluent \<Righta
 | "nf_val_impl M (Add x y) = (combine_options plus (nf_val_impl M x) (nf_val_impl M y))"
 | "nf_val_impl M (Sub x y) = (combine_options minus (nf_val_impl M x) (nf_val_impl M y))"
 | "nf_val_impl M (Mult x y) = (combine_options times (nf_val_impl M x) (nf_val_impl M y))"
-| "nf_val_impl M (Div x y) = (combine_options divide (nf_val_impl M x) (nf_val_impl M y))"
+| "nf_val_impl M (Div x y) = (
+      let 
+        x' = nf_val_impl M x;
+        y' = nf_val_impl M y
+      in 
+      if (y' = Some 0) 
+      then None 
+      else combine_options divide x' y')"
 
 
 lemma nf_val_impl_correct: "nf_val_impl M x = nf_val (exec_wm_to_wm M) x"
 proof (induction x)
   case (NFun f as)
-  show ?case sorry 
-  (* proof (cases "Mapping.lookup (enfi M) f")
+  show ?case
+  proof (cases "Mapping.lookup (enfi M) f")
     case None
     then show ?thesis by (cases M; simp add: enfi_def to_map_map_def lookup_map_values)
   next
@@ -252,8 +259,8 @@ proof (induction x)
       using term_val_impl_correct by auto
     
     show ?thesis by (simp add: 1 Some 2)
-  qed sorry  *)
-qed
+  qed
+qed (auto simp: Let_def)
 
 context
   fixes term_val::"object term \<rightharpoonup> object"
@@ -2277,7 +2284,6 @@ lemma resolve_action_schemaE_return_iff[return_iff]:
   unfolding resolve_action_schemaE_def 
   by (rule return_iff)
 
-  (* check non-interference *)
   definition en_exE :: "plan_action \<Rightarrow> exec_world_model \<Rightarrow> _+exec_world_model" where
     "en_exE \<equiv> \<lambda>(PAction n args) \<Rightarrow> \<lambda>s. do {
       a \<leftarrow> resolve_action_schemaE n;
@@ -2413,7 +2419,7 @@ proof (induction pa)
           Error_Monad.return (apply_conditional_effect_list_impl (effects ai) s)} = Inl l"
         unfolding en_exE2_def plan_action.case
         by (auto simp: Let_def)
-      from this(2)[simplified Error_Monad.bind_assoc] this(2)
+      
       show ?thesis 
       proof (cases "action_params_match_impl a as")
         case True
@@ -2465,6 +2471,8 @@ context ast_problem begin
       \<longleftrightarrow> valid_plan_action \<pi> s
         \<and> (valid_plan_from1 (execute_plan_action \<pi> s) \<pi>s)"
 
+  thm valid_plan_from_def
+
   lemma valid_plan_from1_refine: "valid_plan_from s \<pi>s = valid_plan_from1 s \<pi>s"
   proof(induction \<pi>s arbitrary: s)
     case Nil
@@ -2485,7 +2493,8 @@ context ast_problem begin
       \<and> (valid_plan_from2 (execute_plan_action_impl \<pi> s) \<pi>s)"
 
   lemma valid_plan_from2_refine: "valid_plan_from2 s \<pi>s = valid_plan_from1 (exec_wm_to_wm s) \<pi>s"
-    by (induction \<pi>s arbitrary: s; simp add: ext[OF valuation_impl_correct] valid_plan_action_impl_correct execute_plan_action_impl_correct)
+    by (induction \<pi>s arbitrary: s; simp add: ext[OF valuation_impl_correct] 
+        valid_plan_action_impl_correct execute_plan_action_impl_correct)
 
   text \<open>Next, we use our efficient combined enabledness check and execution
     function, and transfer the implementation to use the error monad: \<close>
@@ -2669,7 +2678,7 @@ definition "prepend_err_msg msg e \<equiv> \<lambda>_::unit. shows msg o shows '
 definition "check_wf_problem_decs PD \<equiv> do {
   let DD = ast_problem_decs.domain_decs PD;
   check_wf_domain_decs DD <+? prepend_err_msg ''Domain declarations not well-formed'';
-  check (distinct (map fst (objects PD) @ map fst (consts DD))) (ERRS ''Duplicate object declaration'');
+  check (distinct (map of_name (obj_funs DD) @ map nf_name (num_funs DD) @ map (obj_name o fst) (consts DD) @ map (obj_name o fst) (objects PD))) (ERRS ''Duplicate object or function declaration'');
   check ((\<forall>(n,T)\<in>set (objects PD). ast_domain_decs.wf_type DD T)) (ERRS ''Malformed type'')
 }"
 
@@ -2746,8 +2755,6 @@ lemma check_wf_problem_return_iff[return_iff]:
   apply (subst ast_problem.wf_problem_impl_correct)
   ..
 
-(* To do: implement executable plan checker *)
-
 definition "check_plan P \<pi>s \<equiv> do {
   let D = ast_problem.domain P;
   let PD = ast_domain.problem_decs D;
@@ -2760,18 +2767,16 @@ definition "check_plan P \<pi>s \<equiv> do {
   ast_problem.valid_plan_fromE P 0 init \<pi>s
 } <+? (\<lambda>x. String.implode (x () ''''))"
 
-(* valid_plan_fromE should be as efficient as possible *)
-(* after checking that the problem is valid, we can just pass the 
-    necessary components of the problem to valid_plan_fromE *)
-
-(* the correctness of valid_plan_fromE is relative to valid_plan_from, which
-  needs (what?) *)
+(* We replace equivalent and conclusions step by step. *)
 
 term ast_problem.valid_plan_from
 theorem check_plan_return_iff': "check_plan P \<pi>s = Inr () 
   \<longleftrightarrow> ast_problem.wf_problem_impl P \<and> ast_problem.valid_plan_from2 P (ast_problem.I_impl P) \<pi>s"
   unfolding check_plan_def
-  by (auto simp: check_wf_problem_return_iff' ast_problem.wf_problem_impl_correct wf_ast_problem.valid_plan_fromE_return_iff' wf_ast_problem_def)
+  using wf_ast_problem.valid_plan_fromE_return_iff'
+  by (auto simp: check_wf_problem_return_iff' 
+      ast_problem.wf_problem_impl_correct 
+      wf_ast_problem_def)
 
   text \<open>Correctness theorem of the plan checker: It returns @{term "Inr ()"}
   if and only if the problem is well-formed and the plan is valid.
