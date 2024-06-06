@@ -1,0 +1,5 @@
+(and
+                (forall (?l - location)
+                    (imply (GUARD-CONFIG ?c ?l) (guarded ?l))
+                )
+            )

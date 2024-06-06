@@ -36,8 +36,11 @@ struct
       bindR (p b (c, ts))
 	    (fn (x, posx, c, ts) =>
 		let val nb = ref false
-		in map (fn (posy, ms) => (b := (!b orelse !nb); ((*Pos.union posx*) posy, ms)))
-		       (fn (y, posy, c, ts) => (y, Pos.union posx posy, c, ts))
+		in map (fn (posy, ms) => 
+              (b := (!b orelse !nb); 
+              ((*Pos.union posx*) posy, ms)))
+		       (fn (y, posy, c, ts) => 
+            (y, Pos.union posx posy, c, ts))
 		       (q x nb (c, ts))
 		end)
 
