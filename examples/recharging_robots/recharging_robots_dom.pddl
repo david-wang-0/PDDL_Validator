@@ -44,7 +44,7 @@
             )
         :effect 
             (and
-                (assign (at ?r) ?to)
+                (assign (loc ?r) ?to)
                 (decrease (battery-level ?r) move-cost)
                 (increase total-cost move-cost))
             )
@@ -56,13 +56,13 @@
         :precondition
             (and
                 (not (= ?rfrom ?rto))
-                (= (at ?rfrom) (at ?rto))
+                (= (loc ?rfrom) (loc ?rto))
                 (> (battery-level ?rfrom) 0)
             )
         :effect
             (and
-                (increase (battery ?rfrom) 1)
-                (assign (battery ?rto) ((battery ?rto) - 1))
+                (increase (battery-level ?rfrom) 1)
+                (assign (battery-level ?rto) (- (battery-level ?rto) 1))
                 (increase total-cost recharge-cost)
             )
     )
@@ -80,7 +80,7 @@
             (and
                 (stopped ?r)
                 (guarded (loc ?r))
-                (forall (?l2 - location)
+                (forall (?l2 ?l - location)
                     (when (or (CONNECTED ?l ?l2) (CONNECTED ?l2 ?l))
                         (guarded ?l2)
                     )
@@ -119,7 +119,8 @@
                             (not (guarded (loc ?r)))
                         )
                     )
-                (config-fullfilled ?c))
+                )
+                (config-fullfilled ?c)
             )
     )
 )

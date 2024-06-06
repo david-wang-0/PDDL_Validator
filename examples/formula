@@ -1,4 +1,5 @@
 (and
-    (assign (at ?r) ?to)
-    (decrease (battery-level ?r) move-cost)
-    (increase total-cost move-cost))
+                (forall (?l - location)
+                    (imply (GUARD-CONFIG ?c ?l) (guarded ?l))
+                )
+            )

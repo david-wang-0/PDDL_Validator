@@ -338,8 +338,8 @@ context ast_domain_decs begin
   lemma of_type_refine1: "of_type oT T \<longleftrightarrow> (\<forall>pt\<in>set (primitives oT). of_type1 pt T)"
     unfolding of_type_def of_type1_def by auto
 
-  text \<open>We declare types and their supertypes. \<open>subtype_edge\<close> is therefore
-        the \<close>
+  text \<open>We declare types and their supertypes. \<open>subtype_edge\<close> is
+        the other direction\<close>
   definition "STG \<equiv> (tab_succ (map subtype_edge (types DD)))"
 
   definition "of_type_impl = of_type' STG"
@@ -718,7 +718,7 @@ end \<comment> \<open>Context of \<open>ast_domain\<close>\<close>
 context ast_problem_decs begin
 
   text \<open> We start by defining a mapping from objects to types. The container
-    framework will generate efficient, red-black tree based code for that
+    framework will generate efficient, red-black tree based, code for that
     later. \<close>
 
   definition mp_objT :: "(object, type) mapping" where
@@ -1815,7 +1815,7 @@ lemma valid_ground_action_impl_correct: "valid_ground_action_impl a M = valid_gr
   proof (induction as arbitrary: M)
     case Nil
     then show ?case using exec_wm_to_wm_inj
-      by (simp add: inj_eq)
+      by (simp add: inj_eq) (* something which is not apparent *)
   next
     case (Cons a as)
     have "ground_action_path_impl M (a # as) M' = 
@@ -2691,9 +2691,6 @@ proof -
     by (auto simp: return_iff)
 qed
 
-(* Why do we need a well-formed domain? *)
-term ast_problem_decs.wf_action_schema'
-(* We check that the domain is well-formed *)
 definition "check_wf_domain D \<equiv> do {
   let PD = ast_domain.problem_decs D;
   let DD = ast_problem_decs.domain_decs PD;

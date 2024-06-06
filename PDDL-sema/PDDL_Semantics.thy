@@ -193,6 +193,7 @@ text \<open>An effect modifies the objects for which a pred holds as well
       an undefined value might occur is syntactically enforced as the assignment of a 
       return value for a function application.\<close>
 
+(* Put this into a locale *)
 datatype (ent: 'ent) of_upd = OF_Upd func "'ent list" (ret_val: "'ent option")
 datatype (ent: 'ent) nf_upd = NF_Upd upd_op func "'ent list" "'ent num_fluent"
 (* replace the operator with cases in a datatype? *)
@@ -233,6 +234,13 @@ text \<open>The types used to model fully instantiated effects. \<open>adds\<clo
       model these.
 
       This decision simplifies the well-formedness checks.\<close>
+
+(* I think not changing the type that represents the not fully instantiated updates is a good choice:
+  - I considered changing it to have two type parameters
+    - This would mean that the whole line of reasoning regarding the preservation of well-formedness 
+      must be restated, because there is no longer a simple way to extract all ('ent instances)
+  TODO: Can you force a type constraint like this with dependent types?
+*)
 datatype instantiated_of_upd = OFU func "object option list" (return_value: "object option")
 datatype instantiated_nf_upd = NFU upd_op func "object option list" "rat option"
 
@@ -679,6 +687,7 @@ text \<open>Here, we evaluate an {@typ object term} against world-model to
   | "predicate_inst M (Eq t1 t2) = (case (term_val M t1, term_val M t2) of
       (Some x, Some y) \<Rightarrow> Some (Eq x y)
     | _                \<Rightarrow> None)"
+  (* When we do not know what either term defines, then we cannot say that they are equal *)
   
   fun predicate_val::"world_model \<Rightarrow> (object term) predicate \<Rightarrow> bool" where
     "predicate_val M p = (case predicate_inst M p of 
@@ -1050,7 +1059,7 @@ begin
   definition wf_problem_decs where
     "wf_problem_decs \<equiv>
       wf_domain_decs
-    \<and> distinct (map fst (objects PD) @ map fst (consts DD))
+    \<and> distinct (map of_name (obj_funs DD) @ map nf_name (num_funs DD) @ (map (obj_name o fst) (consts DD)) @ (map (obj_name o fst) (objects PD)))
     \<and> (\<forall>(n,T) \<in> set (objects PD). wf_type T)"
 
 
@@ -2123,6 +2132,23 @@ locale wf_problem_decs = ast_problem_decs +
   assumes wf_problem_decs: wf_problem_decs
 begin
 
+
+lemma distinct_objs': "distinct (map (obj_name \<circ> fst) (consts DD) @ map (obj_name \<circ> fst) (objects PD)) \<Longrightarrow> distinct (map fst ((objects PD) @ (consts DD)))"
+  apply (subst (asm) distinct_append)
+  apply (subst (asm) Int_commute)
+  apply (subst (asm) conj_assoc[symmetric])
+  apply (subst (asm) conj_commute)
+  apply (subst (asm) conj_assoc)
+  apply (subst (asm) distinct_append[symmetric])
+  apply (subst (asm) map_append[symmetric])
+  apply (subst (asm) map_map[symmetric])
+  by (rule distinct_mapI[where f = obj_name])
+
+lemma distinct_objs: "distinct (map fst (objects PD @ consts DD))"
+  using wf_problem_decs distinct_objs'
+  unfolding wf_problem_decs_def
+  by simp
+
   text \<open>The correctness of t_dom\<close>
   lemma t_dom_corr: "objT obj = Some t \<Longrightarrow> of_type t T \<longleftrightarrow> obj \<in> set (t_dom T)"
   proof -                                   
@@ -2132,14 +2158,15 @@ begin
     moreover
     from wf_problem_decs
     have "distinct (map fst (objects PD @ consts DD))"
-      unfolding wf_problem_decs_def by simp
+      using distinct_objs by simp
     moreover
     have "t_dom T = map fst (filter (\<lambda>(c, t). of_type t T) (consts DD @ objects PD))"
       unfolding t_dom_def by simp 
     ultimately
     show "of_type t T \<longleftrightarrow> obj \<in> set (t_dom T)" by fastforce+
   qed
-    
+
+
 
   text \<open>The circumstances under which using a quantifier will result in a well-formed formula\<close>
   lemma c_ty: "\<forall>obj \<in> set (t_dom ty). \<exists>ty'. objT obj = Some ty' \<and> of_type ty' ty"
@@ -2154,7 +2181,7 @@ begin
       unfolding t_dom_def by fastforce
     from wf_problem_decs
     have "distinct (map fst (consts DD @ objects PD))"
-      unfolding wf_problem_decs_def by auto
+      using distinct_objs by auto
     from map_of_is_SomeI[OF this] \<open>(obj,t) \<in> set (consts DD @ objects PD)\<close>
     have "map_of (consts DD @ objects PD) obj = Some t" by auto
     with \<open>of_type t ty\<close>
@@ -3419,7 +3446,7 @@ qed
     using assms
     by (induction \<pi>s arbitrary: M) (auto intro: wf_execute)
 
-  theorem valid_plan: "valid_plan \<pi>s \<equiv>
+  corollary valid_plan: "valid_plan \<pi>s \<equiv>
     \<exists>M'. plan_action_path I \<pi>s M' 
     \<and> valuation M' \<Turnstile> inst_goal (goal P) 
     \<and> wf_world_model M'"
@@ -3428,18 +3455,14 @@ qed
     using wf_plan_action_path[OF wf_I]
     by blast
 
-  (* We might want to connect the following facts as lemmas rather than definitions:
-      - The initial world model I is always well-formed (checked)
-      - A valid plan is a plan-action path from I to some state satisfying the goal
-      - How do we know that the semantics of action execution make sense? *)
 end
 
-subsubsection \<open>Semantics of quantifiers under instantiation\<close>
+subsubsection \<open>Semantics of quantifiers following instantiation\<close>
 
 text \<open>Here are some lemmas that prove that the semantics of quantified formulas
       are correct following instantiation. If we have a goal or an action schema that
-      used a macro expansion for formulae with quantifiers, we can be sure that its 
-      semantics are behaving as we expected.\<close>
+      used a macro expansion for formulae with quantifiers, we can be sure that it expresses
+      what we wanted it to.\<close>
 context ast_problem begin
   
   notation all ("\<^bold>\<forall>_ - _._")   

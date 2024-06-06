@@ -59,7 +59,7 @@ struct
         ":types", ":constants", ":action", ":parameters", ":precondition", ":effect", 
         ":invariant", ":name", ":vars", ":set-constraint",
         "problem", ":domain", ":init", ":objects", ":goal", ":metric", "maximize", "minimize",              
-        "=", "+", "-", "/", "*", "<", ">", "<=", ">=", ".", "and", "or", "not", "forall", "exists",
+        "=", "+", "-", "/", "*", "<", ">", "<=", ">=", ".", "and", "or", "imply", "not", "forall", "exists", "when",
         "either", "assign", "scale-up", "scale-down", "increase", "decrease"
         ]
     val reservedNames = reservedOpNames @ ["number", "undefined", "total-cost", "object"]
@@ -104,7 +104,7 @@ struct
     Obj_Type of PDDL_TYPE
   | Num_Type
 
-  type PDDL_PRED = string
+  type PDDL_ATOM = string
 
   type PDDL_FUN = string
 
@@ -120,13 +120,13 @@ struct
 
 
   (* Predicates *)
-  type ATOMIC_FORM_SKEL = PDDL_PRED * (PDDL_VAR PDDL_TYPED_LIST)
+  type ATOMIC_FORM_SKEL = PDDL_ATOM * (PDDL_VAR PDDL_TYPED_LIST)
 
   type PDDL_PREDS_DEF = ATOMIC_FORM_SKEL list
 
-  datatype PDDL_TERM = OBJ_CONS_TERM of PDDL_OBJ_CONS
-                       | VAR_TERM of PDDL_VAR
-                       | FUN_TERM of (PDDL_FUN * PDDL_TERM list)
+  datatype PDDL_TERM =   
+    VAR_TERM of PDDL_VAR
+  | FUN_TERM of (string * PDDL_TERM list)
   
   (* Functions *)
   type 'a FUN_TYPED_LIST = (('a list) * PDDL_FUN_TYPE) list
@@ -141,61 +141,43 @@ struct
 
   type RAT = string * string option
 
-  (* Making function heads terms is not the cleanest solution, because we have to 
-      distinguish between 0-ary functions and objects later on, but it is better
-      than adding rationals and operators to terms (alternative 2). 
-      
-      We need a type which can hold natural numbers, operators, constants/0-ary functions,
-      n-ary functions, and variables in order to represent assignments. Kovac's grammar 
-      defines <function-term> as a <function-symbol> followed by (a possibly empty) list of 
-      terms. Functions can be declared as 0-ary. Numeric functions are parsed using <f-head>, 
-      which is equivalent to <function-term>. <function-symbol> is equivalent to what we
-      call an object. Both are parsed using <name>. Therefore 0-ary functions and objects are 
-      indistinguishable. This is means, that the PDDL_TERM type must be disambiguated once
-      we have knowledge of the declared functions and objects. Currently our parsed functions
-      must have at least one argument, which means 0-ary functions are parsed as objects.
-      
-      Assignments to numeric functions and object functions use <f-head> and <term> respectively
-      to parse the new value. These are equivalent, meaning that they cannot be distinguished
-      syntactically. Furthermore, this also entails that objects and object functions must be
-      distinguished between.
-
-      Solution: remove the object/constant term. The disambiguation can then be done within 
-      Isabelle and will no longer be unreliable.
-      *)
+  (* F_Head is a term, with a well-formedness condition, because assignment updates are ambiguous. *)
 
   datatype PDDL_F_EXP = 
     PDDL_Num of RAT
-  | F_Head of F_HEAD 
+  | F_Head of PDDL_TERM 
   | PDDL_Minus of (PDDL_F_EXP * PDDL_F_EXP)
   | PDDL_Div of (PDDL_F_EXP * PDDL_F_EXP)
   | PDDL_Neg of PDDL_F_EXP
   | PDDL_Times of PDDL_F_EXP list
   | PDDL_Plus of PDDL_F_EXP list
 
-  datatype PDDL_F_COMP = 
-    PDDL_Num_Lt of (PDDL_F_EXP * PDDL_F_EXP)
-  | PDDL_Num_Le of (PDDL_F_EXP * PDDL_F_EXP)
-  | PDDL_Num_Eq of (PDDL_F_EXP * PDDL_F_EXP)
+  (* Equality is an ambiguous comparison, when not numbers or arithmetic operations are 
+      involved *)
+  datatype PDDL_TERM_ATOM = 
+    PDDL_Pred of (string * PDDL_TERM list)
+  | PDDL_Eq of (PDDL_F_EXP * PDDL_F_EXP) 
   | PDDL_Num_Gt of (PDDL_F_EXP * PDDL_F_EXP)
+  | PDDL_Num_Lt of (PDDL_F_EXP * PDDL_F_EXP)
+  | PDDL_Num_Le of (PDDL_F_EXP * PDDL_F_EXP)
   | PDDL_Num_Ge of (PDDL_F_EXP * PDDL_F_EXP)
 
-  datatype 't PDDL_ATOM = 
-    PDDL_Pred of (string * 't list)
-  | PDDL_Pred_Eq of ('t * 't)
+  datatype PDDL_OBJ_ATOM =
+    PDDL_Obj_Pred of (string * PDDL_OBJ_CONS list)
+  | PDDL_Obj_Eq of (PDDL_OBJ_CONS * PDDL_OBJ_CONS)
 
   datatype PDDL_FORM =
-    PDDL_Form_Atom of PDDL_TERM PDDL_ATOM
-  | PDDL_Form_Comp of PDDL_F_COMP
+    PDDL_Form_Atom of PDDL_TERM_ATOM
   | PDDL_Not of PDDL_FORM
   | PDDL_And of PDDL_FORM list
   | PDDL_Or of PDDL_FORM list
+  | PDDL_Imply of PDDL_FORM * PDDL_FORM
   | PDDL_All of PDDL_VAR PDDL_TYPED_LIST * PDDL_FORM
   | PDDL_Exists of PDDL_VAR PDDL_TYPED_LIST * PDDL_FORM
 
   datatype PDDL_EFFECT = 
-    Add of PDDL_TERM PDDL_ATOM
-  | Del of PDDL_TERM PDDL_ATOM
+    Add of PDDL_TERM_ATOM
+  | Del of PDDL_TERM_ATOM
   | Unassign of F_HEAD
   | PDDL_Assign of (F_HEAD * PDDL_F_EXP) 
   | N_ScaleUp of (F_HEAD * PDDL_F_EXP)
@@ -230,8 +212,8 @@ struct
 
   (* Parsed types in the problem *)
   datatype PDDL_INIT =
-    True_Pred of PDDL_OBJ_CONS PDDL_ATOM
-  | False_Pred of PDDL_OBJ_CONS PDDL_ATOM
+    True_Pred of PDDL_OBJ_ATOM
+  | False_Pred of PDDL_OBJ_ATOM
   | Init_Num_Func_Asmt of (PDDL_FUN * PDDL_OBJ_CONS list * RAT)
   | Init_Obj_Func_Asmt of (PDDL_FUN * PDDL_OBJ_CONS list * PDDL_OBJ_CONS)
 
@@ -300,7 +282,7 @@ struct
   val atomic_formula_skeleton = (in_paren (predicate && optional_typed_list pddl_var)) ?? "predicate"
 
   val predicates_def: PDDL_PREDS_DEF pddl_parser = 
-    (in_paren (pddl_reserved ":predicates" >> (repeat (atomic_formula_skeleton)))) ?? "predicates def"
+    (in_paren (pddl_reserved ":predicates" >> (repeat atomic_formula_skeleton))) ?? "predicates def"
 
   val function_type = (reserved_name "number") return Num_Type || type_ wth Obj_Type ?? "function type"
 
@@ -323,9 +305,9 @@ struct
   (* Functions can be declared without arguments. <typed-list> permits 0 arguments. Therefore
       we cannot syntactically distinguish between objects and functions. To do *)
   val term = fix (fn pddl_term => 
-      pddl_obj_cons wth (fn oc => OBJ_CONS_TERM oc) (* This will also parse 0-ary fluents *)
-    || pddl_var wth (fn v => VAR_TERM v) 
-    || in_paren (function_symbol && repeat1 pddl_term) wth FUN_TERM) ?? "term"
+       pddl_var wth VAR_TERM
+    || in_paren (function_symbol && repeat pddl_term) wth FUN_TERM
+    || pddl_name wth (fn n => FUN_TERM (n, []))) ?? "term"
 
   (* parsing (postive) decimals as string *)
   val dec_num = ((lexeme ((char #"-" || digit) && (repeat digit) wth (fn (x,xs) => String.implode (x::xs))))
@@ -334,41 +316,51 @@ struct
 
   val number = dec_num ?? "d value"
 
-  val f_head = (in_paren(function_symbol && repeat term)) ?? "f_head"
+  val f_head = 
+        in_paren(function_symbol && repeat1 term)
+      || function_symbol wth (fn f => (f, [])) ?? "f_head"
 
   fun repeat2 p = p && repeat1 p wth op::
 
   val f_exp = fix (fn f => 
       dec_num wth PDDL_Num 
-    || f_head wth F_Head
-    || in_paren(char #"-" >> f) wth PDDL_Neg
-    || in_paren(char #"-" >> f && f) wth PDDL_Minus
-    || in_paren(char #"/" >> f && f) wth PDDL_Div
-    || in_paren(char #"*" >> repeat2 f) wth PDDL_Times
-    || in_paren(char #"+" >> repeat2 f) wth PDDL_Plus
+    || f_head wth F_Head o FUN_TERM
+    || in_paren(pddl_reserved "-" >> f) wth PDDL_Neg
+    || in_paren(pddl_reserved "-" >> f && f) wth PDDL_Minus
+    || in_paren(pddl_reserved "/" >> f && f) wth PDDL_Div
+    || in_paren(pddl_reserved "*" >> repeat2 f) wth PDDL_Times
+    || in_paren(pddl_reserved "+" >> repeat2 f) wth PDDL_Plus
     ) ?? "f_exp"
 
-  val f_comp = ((in_paren ((char #"<") >> f_exp && f_exp)) wth PDDL_Num_Lt
-            || (in_paren ((pddl_reserved "<=") >> f_exp && f_exp)) wth PDDL_Num_Le
-            || (in_paren ((char #"=") >> f_exp && f_exp)) wth PDDL_Num_Eq (* Equality is ambiguous *)
-            || (in_paren ((char #">") >> f_exp && f_exp)) wth PDDL_Num_Gt
-            || (in_paren ((pddl_reserved ">=") >> f_exp && f_exp)) wth PDDL_Num_Ge
-            ) ?? "f_comp"
+  val f_comp : PDDL_TERM_ATOM pddl_parser = (
+      (in_paren ((pddl_reserved "<") >> f_exp && f_exp)) wth PDDL_Num_Lt
+    || (in_paren ((pddl_reserved "<=") >> f_exp && f_exp)) wth PDDL_Num_Le
+    || (in_paren ((pddl_reserved "=") >> f_exp && f_exp)) wth PDDL_Eq 
+    || (in_paren ((pddl_reserved ">") >> f_exp && f_exp)) wth PDDL_Num_Gt
+    || (in_paren ((pddl_reserved ">=") >> f_exp && f_exp)) wth PDDL_Num_Ge
+    ) ?? "f_comp"
 
-  fun atomic_formula t = ((in_paren(predicate && repeat t)
-                             wth PDDL_Pred)
-                         || in_paren((char #"=") >> t && t)
-                               wth PDDL_Pred_Eq) ?? "Atomic formula"
+  val atomic_formula_term = (
+    (in_paren (predicate && repeat term) wth PDDL_Pred)
+  || (in_paren ((pddl_reserved "=") >> term && term)) wth (fn (a, b) => PDDL_Eq (F_Head a, F_Head b))
+  ) ?? "Atomic formula"
 
-  (* Not used *)
-  fun literal t = ((atomic_formula t) wth PDDL_Form_Atom || (in_paren(pddl_reserved "not" >> atomic_formula t)) wth PDDL_Not o PDDL_Form_Atom) ?? "literal"
+  val atomic_formula_obj = (
+    (in_paren(predicate && repeat pddl_obj_cons) wth PDDL_Obj_Pred)
+  || in_paren((pddl_reserved "=") >> pddl_obj_cons && pddl_obj_cons) wth PDDL_Obj_Eq) ?? "Atomic formula"
 
+  (* The first two clauses are ambiguous:
+    - Equality on terms 
+    - Equality on numbers
+    - f_exp can parse two terms
+    - f_comp can parse two f_exps, which are ambiguous with terms  *)
   val GD: PDDL_FORM pddl_parser = fix (fn f => 
-      atomic_formula term wth PDDL_Form_Atom (* This is ambiguous *)
-      || f_comp wth PDDL_Form_Comp
+      atomic_formula_term wth PDDL_Form_Atom 
+      || f_comp wth PDDL_Form_Atom
       || in_paren(pddl_reserved "not" >> f) wth PDDL_Not
       || in_paren(pddl_reserved "and" >> repeat1 f) wth PDDL_And
       || in_paren(pddl_reserved "or" >> repeat1 f) wth PDDL_Or
+      || in_paren(pddl_reserved "imply" >> f && f) wth PDDL_Imply
       || in_paren(pddl_reserved "forall" >> (in_paren(typed_list pddl_var) && f)) wth PDDL_All
       || in_paren(pddl_reserved "exists" >> (in_paren(typed_list pddl_var) && f)) wth PDDL_Exists
       ) ?? "GD"
@@ -376,21 +368,22 @@ struct
   val pre_GD = GD ?? "pre_GD" (* the (and ...) in the pre_GD is parsed by GD *)
 
 
-  (* The assign is sketchy. The type used to represent numeric funcitons would have to 
-      be changed.  *)
+  (* The assign is sketchy. The second Assign case cannot work, we will disambiguate assignments later *)
   val p_effect: PDDL_EFFECT pddl_parser =
-      ((in_paren (atomic_formula term) wth Add)
-      || (in_paren (pddl_reserved "not" >> atomic_formula term) wth Del)
+      (atomic_formula_term wth Add
+      || (in_paren (pddl_reserved "not" >> atomic_formula_term) wth Del)
       || (in_paren (pddl_reserved "assign" >> f_head << reserved_name "undefined") wth Unassign)
-      || (in_paren (pddl_reserved "assign" >> f_head && f_exp) wth PDDL_Assign) (* F_HEAD & f_exp == (PDDL_FUN * PDDL_TERM_LIST) * PDDL_F_EXP *)
+      || (in_paren (pddl_reserved "assign" >> f_head && f_exp) wth PDDL_Assign) 
+      || (in_paren (pddl_reserved "assign" >> f_head && term) wth (fn (h, t) => PDDL_Assign (h, F_Head t)))
       || (in_paren (pddl_reserved "scale-up" >> f_head && f_exp) wth N_ScaleUp)
       || (in_paren (pddl_reserved "scale-down" >> f_head && f_exp) wth N_ScaleDown)
       || (in_paren (pddl_reserved "increase" >> f_head && f_exp) wth N_Increase)
       || (in_paren (pddl_reserved "decrease" >> f_head && f_exp) wth N_Decrease)) ?? "p_effect"
 
-  val cond_effect = (p_effect 
-                || (in_paren (pddl_reserved "and" >> repeat1 p_effect)) wth EFF_And)
-                ?? "cond_effect"
+  val cond_effect = (
+      p_effect 
+    || (in_paren (pddl_reserved "and" >> repeat1 p_effect)) wth EFF_And
+    )?? "cond_effect"
 
   (* effect and c_effect are mutually recursive in Kovac's definition.
       I have convinced myself that this definition is equivalent.*)
@@ -417,7 +410,7 @@ struct
         && (pddl_reserved ":parameters" >> (in_paren (optional_typed_list pddl_var)))
         && action_def_body)) wth flat3 ?? "action def"
 
-  val structure_def = (action_def (*|| durative_action_def || derived_def*) )?? "struct def"
+  val structure_def = action_def (*|| durative_action_def || derived_def*) ?? "struct def"
 
   val invariant_symbol = (pddl_reserved ":name" >> pddl_name) ?? "invariant symbol"
 
@@ -450,14 +443,14 @@ struct
 
 
   (* We do not implement the literal parser. Instead, we distinguish the true and false cases explicitly *)
-  val init_el: PDDL_INIT pddl_parser = ((atomic_formula pddl_obj_cons) wth True_Pred
-                 || in_paren((pddl_reserved "not") >> atomic_formula pddl_obj_cons) wth False_Pred 
-                 || in_paren((char #"=") >> basic_fun_term && pddl_obj_cons)
+  val init_el: PDDL_INIT pddl_parser = (atomic_formula_obj wth True_Pred
+                 || in_paren((pddl_reserved "not") >> atomic_formula_obj) wth False_Pred 
+                 || in_paren((pddl_reserved "=") >> basic_fun_term && pddl_obj_cons)
                                wth (Init_Obj_Func_Asmt o flatl3)
-                 || in_paren((char #"=") >> basic_fun_term && dec_num)
+                 || in_paren((pddl_reserved "=") >> basic_fun_term && dec_num)
                                wth (Init_Num_Func_Asmt o flatl3)) ?? "init element"
 
-  val init = in_paren(pddl_reserved ":init" >> repeat (init_el))
+  val init = in_paren(pddl_reserved ":init" >> repeat init_el)
 
 
   (* The rule for goals is exactly as the one in Kovacs. It is wrong, nonetheless, since a goal
@@ -507,15 +500,6 @@ open PDDL
 
   fun pddlObjConsToString (oc:PDDL_OBJ_CONS) = "Obj " ^ stringToString (pddl_obj_name oc)
 
-  fun pddlVarTermToString term = 
-
-    case term of VAR_TERM v => pddlVarToString v
-             | _ => exit_fail ("Var expected, but obejct found: pddlVarTermToString " ^ (pddlObjConsTermToString term))
-
-  and pddlObjConsTermToString term = 
-    case term of OBJ_CONS_TERM oc => pddlObjConsToString oc
-             | _ => exit_fail ("Object expected, but variable found: pddlObjConsTermToString " ^ (pddlVarTermToString term))
-
   fun pddlTypedListXTypesConv typedList cat_fn mk_pair_fn obj_v_conv_fun type_conv_fun =
     let
       fun wrap_var_with_type t = (fn v => mk_pair_fn (obj_v_conv_fun v) (type_conv_fun t))
@@ -530,7 +514,7 @@ open PDDL
 fun fst (x,y) = x
 fun snd (x,y) = y
 fun pddl_prop_map f prop =
- case prop of PDDL_atom atm => PDDL_atom (map_atom f atm)
+ case prop of PDDL_ATOM atm => PDDL_ATOM (map_atom f atm)
            | PDDL_Not sub_prop => PDDL_Not (pddl_prop_map f sub_prop)
            | PDDL_And props => PDDL_And (map (pddl_prop_map f) props)
            | PDDL_Or props => PDDL_Or (map (pddl_prop_map f) props)
