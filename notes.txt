@@ -1,7 +1,3 @@
-./bin/validate_pddl_plan.sh examples/recharging_robots/recharging_robots_dom.pddl examples/recharging_robots/recharging_robots_prob.pddl examples/recharging_robots/recharging_robots_plan.plan
+mlton -mlb-path-var -cc-opt -O3 -cc-opt -g0 pddl_validate_plan.mlb
 
-mlton -mlb-path-var 'ISABELLE_FILES PDDL-sema' -cc-opt -O3 -cc-opt -g0 pddl_validate_plan.mlb
-
-git subtree push --prefix={path/to/subdir} {remote} [branch]
-
-./bin/validate_pddl_plan.sh --test formula
+./bin/validate_pddl_plan.sh examples/recharging_robots/recharging_robots_dom.pddl examples/recharging_robots/recharging_robots_prob.pddl examples/recharging_robots/recharging_robots_plan.plan    
