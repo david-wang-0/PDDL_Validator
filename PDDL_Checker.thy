@@ -194,7 +194,7 @@ lemma enfi_nf_int[simp]: "to_map_map (enfi M) = world_model.nf_int (exec_wm_to_w
   by (cases M; simp)
 
 fun term_val_impl::"exec_world_model \<Rightarrow> object term \<Rightarrow> object option" where
-  "term_val_impl M (Ent obj) = Some obj"
+  "term_val_impl M (Sym obj) = Some obj"
 | "term_val_impl M (Fun fun as) = (case (Mapping.lookup (eofi M) fun) of
       Some f \<Rightarrow> (let arg_vals = map (\<lambda>t. term_val_impl M t) as
         in (if (list_all (\<lambda>x. x \<noteq> None) arg_vals) 
@@ -233,7 +233,14 @@ fun nf_val_impl::"exec_world_model \<Rightarrow> object term num_fluent \<Righta
 | "nf_val_impl M (Add x y) = (combine_options plus (nf_val_impl M x) (nf_val_impl M y))"
 | "nf_val_impl M (Sub x y) = (combine_options minus (nf_val_impl M x) (nf_val_impl M y))"
 | "nf_val_impl M (Mult x y) = (combine_options times (nf_val_impl M x) (nf_val_impl M y))"
-| "nf_val_impl M (Div x y) = (combine_options divide (nf_val_impl M x) (nf_val_impl M y))"
+| "nf_val_impl M (Div x y) = (
+      let 
+        x' = nf_val_impl M x;
+        y' = nf_val_impl M y
+      in 
+      if (y' = Some 0) 
+      then None 
+      else combine_options divide x' y')"
 
 
 lemma nf_val_impl_correct: "nf_val_impl M x = nf_val (exec_wm_to_wm M) x"
@@ -253,7 +260,7 @@ proof (induction x)
     
     show ?thesis by (simp add: 1 Some 2)
   qed
-qed auto
+qed (auto simp: Let_def)
 
 context
   fixes term_val::"object term \<rightharpoonup> object"
@@ -331,8 +338,8 @@ context ast_domain_decs begin
   lemma of_type_refine1: "of_type oT T \<longleftrightarrow> (\<forall>pt\<in>set (primitives oT). of_type1 pt T)"
     unfolding of_type_def of_type1_def by auto
 
-  text \<open>We declare types and their supertypes. \<open>subtype_edge\<close> is therefore
-        the \<close>
+  text \<open>We declare types and their supertypes. \<open>subtype_edge\<close> is
+        the other direction\<close>
   definition "STG \<equiv> (tab_succ (map subtype_edge (types DD)))"
 
   definition "of_type_impl = of_type' STG"
@@ -359,7 +366,7 @@ context ast_domain_decs begin
 
   text \<open>Implementation of the signatures for functions.\<close>
   definition obj_fun_sig'::"(func, (type list \<times> type)) mapping" where
-    "obj_fun_sig' = Mapping.of_alist (map (\<lambda>ObjFunDecl f ts t \<Rightarrow> (f, (ts, t))) (object_funs DD))"
+    "obj_fun_sig' = Mapping.of_alist (map (\<lambda>ObjFunDecl f ts t \<Rightarrow> (f, (ts, t))) (obj_funs DD))"
   
   definition "ofs_impl = Mapping.lookup obj_fun_sig'"
     
@@ -398,7 +405,7 @@ context ast_domain_decs begin
         "is_term_of_type' v T = (case ty_term' v of
           Some vT \<Rightarrow> of_type vT T
         | None \<Rightarrow> False)"
-      | "ty_term' (Ent e) = ty_ent e"
+      | "ty_term' (Sym e) = ty_ent e"
       | "ty_term' (Fun f as) = (case (ofs f) of 
           Some (Ts, T) \<Rightarrow> (if (list_all2 is_term_of_type' as Ts) 
             then Some T else None)
@@ -538,7 +545,7 @@ context ast_domain_decs begin
           the signature matches the types of the arguments, the arguments are well-formed,
           and the value that is being assigned is well-formed.\<close>
     fun wf_nf_upd'::"'ent nf_upd \<Rightarrow> bool" where
-    "wf_nf_upd' (NF_Upd f op as v) = (case nfs f of 
+    "wf_nf_upd' (NF_Upd op f as v) = (case nfs f of 
         None \<Rightarrow> False
       | Some Ts \<Rightarrow> 
           list_all2 is_of_type'' as Ts 
@@ -711,7 +718,7 @@ end \<comment> \<open>Context of \<open>ast_domain\<close>\<close>
 context ast_problem_decs begin
 
   text \<open> We start by defining a mapping from objects to types. The container
-    framework will generate efficient, red-black tree based code for that
+    framework will generate efficient, red-black tree based, code for that
     later. \<close>
 
   definition mp_objT :: "(object, type) mapping" where
@@ -860,7 +867,7 @@ context ast_problem_decs begin
   find_theorems name: "collect"
   
   fun term_vars_impl::"symbol term \<Rightarrow> variable set" where
-    "term_vars_impl (Ent x) = sym_vars x"
+    "term_vars_impl (Sym x) = sym_vars x"
   | "term_vars_impl (Fun f as) = fold ((\<union>) o term_vars_impl) as {}"
   
   lemma term_vars_impl_correct: "term_vars_impl x = term_vars x"
@@ -905,40 +912,40 @@ context ast_problem_decs begin
   | "nf_vars_impl (Sub a b) = nf_vars_impl a \<union> nf_vars_impl b"
   | "nf_vars_impl (Mult a b) = nf_vars_impl a \<union> nf_vars_impl b"
   | "nf_vars_impl (Div a b) = nf_vars_impl a \<union> nf_vars_impl b"
-
-lemma nf_vars_impl_correct: "nf_vars_impl x = nf_vars x"
-proof (induction x)
-  case (NFun f as)
-    have "nf_vars (NFun f as) = \<Union> (term_vars_impl ` (set as))"
-      unfolding nf_vars_def
-      using term_vars_impl_correct by simp
-    also have "... = fold (\<union>) (map term_vars_impl as) {}"
-        by (simp add: SUP_set_fold fold_map)
-    finally show ?case 
-      by (simp add: fold_map)
-qed (auto simp: nf_vars_def)
-
-fun nc_vars_impl::"symbol term num_comp \<Rightarrow> variable set" where
-  "nc_vars_impl (Num_Eq a b) = nf_vars_impl a \<union> nf_vars_impl b"
-| "nc_vars_impl (Num_Le a b) = nf_vars_impl a \<union> nf_vars_impl b"
-| "nc_vars_impl (Num_Lt a b) = nf_vars_impl a \<union> nf_vars_impl b"
-
-lemma nc_vars_impl_correct: "nc_vars_impl x = nc_vars x"
-  by (induction x; simp add: nc_vars_def nf_vars_def nf_vars_impl_correct)
-
-fun atom_vars_impl::"symbol term atom \<Rightarrow> variable set" where
-  "atom_vars_impl (PredAtom p) = predicate_vars_impl p"
-| "atom_vars_impl (NumComp nc) = nc_vars_impl nc"
-
-lemma atom_vars_impl_correct: "atom_vars_impl x = atom_vars x"
-  unfolding atom_vars_def
-proof (induction x)
-  case (PredAtom p)
-  then show ?case using predicate_vars_impl_correct atom_vars_def predicate_vars_def by simp
-next
-  case (NumComp nc)
-  then show ?case using nc_vars_impl_correct atom_vars_def nc_vars_def by simp
-qed
+  
+  lemma nf_vars_impl_correct: "nf_vars_impl x = nf_vars x"
+  proof (induction x)
+    case (NFun f as)
+      have "nf_vars (NFun f as) = \<Union> (term_vars_impl ` (set as))"
+        unfolding nf_vars_def
+        using term_vars_impl_correct by simp
+      also have "... = fold (\<union>) (map term_vars_impl as) {}"
+          by (simp add: SUP_set_fold fold_map)
+      finally show ?case 
+        by (simp add: fold_map)
+  qed (auto simp: nf_vars_def)
+  
+  fun nc_vars_impl::"symbol term num_comp \<Rightarrow> variable set" where
+    "nc_vars_impl (Num_Eq a b) = nf_vars_impl a \<union> nf_vars_impl b"
+  | "nc_vars_impl (Num_Le a b) = nf_vars_impl a \<union> nf_vars_impl b"
+  | "nc_vars_impl (Num_Lt a b) = nf_vars_impl a \<union> nf_vars_impl b"
+  
+  lemma nc_vars_impl_correct: "nc_vars_impl x = nc_vars x"
+    by (induction x; simp add: nc_vars_def nf_vars_def nf_vars_impl_correct)
+  
+  fun atom_vars_impl::"symbol term atom \<Rightarrow> variable set" where
+    "atom_vars_impl (PredAtom p) = predicate_vars_impl p"
+  | "atom_vars_impl (NumComp nc) = nc_vars_impl nc"
+  
+  lemma atom_vars_impl_correct: "atom_vars_impl x = atom_vars x"
+    unfolding atom_vars_def
+  proof (induction x)
+    case (PredAtom p)
+    then show ?case using predicate_vars_impl_correct atom_vars_def predicate_vars_def by simp
+  next
+    case (NumComp nc)
+    then show ?case using nc_vars_impl_correct atom_vars_def nc_vars_def by simp
+  qed
 
 
   primrec f_vars_impl::"symbol term atom formula \<Rightarrow> variable set" where
@@ -951,6 +958,44 @@ qed
 
   lemma f_vars_impl_correct: "f_vars_impl \<phi> = f_vars \<phi>"
     by (induction \<phi>; auto simp: f_vars_def atom_vars_impl_correct)
+
+  fun of_upd_vars_impl::"symbol term of_upd \<Rightarrow> variable set" where
+    "of_upd_vars_impl (OF_Upd n as (Some t)) = (fold (\<union>) (map term_vars_impl as) {}) \<union> (term_vars_impl t)"
+  | "of_upd_vars_impl (OF_Upd n as None) = fold (\<union>) (map term_vars_impl as) {}"
+  
+  lemma of_upd_vars_impl_correct: "of_upd_vars_impl u = of_upd_vars u"
+    apply (cases u)
+    subgoal for n as v
+      by (cases v, auto simp: of_upd_vars_def term_vars_impl_correct[THEN ext] SUP_set_fold fold_map)
+    done
+  
+  primrec nf_upd_vars_impl::"symbol term nf_upd \<Rightarrow> variable set" where
+    "nf_upd_vars_impl (NF_Upd op n as v) = (fold (\<union>) (map term_vars_impl as) {}) \<union> nf_vars_impl v"
+  
+  
+  lemma nf_upd_vars_impl_correct: "nf_upd_vars_impl u = nf_upd_vars u"
+    by (cases u; simp add: nf_upd_vars_def term_vars_impl_correct[THEN ext] nf_vars_impl_correct nf_vars_def SUP_set_fold fold_map)
+  
+  primrec eff_vars_impl::"symbol term ast_effect \<Rightarrow> variable set" where
+    "eff_vars_impl (Effect a d ou nu) = (
+      fold (\<union>) (map predicate_vars_impl a) {}
+    \<union> fold (\<union>) (map predicate_vars_impl d) {}
+    \<union> fold (\<union>) (map of_upd_vars_impl ou) {}
+    \<union> fold (\<union>) (map nf_upd_vars_impl nu) {}
+  )"
+  
+  lemma eff_vars_impl_correct: "eff_vars_impl e = eff_vars e"
+    by (cases e, auto simp: 
+          predicate_vars_impl_correct[THEN ext]
+          of_upd_vars_impl_correct[THEN ext]
+          nf_upd_vars_impl_correct[THEN ext]
+          SUP_set_fold fold_map) 
+  
+  primrec ce_vars_impl::"(symbol term atom formula \<times> symbol term ast_effect) \<Rightarrow> variable set" where
+    "ce_vars_impl (f, e) = f_vars_impl f \<union> eff_vars_impl e"
+  
+  lemma ce_vars_impl_correct: "ce_vars_impl x = cond_effect_vars x"
+    by (cases x; auto simp: f_vars_impl_correct eff_vars_impl_correct)
 
   definition t_dom_impl::"type \<Rightarrow> object list" where    
     "t_dom_impl typ = map fst (filter (\<lambda>(c, t). of_type_impl t typ) (consts DD @ objects PD))"
@@ -980,6 +1025,7 @@ qed
   definition pddl_all_impl::"(variable \<times> type) list \<Rightarrow> schematic_formula \<Rightarrow> schematic_formula" where
     "pddl_all_impl vts \<phi> = foldr (\<lambda>(v, t) f. all_impl v t f) vts \<phi>"
 
+
   definition pddl_exists_impl::"(variable \<times> type) list \<Rightarrow> schematic_formula \<Rightarrow> schematic_formula" where
     "pddl_exists_impl vts \<phi> = foldr (\<lambda>(v, t) f. exists_impl v t f) vts \<phi>"
 
@@ -992,6 +1038,32 @@ qed
     unfolding pddl_exists_def pddl_exists_impl_def
     using exists_impl_correct
     by presburger
+
+
+  definition univ_effect_impl::"variable \<Rightarrow> type 
+    \<Rightarrow> (schematic_formula \<times> schematic_effect) 
+    \<Rightarrow> (schematic_formula \<times> schematic_effect) list" where
+    "univ_effect_impl v t ce = (
+      if (v \<notin> ce_vars_impl ce) 
+      then [ce] 
+      else (map (\<lambda>c. cond_effect_subst v c ce) (t_dom_impl t)))"
+
+lemma univ_effect_impl_correct: "univ_effect_impl v t eff = univ_effect v t eff"
+  by (cases eff, auto simp: univ_effect_def univ_effect_impl_def If_def ce_vars_impl_correct t_dom_impl_correct)
+
+  definition univ_effect_list_impl::"variable \<Rightarrow> type \<Rightarrow> (schematic_formula \<times> schematic_effect) list 
+    \<Rightarrow> (schematic_formula \<times> schematic_effect) list"  where 
+  "univ_effect_list_impl v t effs \<equiv> (flatmap (univ_effect_impl v t) effs)"
+
+lemma univ_effect_list_impl_correct: "univ_effect_list_impl v t eff = univ_effect_list v t eff"
+  by (auto simp: univ_effect_list_def univ_effect_list_impl_def univ_effect_impl_correct[THEN ext])
+
+  definition pddl_univ_effect_list_impl::"(variable \<times> type) list \<Rightarrow> (schematic_formula \<times> schematic_effect) list
+    \<Rightarrow> (schematic_formula \<times> schematic_effect) list" where
+  "pddl_univ_effect_list_impl vts effs \<equiv> (foldr (\<lambda>(v, t) effs. univ_effect_list_impl v t effs) vts effs)"
+
+lemma pddl_univ_effect_list_impl_correct: "pddl_univ_effect_list_impl vts effs = pddl_univ_effect_list vts effs"
+  by (auto simp: pddl_univ_effect_list_def pddl_univ_effect_list_impl_def univ_effect_list_impl_correct)
 
 end
 
@@ -1010,9 +1082,9 @@ fun inst_of_upd'::"object term of_upd \<Rightarrow> instantiated_of_upd" where
   "inst_of_upd' (OF_Upd f args r) = (OFU f (map term_val args) (term_val (the r)))"
 
 fun inst_nf_upd'::"object term nf_upd \<Rightarrow> instantiated_nf_upd" where
-  "inst_nf_upd' (NF_Upd f op args r) = (
+  "inst_nf_upd' (NF_Upd op f args r) = (
     let args' = map term_val args
-    in NFU f op args' (nf_val r))"
+    in NFU op f args' (nf_val r))"
 
 fun inst_effect'::" ground_effect \<Rightarrow> fully_instantiated_effect" where
     "inst_effect' (Effect a d tu nu) = (
@@ -1321,13 +1393,13 @@ qed
   | "upd_nf_int_impl m Decrease args old n = (Mapping.update args (old - n) m)"
 
   fun apply_nf_upd_impl::"instantiated_nf_upd \<Rightarrow> mp_nfi \<Rightarrow> mp_nfi" where
-    "apply_nf_upd_impl (NFU n op as v) ni = (
+    "apply_nf_upd_impl (NFU op n as v) ni = (
       let f' = (case Mapping.lookup ni n of Some f' \<Rightarrow> f' | None \<Rightarrow> Mapping.empty)
       in Mapping.update n (upd_nf_int_impl f' op (map the as) (the (Mapping.lookup f' (map the as))) (the v)) ni)"
 
 fun nf_upd_defined'_impl::"mp_nfi \<Rightarrow> instantiated_nf_upd \<Rightarrow> bool" where
-  "nf_upd_defined'_impl _ (NFU _ Assign _ _) = True"
-| "nf_upd_defined'_impl ni (NFU n _ args _) = (
+  "nf_upd_defined'_impl _ (NFU Assign _ _ _) = True"
+| "nf_upd_defined'_impl ni (NFU _ n args _) = (
     case (Mapping.lookup ni n) of
       Some f' \<Rightarrow> Mapping.lookup f' (map the args) \<noteq> None
     | None \<Rightarrow> False
@@ -1343,13 +1415,13 @@ proof (rule ext; induction u)
   and op::upd_op
   and as::"object option list"
   and v::"rat option"
-  let ?m1 = "to_map_map (apply_nf_upd_impl (NFU n op as v) nfi)"
-  let ?m2 = "apply_nf_upd (NFU n op as v) (to_map_map nfi)"
+  let ?m1 = "to_map_map (apply_nf_upd_impl (NFU op n as v) nfi)"
+  let ?m2 = "apply_nf_upd (NFU op n as v) (to_map_map nfi)"
 
   have case_None: "?m1 x = None \<longleftrightarrow> ?m2 x = None"
   proof
     assume "?m1 x = None"
-    hence 1: "Mapping.lookup (apply_nf_upd_impl (NFU n op as v) nfi) x = None"
+    hence 1: "Mapping.lookup (apply_nf_upd_impl (NFU op n as v) nfi) x = None"
       by (simp add: to_map_map_None)
     hence "n \<noteq> x"
       by (cases "Mapping.lookup nfi n"; auto)
@@ -1368,7 +1440,7 @@ proof (rule ext; induction u)
     have "to_map_map nfi x = None"
       by (cases "to_map_map nfi n"; auto)
     with n
-    have "Mapping.lookup (apply_nf_upd_impl (NFU n op as v) nfi) x = None"
+    have "Mapping.lookup (apply_nf_upd_impl (NFU op n as v) nfi) x = None"
       by (cases "Mapping.lookup nfi n"; auto elim: to_map_map_NoneE)
     thus "?m1 x = None"
       by (auto intro: to_map_map_NoneI)
@@ -1418,7 +1490,7 @@ proof (rule ext; induction u)
       show ?thesis by simp
     next
       case False
-      hence "Mapping.lookup (apply_nf_upd_impl (NFU n op as v) nfi) x = Mapping.lookup nfi x"
+      hence "Mapping.lookup (apply_nf_upd_impl (NFU op n as v) nfi) x = Mapping.lookup nfi x"
         by (cases "Mapping.lookup nfi n"; auto)
       hence "?m1 x = to_map_map nfi x" by (simp add: lookup_map_values to_map_map_def)      
       with False
@@ -1537,7 +1609,7 @@ begin
     "nf_args_well_typed' f args = (case nfs f of None \<Rightarrow> False | Some Ts \<Rightarrow> list_all2 is_obj_of_type' args Ts)"
 
   fun wf_app_nf_upd'::"instantiated_nf_upd \<Rightarrow> bool" where
-      "wf_app_nf_upd' (NFU f op args v) = (
+      "wf_app_nf_upd' (NFU op f args v) = (
           list_all is_some args 
         \<and> is_some v \<and> (op = ScaleDown \<longrightarrow> the v \<noteq> (of_rat 0))
         \<and> nf_args_well_typed' f (map the args))"
@@ -1623,15 +1695,15 @@ lemma of_upd_rv_corr_impl_correct: "of_upd_rv_corr_impl M u = of_upd_rv_corr (ex
   ..
 
 fun int_defines_nf_upd_impl::"mp_nfi \<Rightarrow> instantiated_nf_upd \<Rightarrow> bool" where
-    "int_defines_nf_upd_impl _ (NFU _ Assign _ _) = True"
-  | "int_defines_nf_upd_impl ni (NFU f _ args _) = (
+    "int_defines_nf_upd_impl _ (NFU Assign _ _ _) = True"
+  | "int_defines_nf_upd_impl ni (NFU _ f args _) = (
       case Mapping.lookup ni f of 
         Some f' \<Rightarrow> Mapping.lookup f' (map the args) \<noteq> None
       | None \<Rightarrow> False)"
 
 lemma int_defines_nf_upd_impl_correct: "int_defines_nf_upd_impl nfi upd = int_defines_nf_upd (to_map_map nfi) upd"
   apply (cases upd)
-  subgoal for f op args
+  subgoal for op f args
     apply (cases "Mapping.lookup nfi f")
     subgoal by (frule to_map_map_NoneI; cases op; simp)
     subgoal by (frule to_map_map_SomeI; cases op; simp)
@@ -1743,7 +1815,7 @@ lemma valid_ground_action_impl_correct: "valid_ground_action_impl a M = valid_gr
   proof (induction as arbitrary: M)
     case Nil
     then show ?case using exec_wm_to_wm_inj
-      by (simp add: inj_eq)
+      by (simp add: inj_eq) (* something which is not apparent *)
   next
     case (Cons a as)
     have "ground_action_path_impl M (a # as) M' = 
@@ -1982,31 +2054,7 @@ definition "wf_of_int_impl oi = wf_of_int'' of_type_impl ofs_impl objT_impl (Map
      wf_of_int_refine_correct[simplified wf_of_int_refine_def]
      wf_nf_int_refine_correct[simplified wf_nf_int_refine_def]
       apply (subst objT_impl_correct)
-    ..
-(* 
-  text \<open>We refine the typecheck to use the mapping\<close>
-
-  definition "is_obj_of_type_impl stg mp n T = (
-    case Mapping.lookup mp n of None \<Rightarrow> False | Some oT \<Rightarrow> of_type_impl stg oT T
-  )"
-
-  lemma is_obj_of_type_impl_correct[simp]:
-    "is_obj_of_type_impl STG mp_objT = is_obj_of_type"
-    apply (intro ext)
-    apply (auto simp: is_obj_of_type_impl_def is_obj_of_type_def of_type_impl_correct split: option.split)
-    done
-  text \<open>Instantiating actions will yield well-founded effects.
-    Corollary of @{thm wf_instantiate_action_schema}.\<close>
-  lemma wf_effect_inst_weak:
-    fixes a args
-    defines "ai \<equiv> instantiate_action_schema a args"
-    assumes A: "action_params_match a args"
-      "wf_action_schema a"
-    shows "wf_effect_inst (effect ai)"
-    using wf_instantiate_action_schema[OF A] unfolding ai_def[symmetric]
-    by (cases ai) (auto simp: wf_effect_inst)
-  find_theorems name: "wf*effe" *)
-
+    .. 
 end \<comment> \<open>Context of \<open>ast_problem\<close>\<close>
 
 
@@ -2169,7 +2217,7 @@ end
 
 instantiation nf_upd::("show") "show" begin
 fun shows_prec_nf_upd::"nat \<Rightarrow> 'a nf_upd \<Rightarrow> shows" where
-  "shows_prec_nf_upd n (NF_Upd f op as v) = shows ''NF_Upd '' o shows f o shows op o shows as o shows v"
+  "shows_prec_nf_upd n (NF_Upd op f as v) = shows ''NF_Upd '' o shows f o shows op o shows as o shows v"
 
 definition shows_list_nf_upd :: "'a nf_upd list \<Rightarrow> shows" where
   "shows_list_nf_upd xs = showsp_list shows_prec 0 xs"
@@ -2236,7 +2284,6 @@ lemma resolve_action_schemaE_return_iff[return_iff]:
   unfolding resolve_action_schemaE_def 
   by (rule return_iff)
 
-  (* check non-interference *)
   definition en_exE :: "plan_action \<Rightarrow> exec_world_model \<Rightarrow> _+exec_world_model" where
     "en_exE \<equiv> \<lambda>(PAction n args) \<Rightarrow> \<lambda>s. do {
       a \<leftarrow> resolve_action_schemaE n;
@@ -2372,7 +2419,7 @@ proof (induction pa)
           Error_Monad.return (apply_conditional_effect_list_impl (effects ai) s)} = Inl l"
         unfolding en_exE2_def plan_action.case
         by (auto simp: Let_def)
-      from this(2)[simplified Error_Monad.bind_assoc] this(2)
+      
       show ?thesis 
       proof (cases "action_params_match_impl a as")
         case True
@@ -2424,6 +2471,8 @@ context ast_problem begin
       \<longleftrightarrow> valid_plan_action \<pi> s
         \<and> (valid_plan_from1 (execute_plan_action \<pi> s) \<pi>s)"
 
+  thm valid_plan_from_def
+
   lemma valid_plan_from1_refine: "valid_plan_from s \<pi>s = valid_plan_from1 s \<pi>s"
   proof(induction \<pi>s arbitrary: s)
     case Nil
@@ -2444,7 +2493,8 @@ context ast_problem begin
       \<and> (valid_plan_from2 (execute_plan_action_impl \<pi> s) \<pi>s)"
 
   lemma valid_plan_from2_refine: "valid_plan_from2 s \<pi>s = valid_plan_from1 (exec_wm_to_wm s) \<pi>s"
-    by (induction \<pi>s arbitrary: s; simp add: ext[OF valuation_impl_correct] valid_plan_action_impl_correct execute_plan_action_impl_correct)
+    by (induction \<pi>s arbitrary: s; simp add: ext[OF valuation_impl_correct] 
+        valid_plan_action_impl_correct execute_plan_action_impl_correct)
 
   text \<open>Next, we use our efficient combined enabledness check and execution
     function, and transfer the implementation to use the error monad: \<close>
@@ -2607,8 +2657,8 @@ lemma check_wf_types_return_iff[return_iff]: "check_wf_types DD = Inr () \<longl
 definition "check_wf_domain_decs DD \<equiv> do {
   check_wf_types DD;
   check (distinct (map (pred_decl.predicate) (preds DD))) (ERRS ''Duplicate pred declaration'');
-  check_all_list (ast_domain_decs.wf_pred_decl DD) (preds DD) ''Malformed pred declaration'' (shows o pred.name o pred_decl.predicate);
-  check (distinct (map fst (consts DD))) (ERRS  ''Duplicate constant declaration'');
+  check (distinct (map of_name (obj_funs DD) @ map nf_name (num_funs DD) @ map (obj_name o fst) (consts DD))) (ERRS ''Duplicate function or constant declaration'');
+  check_all_list (ast_domain_decs.wf_pred_decl DD) (preds DD) ''Malformed pred declaration'' (shows o pred_name o pred_decl.predicate);
   check (\<forall>(n,T)\<in>set (consts DD). ast_domain_decs.wf_type DD T) (ERRS ''Malformed type'')
 }"
 
@@ -2628,7 +2678,7 @@ definition "prepend_err_msg msg e \<equiv> \<lambda>_::unit. shows msg o shows '
 definition "check_wf_problem_decs PD \<equiv> do {
   let DD = ast_problem_decs.domain_decs PD;
   check_wf_domain_decs DD <+? prepend_err_msg ''Domain declarations not well-formed'';
-  check (distinct (map fst (objects PD) @ map fst (consts DD))) (ERRS ''Duplicate object declaration'');
+  check (distinct (map of_name (obj_funs DD) @ map nf_name (num_funs DD) @ map (obj_name o fst) (consts DD) @ map (obj_name o fst) (objects PD))) (ERRS ''Duplicate object or function declaration'');
   check ((\<forall>(n,T)\<in>set (objects PD). ast_domain_decs.wf_type DD T)) (ERRS ''Malformed type'')
 }"
 
@@ -2641,9 +2691,6 @@ proof -
     by (auto simp: return_iff)
 qed
 
-(* Why do we need a well-formed domain? *)
-term ast_problem_decs.wf_action_schema'
-(* We check that the domain is well-formed *)
 definition "check_wf_domain D \<equiv> do {
   let PD = ast_domain.problem_decs D;
   let DD = ast_problem_decs.domain_decs PD;
@@ -2687,6 +2734,8 @@ definition "check_wf_problem P \<equiv> do {
   check (ast_problem_decs.wf_goal_impl PD (goal P)) (ERRS ''Malformed goal formula'')
 }"
 
+term Error_Monad.update_error
+
 lemma check_wf_problem_return_iff':
   "check_wf_problem P = Inr () \<longleftrightarrow> ast_problem.wf_problem_impl P"
 proof -
@@ -2703,8 +2752,6 @@ lemma check_wf_problem_return_iff[return_iff]:
   apply (subst ast_problem.wf_problem_impl_correct)
   ..
 
-(* To do: implement executable plan checker *)
-
 definition "check_plan P \<pi>s \<equiv> do {
   let D = ast_problem.domain P;
   let PD = ast_domain.problem_decs D;
@@ -2715,20 +2762,18 @@ definition "check_plan P \<pi>s \<equiv> do {
   let init = ast_problem.I_impl P;
   check_wf_problem P;
   ast_problem.valid_plan_fromE P 0 init \<pi>s
-}"
+} <+? (\<lambda>x. String.implode (x () ''''))"
 
-(* valid_plan_fromE should be as efficient as possible *)
-(* after checking that the problem is valid, we can just pass the 
-    necessary components of the problem to valid_plan_fromE *)
-
-(* the correctness of valid_plan_fromE is relative to valid_plan_from, which
-  needs (what?) *)
+(* We replace equivalent and conclusions step by step. *)
 
 term ast_problem.valid_plan_from
 theorem check_plan_return_iff': "check_plan P \<pi>s = Inr () 
   \<longleftrightarrow> ast_problem.wf_problem_impl P \<and> ast_problem.valid_plan_from2 P (ast_problem.I_impl P) \<pi>s"
   unfolding check_plan_def
-  by (auto simp: check_wf_problem_return_iff' ast_problem.wf_problem_impl_correct wf_ast_problem.valid_plan_fromE_return_iff' wf_ast_problem_def)
+  using wf_ast_problem.valid_plan_fromE_return_iff'
+  by (auto simp: check_wf_problem_return_iff' 
+      ast_problem.wf_problem_impl_correct 
+      wf_ast_problem_def)
 
   text \<open>Correctness theorem of the plan checker: It returns @{term "Inr ()"}
   if and only if the problem is well-formed and the plan is valid.
@@ -2745,6 +2790,108 @@ proof -
         wf_problem_impl_correct I_impl_correct 
         valid_plan_def)
 qed
+
+subsubsection \<open>Setup for Containers Framework\<close>
+derive (eq) ceq rat pred func variable object symbol "term" num_fluent num_comp 
+  predicate atom formula ast_effect instantiated_nf_upd instantiated_of_upd 
+derive (linorder) compare rat 
+derive ccompare type rat func pred variable object "term" symbol upd_op predicate num_fluent num_comp 
+  atom formula of_upd nf_upd ast_effect instantiated_of_upd instantiated_nf_upd
+derive (no) cenum variable formula
+derive (rbt) set_impl rat func variable object "term" atom predicate formula instantiated_nf_upd
+  of_upd nf_upd ast_effect instantiated_of_upd
+derive (rbt) mapping_impl func object pred
+
+subsubsection \<open>TODO\<close>
+context ast_problem_decs
+begin
+
+definition "object_function_names = set (map of_name (obj_funs DD))"
+
+definition "numeric_function_names = set (map nf_name (num_funs DD))"
+
+definition "objs = set (map (obj_name o fst) (consts DD))"
+
+lemma (in wf_problem_decs) f_exclusively_numeric_or_object: 
+  "f \<notin> numeric_function_names \<or> f \<notin> object_function_names"
+proof (cases "f \<in> numeric_function_names")
+  case True
+  then show ?thesis unfolding numeric_function_names_def object_function_names_def
+    using wf_problem_decs unfolding wf_problem_decs_def wf_domain_decs_def
+    by auto
+next
+  case False
+  then show ?thesis by simp
+qed
+
+lemma (in wf_problem_decs) name_either_constant_or_function:
+  "(n \<in> objs \<longrightarrow> n \<notin> object_function_names \<and> n \<notin> numeric_function_names)
+  \<and> (n \<in> object_function_names \<longrightarrow> n \<notin> objs \<and> n \<notin> numeric_function_names)
+  \<and> (n \<in> numeric_function_names \<longrightarrow> n \<notin> objs \<and> n \<notin> object_function_names)"
+  using wf_problem_decs unfolding wf_problem_decs_def objs_def 
+    numeric_function_names_def object_function_names_def
+    wf_domain_decs_def by auto
+
+definition is_obj_fun::"string \<Rightarrow> bool" where
+  "is_obj_fun f \<equiv> f \<in> object_function_names"
+
+definition is_num_fun::"string \<Rightarrow> bool" where
+  "is_num_fun f \<equiv> f \<in> numeric_function_names"
+
+(* To do: 
+  - Better error message for assignment/update to undefined functions? 
+  - Currently handled implicitly? Disambiguation could be implemented in a manner
+      that always returns a result. Well-formedness checks then catch the error.
+  - Should be done before.
+*)
+
+
+fun combine_effects::"'a ast_effect \<Rightarrow> 'a ast_effect \<Rightarrow> 'a ast_effect" where
+  "combine_effects (Effect a d ou nu) (Effect a' d' ou' nu') = Effect (a @ a') (d @ d') (ou @ ou') (nu @ nu')"
+
+(*
+  Mapping.combine_with_key
+
+  1. Group effects by precondition
+    1a. Sort effects by precondition 
+      1a1. Find a sort implementation in Isabelle
+      1a2. Define an order on effects
+        1a1a. Define an order on formulas
+        1a1b. Lexicographic order on products
+      1a3. Define the effects abstractly
+    1b. fold ('a, 'b) list into ('a, 'b list) list
+  2. map fold ('a, 'b list) list into ('a, 'b) list
+
+*)
+(* This is highly inefficient *)
+
+definition compact_conditional_effect_list::"(('a::ccompare) formula \<times> 'a ast_effect) list
+  \<Rightarrow> ('a formula \<times> 'a ast_effect) list" where
+  "compact_conditional_effect_list xs = (
+    csorted_list_of_set 
+      (Mapping.entries 
+        (foldr 
+          (\<lambda>(pre, eff) mp. 
+            Mapping.combine_with_key 
+              (\<lambda>_ . combine_effects)  
+              (Mapping.update pre eff Mapping.empty) 
+              mp) 
+          xs Mapping.empty)))"
+
+find_theorems name: Set
+          
+end 
+
+find_theorems name: "Mapping*rep"
+
+value "Mapping.lookup (Mapping.update (1::nat) (0::nat) Mapping.empty) 1"
+
+term "set [0]"
+
+find_theorems name: "Mapping*abs"
+
+lemma "inj (mapping.rep)"
+  by (meson injI rep_inject)
 
 subsection \<open>Code Setup\<close>
 
@@ -2800,8 +2947,14 @@ lemmas wf_problem_decs_code =
   ast_problem_decs.all_impl_def
   ast_problem_decs.exists_impl_def
   ast_problem_decs.pddl_all_impl_def
-  ast_problem_decs.pddl_all_def
   ast_problem_decs.pddl_exists_impl_def
+  ast_problem_decs.of_upd_vars_impl.simps
+  ast_problem_decs.nf_upd_vars_impl_def
+  ast_problem_decs.eff_vars_impl_def
+  ast_problem_decs.ce_vars_impl_def
+  ast_problem_decs.univ_effect_impl_def
+  ast_problem_decs.univ_effect_list_impl_def
+  ast_problem_decs.pddl_univ_effect_list_impl_def
   ast_problem_decs.wf_action_schema'.simps
   ast_problem_decs.atom_vars_impl.simps
   ast_problem_decs.predicate_vars_impl.simps
@@ -2810,6 +2963,11 @@ lemmas wf_problem_decs_code =
   ast_problem_decs.nf_vars_impl.simps
   ast_problem_decs.mp_objT_def
   ast_problem_decs.objT_impl_def
+  ast_problem_decs.is_obj_fun_def
+  ast_problem_decs.is_num_fun_def
+  ast_problem_decs.object_function_names_def
+  ast_problem_decs.compact_conditional_effect_list_def
+  ast_problem_decs.numeric_function_names_def
 
 declare wf_problem_decs_code[code]
 
@@ -2894,7 +3052,6 @@ lemmas check_code =
 
 declare check_code[code]
 
-subsubsection \<open>Setup for Containers Framework\<close>
 
 subsubsection \<open>More Efficient Distinctness Check for Linorders\<close>
 (* TODO: Can probably be optimized even more. *)
@@ -2917,18 +3074,98 @@ lemma [code_unfold]: "distinct = distinct_ds"
   apply (auto simp: sorted_no_stutter_eq_distinct)
   done
 
-subsubsection \<open>Code Generation\<close>
+value "10::int"
+
+value "00005.4::rat"
+
+find_theorems name: "Enum"
+
+value "(CHR ''1'')"
 
 
-derive (eq) ceq rat pred func variable object symbol "term" num_fluent num_comp 
-  predicate atom formula ast_effect instantiated_nf_upd instantiated_of_upd 
-derive (linorder) compare rat 
-derive ccompare rat func pred variable object "term" symbol upd_op predicate num_fluent num_comp 
-  atom formula of_upd nf_upd ast_effect instantiated_of_upd instantiated_nf_upd
-derive (no) cenum variable
-derive (rbt) set_impl rat func variable object "term" atom predicate formula instantiated_nf_upd
-  of_upd nf_upd ast_effect instantiated_of_upd
-derive (rbt) mapping_impl func object pred
+(* TODO: Isabelle ML? *)
+
+find_consts name: "_constify"
+
+fun digit_from_char::"char \<Rightarrow> nat" where
+  "digit_from_char (CHR ''0'') = 0"
+| "digit_from_char (CHR ''1'') = 1"
+| "digit_from_char (CHR ''2'') = 2"
+| "digit_from_char (CHR ''3'') = 3"
+| "digit_from_char (CHR ''4'') = 4"
+| "digit_from_char (CHR ''5'') = 5"
+| "digit_from_char (CHR ''6'') = 6"
+| "digit_from_char (CHR ''7'') = 7"
+| "digit_from_char (CHR ''8'') = 8"
+| "digit_from_char (CHR ''9'') = 9"
+
+fun nat_from_string'::"string \<Rightarrow> nat" where
+  "nat_from_string' [] = 0"
+| "nat_from_string' (x#xs) = digit_from_char x + nat_from_string' xs"
+
+fun nfs1::"string \<Rightarrow> nat \<Rightarrow> nat" where
+  "nfs1 [] acc = acc"
+| "nfs1 (x#xs) acc = nfs1 xs (10 * acc + digit_from_char x)"
+
+definition nat_from_string::"string \<Rightarrow> nat" where
+  "nat_from_string s \<equiv> nfs1 s 0"
+
+fun int_from_string::"string \<Rightarrow> int" where
+  "int_from_string (CHR ''-'' # n) = - (nat_from_string n)" 
+| "int_from_string n = nat_from_string n"
+
+definition pos_int_from_string::"string \<Rightarrow> int" where
+  "pos_int_from_string = nat_from_string"
+
+fun wf_digit::"char \<Rightarrow> bool" where
+  "wf_digit (CHR ''0'') = True"
+| "wf_digit (CHR ''1'') = True"
+| "wf_digit (CHR ''2'') = True"
+| "wf_digit (CHR ''3'') = True"
+| "wf_digit (CHR ''4'') = True"
+| "wf_digit (CHR ''5'') = True"
+| "wf_digit (CHR ''6'') = True"
+| "wf_digit (CHR ''7'') = True"
+| "wf_digit (CHR ''8'') = True"
+| "wf_digit (CHR ''9'') = True"
+| "wf_digit _ = False"
+
+fun wf_int::"string \<Rightarrow> bool" where
+  "wf_int (CHR ''-'' # s) = list_all wf_digit s"
+| "wf_int s = list_all wf_digit s"
+
+definition "wf_dec = list_all wf_digit"
+
+fun reverse'::"'a list \<Rightarrow> 'a list \<Rightarrow> 'a list" where
+  "reverse' [] acc = acc"
+| "reverse' (x#xs) acc = reverse' xs (x#acc)"
+
+definition "reverse xs \<equiv> reverse' xs []"
+
+fun trim'::"string \<Rightarrow> string" where
+  "trim' (CHR ''0'' # s) = s"
+| "trim' s = s"
+
+definition "trim \<equiv> reverse o trim' o reverse"
+
+definition rat_from_strings'::"string \<Rightarrow> string \<Rightarrow> rat" where
+  "rat_from_strings' i d =  (
+  let
+    td = trim d;
+    l = length td
+  in 
+    Fract ((pos_int_from_string i) * (10 ^ l)) (pos_int_from_string td))"
+
+fun rat_from_strings::"string \<Rightarrow> string option \<Rightarrow> rat" where
+  "rat_from_strings i None = rat_from_strings' i ''''"
+| "rat_from_strings i (Some d) = rat_from_strings' i d"
+
+(* TODO: prove correct *)
+definition mult_list::"'a num_fluent list \<Rightarrow> 'a num_fluent" where
+  "mult_list l = foldr Mult l (Num 1)"
+
+definition add_list::"'a num_fluent list \<Rightarrow> 'a num_fluent" where
+  "add_list l = foldr Add l (Num 0)"
 
 print_derives
 
@@ -2936,13 +3173,18 @@ print_derives
   Check for performance regression of generated code!
 *)
 export_code
-  nat_of_integer integer_of_nat Inl Inr
-  Eq pred Pred Either Var Obj PredDecl BigAnd BigOr
+  nat_of_integer integer_of_nat Inl Inr 
+  Predicate Function
+  Either Variable Object Var Const Sym Fun PredDecl BigAnd BigOr mult_list add_list
+  ObjFunDecl NumFunDecl NFun Num_Eq PDDL_Semantics.Eq PDDL_Semantics.PredAtom
+  OF_Upd NF_Upd Assign
+  ast_problem_decs.is_obj_fun ast_problem_decs.is_num_fun
   ast_problem_decs.pddl_all_impl ast_problem_decs.pddl_exists_impl
-  formula.Not formula.Bot Effect ast_action_schema.Action_Schema
+  ast_problem_decs.pddl_univ_effect_list_impl
+  formula.Bot Effect ast_action_schema.Action_Schema
   map_atom Domain Problem DomainDecls ProbDecls PAction
   valuation term_val_impl ast_domain.apply_effect_impl
-  check_all_list check_wf_domain check_plan 
+  check_all_list check_wf_domain check_plan rat_from_strings
   String.explode String.implode ast_domain.non_int_nf_upd_list check_all_list_index
   in SML
   module_name PDDL_Checker_Exported
