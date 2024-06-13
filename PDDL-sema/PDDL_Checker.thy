@@ -3018,6 +3018,7 @@ lemmas check_code =
   ast_domain.wf_fully_instantiated_effect'.simps
   ast_problem.resolve_action_schema_impl_def
   ast_problem_decs.subst_sym_with_obj.simps
+  ast_domain.non_int_ops.simps
   ast_domain.non_int_cond_effs_impl_def
   ast_domain.well_inst_effect_impl_def
   ast_domain.inst_effect_impl_def
