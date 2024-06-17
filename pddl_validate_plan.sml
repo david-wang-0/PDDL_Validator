@@ -3,8 +3,6 @@
      It also calls the function exported by Isabelle to check the validity of a plan.*)
 open PDDL
 
-  (* To do: recursively transform abstract syntax trees while returning error messages *)
-
   val IsabelleStringImplode = implode
   val IsabelleStringExplode = explode
   val SMLCharImplode = String.implode

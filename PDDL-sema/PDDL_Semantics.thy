@@ -6,6 +6,7 @@ imports
   "Automatic_Refinement.Misc"
   "Automatic_Refinement.Refine_Util"
   "Show.Show_Instances" 
+  Util
 begin
 
 text \<open>This formalisation contains a subset of PDDL with a similar expressiveness to 
@@ -198,6 +199,15 @@ datatype (ent: 'ent) of_upd = OF_Upd func "'ent list" (ret_val: "'ent option")
 datatype (ent: 'ent) nf_upd = NF_Upd upd_op func "'ent list" "'ent num_fluent"
 (* replace the operator with cases in a datatype? *)
 
+text \<open>We never have more than one operation encoded in a single effect. I did not think about 
+  realistic restrictions of the grammar. I assumed that this is a \<open>cond_effect\<close>. I did not manage to
+  represent this cleanly in the types used in the ML code. Therefore when those are converted to 
+  these effects, we only get one update, unless we implement another conversion. This is difficult
+  and (to me at least) the transformation from PDDL to this would then be too complex to be apparent.
+  A weakness of this approach is reflected in the non-interference of effects. In the previous version,
+  additions overrode deletions for an entire effect. Therefore the order of applying these partial
+  effects inherently makes a difference. To remedy this, we just say that additions cannot intersect
+  with deletions.\<close>
 datatype (ent: 'ent) ast_effect = 
   Effect  (adds: "('ent predicate) list") 
           (dels: "('ent predicate) list")
@@ -245,8 +255,8 @@ datatype instantiated_of_upd = OFU func "object option list" (return_value: "obj
 datatype instantiated_nf_upd = NFU upd_op func "object option list" "rat option"
 
 datatype fully_instantiated_effect =
-  Eff "(object predicate option) list"
-      "(object predicate option) list"
+  Eff (eff_adds: "(object predicate option) list")
+      (eff_dels: "(object predicate option) list")
       (ous: "instantiated_of_upd list")
       (nus: "instantiated_nf_upd list")
 
@@ -687,7 +697,8 @@ text \<open>Here, we evaluate an {@typ object term} against world-model to
   | "predicate_inst M (Eq t1 t2) = (case (term_val M t1, term_val M t2) of
       (Some x, Some y) \<Rightarrow> Some (Eq x y)
     | _                \<Rightarrow> None)"
-  (* When we do not know what either term defines, then we cannot say that they are equal *)
+  (* When we do not know what either term denotes, then we cannot say that they are equal.
+      I guess this is definitional equality. *)
   
   fun predicate_val::"world_model \<Rightarrow> (object term) predicate \<Rightarrow> bool" where
     "predicate_val M p = (case predicate_inst M p of 
@@ -1327,7 +1338,6 @@ text \<open>Important: thinking in terms of conditional lists of effects vs filt
       shows "map the a \<noteq> map the b"
     using assms inj_on_contraD[where f = "map the" and x = a and y = b, OF map_the_inj_on]
     by blast
-
           
   text \<open>An update to an object fluent (term function) is well-formed, if
         the arguments are defined and well-typed, and the return value is
@@ -1357,6 +1367,23 @@ text \<open>Important: thinking in terms of conditional lists of effects vs filt
       \<and> (\<forall>de \<in> set d. wf_app_predicate_upd de)
       \<and> (\<forall>u \<in> set tu. wf_app_of_upd u)     
       \<and> (\<forall>u \<in> set nu. wf_app_nf_upd u)"
+  
+  definition disjoint_upd_lists::"object predicate list \<Rightarrow> object predicate list \<Rightarrow> bool" where
+    "disjoint_upd_lists a b = (set a \<inter> set b = {})"
+
+  definition disjoint_inst_upd_lists::"object predicate option list \<Rightarrow> object predicate option list \<Rightarrow> bool" where
+    "disjoint_inst_upd_lists = map_fun (map the) (map_fun (map the) id) disjoint_upd_lists"
+      
+  text \<open>In the previous version, we assumed that additions are applied after and override
+    deletions. The datatype to represent effects is too far removed from PDDL to simulate that
+    without applying another non-trivial transformation. In fact, we never have more than
+    one update encoded in any effect right now.\<close>
+  definition non_int_pred_upds where
+    "non_int_pred_upds a d a' d' = 
+       (disjoint_inst_upd_lists a d
+      \<and> disjoint_inst_upd_lists a d'
+      \<and> disjoint_inst_upd_lists a' d
+      \<and> disjoint_inst_upd_lists a' d')"
 
   text \<open>Non-interference of updates to functions is important, since we could obtain lists
         of effects which make no sense.\<close>
@@ -1371,9 +1398,12 @@ text \<open>Important: thinking in terms of conditional lists of effects vs filt
   fun non_int_nf_upds where
     "non_int_nf_upds (NFU op f as v) (NFU op' f' as' v') = 
       (f \<noteq> f' \<or> as \<noteq> as' \<or> (non_int_ops op op' \<or> (op = op' \<and> v = v')))"
+  
+  definition pairwise' where
+    "pairwise' R S \<longleftrightarrow> (\<forall>x \<in> S. \<forall>y \<in> S. R x y)"
 
   definition non_int_nf_upd_list where
-    "non_int_nf_upd_list xs \<equiv> pairwise non_int_nf_upds (set xs)"
+    "non_int_nf_upd_list xs \<equiv> pairwise' non_int_nf_upds (set xs)"
   
   definition non_int_nf_upd_lists where
     "non_int_nf_upd_lists xs ys \<equiv> non_int_nf_upd_list (xs @ ys)"
@@ -1383,7 +1413,7 @@ text \<open>Important: thinking in terms of conditional lists of effects vs filt
     (f \<noteq> f' \<or> as \<noteq> as' \<or> v = v')"
   
   definition non_int_of_upd_list where
-    "non_int_of_upd_list xs \<equiv> pairwise non_int_of_upds (set xs)"
+    "non_int_of_upd_list xs \<equiv> pairwise' non_int_of_upds (set xs)"
   (* using these is ok, because the set implementation is guaranteed 
       to be efficient *)
   
@@ -1392,7 +1422,8 @@ text \<open>Important: thinking in terms of conditional lists of effects vs filt
 
   definition non_int_effs where
     "non_int_effs e1 e2 \<equiv> 
-      non_int_nf_upd_lists (nus e1) (nus e2)
+      (non_int_pred_upds (eff_adds e1) (eff_dels e1) (eff_adds e2) (eff_dels e2))
+    \<and> non_int_nf_upd_lists (nus e1) (nus e2)
     \<and> non_int_of_upd_lists (ous e1) (ous e2)"
   
   definition non_int_cond_effs where
@@ -3171,7 +3202,8 @@ begin
       assume "n' \<noteq> n"
       moreover
       from \<open>int_defines_nf_upd ni nu\<close>
-      have "\<exists>f. ?ni' = ni(n \<mapsto> upd_nf_int f op (map the as) (the (f (map the as))) (the v))" by (auto split: option.splits)
+      have "\<exists>f. ?ni' = ni(n \<mapsto> upd_nf_int f op (map the as) (the (f (map the as))) (the v))" 
+        by (auto split: option.splits)
       ultimately
       have "(n', m) \<in> Map.graph ni" by (metis fun_upd_other in_graphD in_graphI that)
       with \<open>wf_nf_int ni\<close>
@@ -3194,10 +3226,10 @@ begin
       "nu' = NFU op' n' as' v'"
       by (cases nu; cases nu'; simp)
     from \<open>int_defines_nf_upd ni nu\<close>
-    have 1: "op \<noteq> Assign \<Longrightarrow> (\<exists>f. ni n = Some f \<and> f (map the as) \<noteq> None)" by (cases op; cases "ni n"; auto)
+    have 1: "op \<noteq> Assign \<Longrightarrow> (\<exists>f. ni n = Some f \<and> f (map the as) \<noteq> None)" 
+      by (cases op; cases "ni n"; auto)
   
-    have 2: "\<exists>f'. ?ni' n = Some f' \<and> f' (map the as) \<noteq> None" 
-      if "op \<noteq> Assign"
+    have 2: "\<exists>f'. ?ni' n = Some f' \<and> f' (map the as) \<noteq> None" if "op \<noteq> Assign"
     proof (cases "n = n'")
       assume [simp]: "n = n'"
       from \<open>int_defines_nf_upd ni nu\<close> \<open>op \<noteq> Assign\<close>
@@ -3495,30 +3527,43 @@ qed
 
   text \<open>Meaning of non-interfering effects\<close>
 
-lemma upd_nf_int_twist:
-  assumes "non_int_ops op op'"
-  shows "upd_nf_int (upd_nf_int m op args old n) op' args (the (upd_nf_int m op args old n args)) n'
-      = upd_nf_int (upd_nf_int m op' args old n') op args (the (upd_nf_int m op' args old n' args)) n"
-  using assms
-  by (cases op; cases op'; auto)
+  lemma non_int_pred_upds_twist:
+    assumes "non_int_pred_upds a d a' d'"
+    shows "(p - (set (map the d)) \<union> (set (map the a))) - (set (map the d')) \<union> (set (map the a'))
+    = (p - (set (map the d')) \<union> (set (map the a'))) - (set (map the d)) \<union> (set (map the a))"
+    apply (insert assms)
+    apply (subst (asm) non_int_pred_upds_def)
+    apply (subst (asm) disjoint_inst_upd_lists_def)+
+    apply (subst (asm) map_fun_def)+
+    apply (subst (asm) comp_def)+
+    apply (subst (asm) map_fun_def)+
+    apply (subst (asm) comp_def)+
+    apply (subst (asm) id_def)+
+    apply (subst (asm) disjoint_upd_lists_def)+
+    by blast
 
-lemma upd_nf_int_twist':
-  assumes "args \<noteq> args'"
-  shows "upd_nf_int (upd_nf_int m op args old n) op' args' old' n'
-      = upd_nf_int (upd_nf_int m op' args' old' n') op args old n"
-  apply (induction op; induction op')
-  by ((subst upd_nf_int.simps)+, subst fun_upd_twist[OF assms], rule refl)+
+  lemma upd_nf_int_twist:
+    assumes "non_int_ops op op'"
+    shows "upd_nf_int (upd_nf_int m op args old n) op' args (the (upd_nf_int m op args old n args)) n'
+        = upd_nf_int (upd_nf_int m op' args old n') op args (the (upd_nf_int m op' args old n' args)) n"
+    using assms
+    by (cases op; cases op'; auto)
+  
+  lemma upd_nf_int_twist':
+    assumes "args \<noteq> args'"
+    shows "upd_nf_int (upd_nf_int m op args old n) op' args' old' n'
+        = upd_nf_int (upd_nf_int m op' args' old' n') op args old n"
+    apply (induction op; induction op')
+    by ((subst upd_nf_int.simps)+, subst fun_upd_twist[OF assms], rule refl)+
+  
+  lemma upd_nf_int_other:
+    assumes "args \<noteq> args'"
+    shows "upd_nf_int m op args old n args' = m args'"
+    using fun_upd_other[OF assms]
+    by (cases op, force+)
 
-lemma upd_nf_int_other:
-  assumes "args \<noteq> args'"
-  shows "upd_nf_int m op args old n args' = m args'"
-  using fun_upd_other[OF assms]
-  by (cases op, force+)
-
-  lemma non_int_nf_upd_comm: 
+  lemma non_int_nf_upd_twist: 
     assumes "non_int_nf_upds a b" 
-            "int_defines_nf_upd ni a"
-            "int_defines_nf_upd ni b"
             "wf_app_nf_upd a"
             "wf_app_nf_upd b"
     shows "apply_nf_upd b (apply_nf_upd a ni) = apply_nf_upd a (apply_nf_upd b ni)"
@@ -3589,7 +3634,7 @@ lemma upd_nf_int_other:
               "old = the (m (map the as))"
               "new = the v"
             by (cases "ni f"; auto)
-          from assms(4, 5)[simplified a_b_def] False
+          from assms(2, 3)[simplified a_b_def] False
           have 3: "map the as' \<noteq> map the as"
             using is_some_map_the_neq by auto
             
@@ -3618,95 +3663,186 @@ lemma upd_nf_int_other:
       thus ?thesis by auto
     qed
 
-lemma apply_of_upd_other: 
-  assumes "f \<noteq> f'"
-  shows "apply_of_upd (OFU f as v) oi f' = oi f'"
-  using assms
-  by (cases "oi f"; simp)
 
-lemma non_int_of_upd_comm:
-  assumes "non_int_of_upds a b" 
-      and "wf_app_of_upd a"
-      and "wf_app_of_upd b"
-    shows "apply_of_upd b (apply_of_upd a oi) = apply_of_upd a (apply_of_upd b oi)"
-proof -
-  obtain f as v f' as' v' where
-    a_b_def[simp]: "a = OFU f as v"
-    "b = OFU f' as' v'"
-    by (cases a; cases b; auto)
+lemma non_int_nf_upd_list_rev:
+  assumes "non_int_nf_upd_list xs"
+      and "list_all wf_app_nf_upd xs"
+  shows "fold apply_nf_upd xs ni = fold apply_nf_upd (rev xs) ni"
+  apply (subst fold_rev)
+  apply (subst comp_def)+
+  apply (subst non_int_nf_upd_twist)
+  by (simp add: assms[simplified non_int_nf_upd_list_def pairwise'_def list_all_iff])+
 
-  have "apply_of_upd (OFU f as v) (apply_of_upd (OFU f' as' v') oi) x
-    = apply_of_upd (OFU f' as' v') (apply_of_upd (OFU f as v) oi) x" for x
-  proof(cases "x = f"; cases "x = f'")
-    assume "x = f" "x = f'"
-    hence "f' = f" by simp
-    obtain m where
-      1: "apply_of_upd (OFU f as v) oi f = Some (m((map the as) := v))"
-      and 2: "apply_of_upd (OFU f as' v') oi f = Some (m((map the as') := v'))"
-      by (cases "oi f"; auto)
-    have "apply_of_upd (OFU f as v) (apply_of_upd (OFU f as' v') oi) f
-      = apply_of_upd (OFU f as' v') (apply_of_upd (OFU f as v) oi) f"
-    proof (cases "as' = as")
-      case True
-      with assms(1) \<open>f' = f\<close>
-      have \<open>v = v'\<close> by simp
-      with \<open>f' = f\<close> \<open>as' = as\<close>
+  lemma apply_of_upd_other: 
+    assumes "f \<noteq> f'"
+    shows "apply_of_upd (OFU f as v) oi f' = oi f'"
+    using assms
+    by (cases "oi f"; simp)
+  
+  lemma non_int_of_upd_twist:
+    assumes "non_int_of_upds a b" 
+        and "wf_app_of_upd a"
+        and "wf_app_of_upd b"
+      shows "apply_of_upd b (apply_of_upd a oi) = apply_of_upd a (apply_of_upd b oi)"
+  proof -
+    obtain f as v f' as' v' where
+      a_b_def[simp]: "a = OFU f as v"
+      "b = OFU f' as' v'"
+      by (cases a; cases b; auto)
+  
+    have "apply_of_upd (OFU f as v) (apply_of_upd (OFU f' as' v') oi) x
+      = apply_of_upd (OFU f' as' v') (apply_of_upd (OFU f as v) oi) x" for x
+    proof(cases "x = f"; cases "x = f'")
+      assume "x = f" "x = f'"
+      hence "f' = f" by simp
+      obtain m where
+        1: "apply_of_upd (OFU f as v) oi f = Some (m((map the as) := v))"
+        and 2: "apply_of_upd (OFU f as' v') oi f = Some (m((map the as') := v'))"
+        by (cases "oi f"; auto)
+      have "apply_of_upd (OFU f as v) (apply_of_upd (OFU f as' v') oi) f
+        = apply_of_upd (OFU f as' v') (apply_of_upd (OFU f as v) oi) f"
+      proof (cases "as' = as")
+        case True
+        with assms(1) \<open>f' = f\<close>
+        have \<open>v = v'\<close> by simp
+        with \<open>f' = f\<close> \<open>as' = as\<close>
+        show ?thesis by simp
+      next
+        case False
+        
+        have "apply_of_upd (OFU f as v) (apply_of_upd (OFU f as' v') oi) f
+          = Some ((m((map the as') := v'))((map the as) := v))"
+          using 2 by simp
+        moreover
+        have "apply_of_upd (OFU f as' v') (apply_of_upd (OFU f as v) oi) f
+          = Some ((m((map the as) := v))((map the as') := v'))"
+          using 1 by simp
+        moreover 
+        have "map the as \<noteq> map the as'" 
+          using assms(2, 3) is_some_map_the_neq[OF False]
+          by (auto split: option.splits prod.split)
+          (* the definition of wf_app_nf_upd is nicer here, because the case distinction is left out *)
+        ultimately
+        show ?thesis using fun_upd_twist by auto
+      qed
+      thus ?thesis using \<open>x = f\<close> \<open>f' = f\<close> by simp
+    next
+      assume "x = f" "x \<noteq> f'"
+      hence "f \<noteq> f'" by simp
+      have 1: "apply_of_upd (OFU f' as' v') oin f = oin f" for oin
+        by (cases "oin f'"; auto simp: \<open>f \<noteq> f'\<close>)
+      have "apply_of_upd (OFU f as v) (apply_of_upd (OFU f' as' v') oi) f 
+        = apply_of_upd (OFU f' as' v') (apply_of_upd (OFU f as v) oi) f"
+        apply (subst apply_of_upd.simps)
+        apply (subst 1[where oin43 = oi])
+        apply (subst 1[where oin43 = "apply_of_upd (OFU f as v) oi"])
+        by (cases "oi f"; auto)
+      with \<open>x = f\<close>
       show ?thesis by simp
     next
-      case False
+      assume "x \<noteq> f" "x = f'"
+      hence "f \<noteq> f'" by simp
+  
+      have 1: "apply_of_upd (OFU f as v) oin f' = oin f'" for oin
+        by (cases "oin f"; auto simp: \<open>f \<noteq> f'\<close>[symmetric])
       
-      have "apply_of_upd (OFU f as v) (apply_of_upd (OFU f as' v') oi) f
-        = Some ((m((map the as') := v'))((map the as) := v))"
-        using 2 by simp
-      moreover
-      have "apply_of_upd (OFU f as' v') (apply_of_upd (OFU f as v) oi) f
-        = Some ((m((map the as) := v))((map the as') := v'))"
-        using 1 by simp
-      moreover 
-      have "map the as \<noteq> map the as'" 
-        using assms(2, 3) is_some_map_the_neq[OF False]
-        by (auto split: option.splits prod.split)
-        (* the definition of wf_app_nf_upd is nicer here, because the case distinction is left out *)
-      ultimately
-      show ?thesis using fun_upd_twist by auto
+      have "apply_of_upd (OFU f as v) (apply_of_upd (OFU f' as' v') oi) f' 
+        = apply_of_upd (OFU f' as' v') (apply_of_upd (OFU f as v) oi) f'"
+        apply (subst (3) apply_of_upd.simps)
+        apply (subst 1[where oin43 = oi])
+        apply (subst 1[where oin43 = "apply_of_upd (OFU f' as' v') oi"])
+        by (cases "oi f'"; auto)
+      with \<open>x = f'\<close>
+      show ?thesis by simp
+    next
+      assume "x \<noteq> f" "x \<noteq> f'"
+      then show ?thesis using apply_of_upd_other by simp
     qed
-    thus ?thesis using \<open>x = f\<close> \<open>f' = f\<close> by simp
-  next
-    assume "x = f" "x \<noteq> f'"
-    hence "f \<noteq> f'" by simp
-    have 1: "apply_of_upd (OFU f' as' v') oin f = oin f" for oin
-      by (cases "oin f'"; auto simp: \<open>f \<noteq> f'\<close>)
-    have "apply_of_upd (OFU f as v) (apply_of_upd (OFU f' as' v') oi) f 
-      = apply_of_upd (OFU f' as' v') (apply_of_upd (OFU f as v) oi) f"
-      apply (subst apply_of_upd.simps)
-      apply (subst 1[where oin43 = oi])
-      apply (subst 1[where oin43 = "apply_of_upd (OFU f as v) oi"])
-      by (cases "oi f"; auto)
-    with \<open>x = f\<close>
-    show ?thesis by simp
-  next
-    assume "x \<noteq> f" "x = f'"
-    hence "f \<noteq> f'" by simp
-
-    have 1: "apply_of_upd (OFU f as v) oin f' = oin f'" for oin
-      by (cases "oin f"; auto simp: \<open>f \<noteq> f'\<close>[symmetric])
-    
-    have "apply_of_upd (OFU f as v) (apply_of_upd (OFU f' as' v') oi) f' 
-      = apply_of_upd (OFU f' as' v') (apply_of_upd (OFU f as v) oi) f'"
-      apply (subst (3) apply_of_upd.simps)
-      apply (subst 1[where oin43 = oi])
-      apply (subst 1[where oin43 = "apply_of_upd (OFU f' as' v') oi"])
-      by (cases "oi f'"; auto)
-    with \<open>x = f'\<close>
-    show ?thesis by simp
-  next
-    assume "x \<noteq> f" "x \<noteq> f'"
-    then show ?thesis using apply_of_upd_other by simp
+    thus ?thesis by fastforce 
   qed
-  thus ?thesis by fastforce 
-qed
+
+lemma non_int_of_upd_list_rev:
+  assumes "non_int_of_upd_list xs"
+      and "list_all wf_app_of_upd xs"
+    shows "fold apply_of_upd xs ni = fold apply_of_upd (rev xs) ni"
+  apply (subst fold_rev)
+  apply (subst comp_def)+
+  apply (subst non_int_of_upd_twist)
+  by (simp add: assms[simplified non_int_of_upd_list_def pairwise'_def list_all_iff])+
 
 (* show that non-interfering effects commute *)
+
+lemma non_int_eff_twist:
+  assumes "non_int_effs x y"
+      and "wf_fully_instantiated_effect x"
+      and "wf_fully_instantiated_effect y"
+  shows "apply_effect x (apply_effect y M) = apply_effect y (apply_effect x M)"
+proof -
+  obtain a d nu ou a' d' nu' ou' p oi ni where
+    x_y_def[simp]: "x = Eff a d ou nu"
+    "y = Eff a' d' ou' nu'"
+    and M_def[simp]: "M = World_Model p oi ni"
+    by (cases x; cases y; cases M; auto)
+  from assms
+  have "non_int_pred_upds a d a' d'"
+    by (simp add: non_int_effs_def eff_adds_def eff_dels_def)
+  from non_int_pred_upds_twist[OF this]
+  have "p - set (map the d) \<union> set (map the a) - set (map the d') \<union> set (map the a') 
+    = p - set (map the d') \<union> set (map the a') - set (map the d) \<union> set (map the a)" by simp
+  moreover
+  {
+    from assms(1)
+    have 1: "non_int_nf_upd_list (nu @ nu')"
+      using non_int_effs_def nus_def non_int_nf_upd_lists_def by simp
+    hence 11: "non_int_nf_upd_list (nu' @ nu)"
+      unfolding non_int_nf_upd_list_def using set_append
+      by (simp add: Un_commute)
+    from 1 
+    have 12: "non_int_nf_upd_list nu" "non_int_nf_upd_list nu'"
+      unfolding non_int_nf_upd_list_def pairwise'_def by auto
+    from assms(2, 3)
+    have 22: "list_all wf_app_nf_upd nu" "list_all wf_app_nf_upd nu'"
+      by (simp add: list_all_iff)+
+    hence 21: "list_all wf_app_nf_upd (nu' @ nu)" by simp
+    have "fold apply_nf_upd nu (fold apply_nf_upd nu' ni) = fold apply_nf_upd nu' (fold apply_nf_upd nu ni)"
+      apply (subst comp_apply[of "fold apply_nf_upd nu" "fold apply_nf_upd nu'", symmetric])
+      apply (subst fold_append[symmetric])
+      apply (subst non_int_nf_upd_list_rev[OF 11 21])
+      apply (subst rev_append)
+      apply (subst fold_append[simplified comp_def])
+      apply (subst non_int_nf_upd_list_rev[OF 12(1) 22(1)])
+      apply (subst non_int_nf_upd_list_rev[OF 12(2) 22(2)])
+      by simp
+  }
+  moreover
+  {
+    from assms(1)
+    have 1: "non_int_of_upd_list (ou @ ou')"
+      using non_int_effs_def ous_def non_int_of_upd_lists_def by simp
+    hence 11: "non_int_of_upd_list (ou' @ ou)"
+      unfolding non_int_of_upd_list_def using set_append
+      by (simp add: Un_commute)
+    from 1 
+    have 12: "non_int_of_upd_list ou" "non_int_of_upd_list ou'"
+      unfolding non_int_of_upd_list_def pairwise'_def by auto
+    from assms(2, 3)
+    have 22: "list_all wf_app_of_upd ou" "list_all wf_app_of_upd ou'"
+      by (simp add: list_all_iff)+
+    hence 21: "list_all wf_app_of_upd (ou' @ ou)" by simp
+    have "fold apply_of_upd ou (fold apply_of_upd ou' oi) = fold apply_of_upd ou' (fold apply_of_upd ou oi)"
+      apply (subst comp_apply[of "fold apply_of_upd ou" "fold apply_of_upd ou'", symmetric])
+      apply (subst fold_append[symmetric])
+      apply (subst non_int_of_upd_list_rev[OF 11 21])
+      apply (subst rev_append)
+      apply (subst fold_append[simplified comp_def])
+      apply (subst non_int_of_upd_list_rev[OF 12(1) 22(1)])
+      apply (subst non_int_of_upd_list_rev[OF 12(2) 22(2)])
+      by simp
+  }
+  ultimately
+  show "apply_effect x (apply_effect y M) = apply_effect y (apply_effect x M)"
+    by simp
+qed
 
 end
 

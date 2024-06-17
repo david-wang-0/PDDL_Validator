@@ -152,7 +152,7 @@ struct
   | PDDL_Times of PDDL_F_EXP list
   | PDDL_Plus of PDDL_F_EXP list
 
-  (* Equality is an ambiguous comparison, when not numbers or arithmetic operations are 
+  (* Equality is an ambiguous comparison, when no numbers or arithmetic operations are 
       involved *)
   datatype PDDL_TERM_ATOM = 
     PDDL_Pred of (string * PDDL_TERM list)
