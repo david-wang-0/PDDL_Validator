@@ -335,7 +335,7 @@ open PDDL
       (init: PDDL_INIT): object predicate list =
     case init of 
       True_Pred p => [pddlObjAtomToIsabelleObjPredicate p]
-    | False_Pred p => (
+    | False_Pred _ => (
         println "Negative initial literals not supported. Closed world assumption is made"; 
         []
       )

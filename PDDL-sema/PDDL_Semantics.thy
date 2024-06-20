@@ -1162,10 +1162,22 @@ begin
     | None \<Rightarrow> False)"
 
   fun non_int_fun_assign::"('f \<times> 'as \<times> 'v) \<Rightarrow> ('f \<times> 'as \<times> 'v) \<Rightarrow> bool" where
-    "non_int_fun_assign (f, as, v) (f', as', v') = (f \<noteq> f' \<or> as \<noteq> as')"
+    "non_int_fun_assign (f, as, v) (f', as', v') = (f = f' \<and> as = as' \<longrightarrow> v = v')"
 
-  fun non_int_assign_list::"('f \<times> 'as \<times> 'v) list \<Rightarrow> bool" where
+  definition non_int_assign_list::"('f \<times> 'as \<times> 'v) list \<Rightarrow> bool" where
     "non_int_assign_list xs = pairwise non_int_fun_assign (set xs)"
+
+  lemma non_int_assign_list_iff[simp]: "non_int_assign_list xs \<longleftrightarrow> (\<forall>x \<in> set xs. \<forall>y \<in> set xs. non_int_fun_assign x y)"
+    unfolding non_int_assign_list_def pairwise_def
+    apply (rule iffI)
+     apply (rule ballI)+
+    subgoal for x y
+      apply (cases "x = y")
+      subgoal by (cases x; cases y; auto)
+      subgoal by auto
+      done
+    subgoal by blast
+    done
 
   text \<open>A problem is well-formed if in addition to the domain being well-formed, the goal is\<close>
   definition wf_problem where
@@ -1398,13 +1410,18 @@ text \<open>Important: thinking in terms of conditional lists of effects vs filt
   fun non_int_nf_upds where
     "non_int_nf_upds (NFU op f as v) (NFU op' f' as' v') = 
       (f \<noteq> f' \<or> as \<noteq> as' \<or> (non_int_ops op op' \<or> (op = op' \<and> v = v')))"
-  
-  definition pairwise' where
-    "pairwise' R S \<longleftrightarrow> (\<forall>x \<in> S. \<forall>y \<in> S. R x y)"
 
-  definition non_int_nf_upd_list where
-    "non_int_nf_upd_list xs \<equiv> pairwise' non_int_nf_upds (set xs)"
+  lemma non_int_nf_upd_refl[simp]:
+    "non_int_nf_upds x x" by (cases x; auto)
   
+  definition non_int_nf_upd_list where
+    "non_int_nf_upd_list xs \<equiv> pairwise non_int_nf_upds (set xs)"
+
+  lemma non_int_nf_upd_list_iff[simp]:
+  "non_int_nf_upd_list xs \<longleftrightarrow> (\<forall>x \<in> set xs. \<forall>y \<in> set xs. non_int_nf_upds x y)"
+  unfolding non_int_nf_upd_list_def pairwise_def 
+  by force
+
   definition non_int_nf_upd_lists where
     "non_int_nf_upd_lists xs ys \<equiv> non_int_nf_upd_list (xs @ ys)"
   
@@ -1412,11 +1429,19 @@ text \<open>Important: thinking in terms of conditional lists of effects vs filt
     "non_int_of_upds (OFU f as v) (OFU f' as' v') =
     (f \<noteq> f' \<or> as \<noteq> as' \<or> v = v')"
   
+  lemma non_int_of_upd_refl[simp]:
+    "non_int_of_upds x x" by (cases x; auto)
+  
   definition non_int_of_upd_list where
-    "non_int_of_upd_list xs \<equiv> pairwise' non_int_of_upds (set xs)"
+    "non_int_of_upd_list xs \<equiv> pairwise non_int_of_upds (set xs)"
   (* using these is ok, because the set implementation is guaranteed 
       to be efficient *)
-  
+
+lemma non_int_of_upd_list_iff[simp]:
+  "non_int_of_upd_list xs \<longleftrightarrow> (\<forall>x \<in> set xs. \<forall>y \<in> set xs. non_int_of_upds x y)"
+  unfolding non_int_of_upd_list_def pairwise_def 
+  by force
+
   definition non_int_of_upd_lists where
     "non_int_of_upd_lists xs ys \<equiv> non_int_of_upd_list (xs @ ys)"
 
@@ -1430,8 +1455,10 @@ text \<open>Important: thinking in terms of conditional lists of effects vs filt
     "non_int_cond_effs M e1 e2 \<equiv> (valuation M \<Turnstile> fst e1 \<and> valuation M \<Turnstile> fst e2) 
       \<longrightarrow> (non_int_effs (inst_effect M (snd e1)) (inst_effect M (snd e2)))"
 
+  abbreviation "pairwise' P S \<equiv> \<forall>x \<in> S. \<forall>y \<in> S. P x y"
+
   definition non_int_cond_eff_list where
-    "non_int_cond_eff_list M xs \<equiv> pairwise (non_int_cond_effs M) (set xs)"
+    "non_int_cond_eff_list M xs \<equiv> pairwise' (non_int_cond_effs M) (set xs)"
 
   text \<open> \<^term>\<open>None\<close> represents the intentional update to a function
         using \<open>undefined\<close>. Another source of \<^term>\<open>None\<close> in the return value
@@ -3670,9 +3697,9 @@ lemma non_int_nf_upd_list_rev:
   shows "fold apply_nf_upd xs ni = fold apply_nf_upd (rev xs) ni"
   apply (subst fold_rev)
   apply (subst comp_def)+
-  apply (subst non_int_nf_upd_twist)
-  by (simp add: assms[simplified non_int_nf_upd_list_def pairwise'_def list_all_iff])+
-
+   apply (subst non_int_nf_upd_twist)
+  by (simp add: assms[simplified non_int_nf_upd_list_iff pairwise_def list_all_iff])+
+  
   lemma apply_of_upd_other: 
     assumes "f \<noteq> f'"
     shows "apply_of_upd (OFU f as v) oi f' = oi f'"
@@ -3767,9 +3794,9 @@ lemma non_int_of_upd_list_rev:
     shows "fold apply_of_upd xs ni = fold apply_of_upd (rev xs) ni"
   apply (subst fold_rev)
   apply (subst comp_def)+
-  apply (subst non_int_of_upd_twist)
-  by (simp add: assms[simplified non_int_of_upd_list_def pairwise'_def list_all_iff])+
-
+   apply (subst non_int_of_upd_twist)
+  by (simp add: assms[simplified non_int_of_upd_list_iff pairwise_def list_all_iff])+
+  
 (* show that non-interfering effects commute *)
 
 lemma non_int_eff_twist:
@@ -3799,7 +3826,7 @@ proof -
       by (simp add: Un_commute)
     from 1 
     have 12: "non_int_nf_upd_list nu" "non_int_nf_upd_list nu'"
-      unfolding non_int_nf_upd_list_def pairwise'_def by auto
+      unfolding non_int_nf_upd_list_def pairwise_def by auto
     from assms(2, 3)
     have 22: "list_all wf_app_nf_upd nu" "list_all wf_app_nf_upd nu'"
       by (simp add: list_all_iff)+
@@ -3824,7 +3851,7 @@ proof -
       by (simp add: Un_commute)
     from 1 
     have 12: "non_int_of_upd_list ou" "non_int_of_upd_list ou'"
-      unfolding non_int_of_upd_list_def pairwise'_def by auto
+      unfolding non_int_of_upd_list_def pairwise_def by auto
     from assms(2, 3)
     have 22: "list_all wf_app_of_upd ou" "list_all wf_app_of_upd ou'"
       by (simp add: list_all_iff)+
@@ -3843,6 +3870,129 @@ proof -
   show "apply_effect x (apply_effect y M) = apply_effect y (apply_effect x M)"
     by simp
 qed
+
+lemma non_int_cond_effs_twist:
+  assumes "non_int_cond_effs eM a b"
+      and "wf_inst_cond_effect eM a"
+      and "wf_inst_cond_effect eM b"
+    shows "inst_apply_conditional_effect eM a (inst_apply_conditional_effect eM b M)
+      = inst_apply_conditional_effect eM b (inst_apply_conditional_effect eM a M)"
+proof -
+  obtain pa ea pb eb where
+    "a = (pa, ea)"
+    "b = (pb, eb)"
+    by force
+  show ?thesis
+  proof (cases "valuation eM \<Turnstile> (fst a)"; cases "valuation eM \<Turnstile> (fst b)")
+    assume a: "valuation eM \<Turnstile> (fst a)" "valuation eM \<Turnstile> (fst b)"
+    show ?thesis
+      apply (subst inst_apply_conditional_effect_def)+
+      apply (subst a)+
+      apply (subst if_True)+
+      apply (subst inst_apply_effect_def)+
+      apply (rule non_int_eff_twist)
+      using assms(1)[simplified non_int_cond_effs_def, THEN mp, OF conjI[OF a]]
+        assms(2)[simplified wf_inst_cond_effect_def, THEN mp, OF a(1)]
+        assms(3)[simplified wf_inst_cond_effect_def, THEN mp, OF a(2)]
+      by simp+
+      
+  qed (auto simp: inst_apply_conditional_effect_def)
+qed
+
+lemma non_int_effects_apply_rev:
+  assumes "non_int_cond_eff_list M xs"
+      and "wf_inst_cond_effect_list M xs"
+  shows "apply_conditional_effect_list xs M = apply_conditional_effect_list (rev xs) M"
+ apply (subst apply_conditional_effect_list_def)+
+  apply (subst List.fold_rev[simplified comp_def, where f = "inst_apply_conditional_effect M", symmetric])
+  subgoal for x y
+    using non_int_cond_effs_twist[where eM = M and a = y and b = x]
+    assms[simplified non_int_cond_eff_list_def wf_inst_cond_effect_list_def list_all_iff]
+    by blast
+  ..
+  
+lemma non_int_init_assign_twist:
+  assumes "non_int_fun_assign a b"
+  shows "add_init_int a (add_init_int b M) = add_init_int b (add_init_int a M)"
+proof -
+  obtain f1 as1 v1 f2 as2 v2 where
+    [simp]: "a = (f1, as1, v1)"
+    "b = (f2, as2, v2)"
+    by (cases a; cases b; auto)
+  have "add_init_int (f1, as1, v1) (add_init_int (f2, as2, v2) M) 
+    = add_init_int (f2, as2, v2) (add_init_int (f1, as1, v1) M)"
+  proof (cases "f1 = f2")
+    assume a: "f1 = f2"
+    have "add_init_int (f1, as1, v1) (add_init_int (f1, as2, v2) M) x
+      = add_init_int (f1, as2, v2) (add_init_int (f1, as1, v1) M) x" for x
+    proof (cases "x = f1")
+      case [simp]: True
+      obtain m where
+        "add_init_int (f1, as1, v1) M f1 = Some (m(as1\<mapsto>v1))"
+        "add_init_int (f1, as2, v2) M f1 = Some (m(as2\<mapsto>v2))"
+        by (cases "M f1"; auto)
+      hence 1: "add_init_int (f1, as1, v1) (add_init_int (f1, as2, v2) M) f1
+        = Some ((m(as2\<mapsto>v2))(as1\<mapsto>v1))"
+        "add_init_int (f1, as2, v2) (add_init_int (f1, as1, v1) M) f1
+        = Some ((m(as1\<mapsto>v1))(as2\<mapsto>v2))"
+        by auto
+      from assms \<open>f1 = f2\<close>
+      consider "as1 \<noteq> as2" | "as1 = as2 \<and> v1 = v2" by auto
+      then show ?thesis 
+      proof cases
+        assume "as1 \<noteq> as2"
+        from 1 \<open>f1 = f2\<close> \<open>x = f1\<close>
+        show ?thesis using fun_upd_twist[OF \<open>as1 \<noteq> as2\<close>, of m] 
+          by simp
+      next
+        assume "as1 = as2 \<and> v1 = v2"
+        with 1 \<open>f1 = f2\<close> \<open>x = f1\<close>
+        show ?thesis by presburger
+      qed
+    next
+      case False
+      then show ?thesis by (cases "M f1"; auto)
+    qed
+    with a
+    show ?thesis by blast
+  next
+    assume a: "f1 \<noteq> f2"
+    obtain m1 m2 where
+      a1: "add_init_int (f1, as1, v1) M = M(f1 \<mapsto> m1(as1 \<mapsto> v1))"
+      and a2: "add_init_int (f2, as2, v2) M = M(f2 \<mapsto> m2(as2 \<mapsto> v2))"
+      by (cases "M f1"; cases "M f2"; auto)
+    have "add_init_int (f2, as2, v2) (add_init_int (f1, as1, v1) M) 
+      = (M (f1 \<mapsto> m1(as1 \<mapsto> v1)))(f2 \<mapsto> m2(as2 \<mapsto> v2))" 
+      using a1 a2 fun_upd_other[OF a[symmetric]]
+      apply (cases "M f2")
+      by (auto dest: map_upd_eqD1)
+    moreover
+    have "add_init_int (f1, as1, v1) (add_init_int (f2, as2, v2) M) 
+      = (M (f2 \<mapsto> m2(as2 \<mapsto> v2)))(f1 \<mapsto> m1(as1 \<mapsto> v1))"
+      using a1 a2 fun_upd_other[OF a]
+      apply (cases "M f1")
+      by (auto dest: map_upd_eqD1)
+    ultimately
+    show ?thesis using fun_upd_twist[OF a, of M] by presburger
+  qed
+  thus ?thesis by simp
+qed
+
+lemma (in wf_ast_problem) init_nfi_alt: 
+  "nfi = fold add_init_int (rev (init_nfs P)) Map.empty"
+  unfolding nfi_def 
+proof (subst fold_rev[simplified comp_def])
+  fix x y
+  assume a: "x \<in> set (init_nfs P)" "y \<in> set (init_nfs P)"
+  have "add_init_int y (add_init_int x M) = add_init_int x (add_init_int y M)" for M
+  proof -
+    from wf_problem[simplified wf_problem_def non_int_assign_list_iff] a
+    have "non_int_fun_assign x y" by blast
+    thus "add_init_int y (add_init_int x M) = add_init_int x (add_init_int y M)" 
+      using non_int_init_assign_twist[where M = M, symmetric] by simp
+  qed
+  thus "(\<lambda>xa. add_init_int y (add_init_int x xa)) = (\<lambda>xa. add_init_int x (add_init_int y xa))" by simp
+qed simp
 
 end
 
