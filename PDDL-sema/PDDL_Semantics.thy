@@ -98,6 +98,9 @@ subsubsection \<open>Deeply embedded types\<close>
 type_synonym name = string
 
 datatype pred = Predicate (pred_name: name)
+datatype pred = Predicate (pred_name: name)
+
+datatype func = Function (fun_name: name)
 
 datatype func = Function (fun_name: name)
 
@@ -697,8 +700,7 @@ text \<open>Here, we evaluate an {@typ object term} against world-model to
   | "predicate_inst M (Eq t1 t2) = (case (term_val M t1, term_val M t2) of
       (Some x, Some y) \<Rightarrow> Some (Eq x y)
     | _                \<Rightarrow> None)"
-  (* When we do not know what either term denotes, then we cannot say that they are equal.
-      I guess this is definitional equality. *)
+  (* When we do not know what either term defines, then we cannot say that they are equal *)
   
   fun predicate_val::"world_model \<Rightarrow> (object term) predicate \<Rightarrow> bool" where
     "predicate_val M p = (case predicate_inst M p of 

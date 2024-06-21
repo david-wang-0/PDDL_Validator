@@ -1679,7 +1679,7 @@ lemma non_int_cond_effs_impl_correct: "non_int_cond_effs_impl M e1 e2 = non_int_
     inst_effect_impl_correct valuation_impl_correct
   ..
 
-definition "non_int_cond_eff_list_impl M xs \<equiv> pairwise (non_int_cond_effs_impl M) (set xs)"
+definition "non_int_cond_eff_list_impl M xs \<equiv> pairwise' (non_int_cond_effs_impl M) (set xs)"
 
 lemma non_int_cond_eff_list_impl_correct: 
   "non_int_cond_eff_list_impl M xs = non_int_cond_eff_list (exec_wm_to_wm M) xs"
@@ -2984,7 +2984,7 @@ find_theorems name: "ast_problem*all"
 lemmas wf_problem_code =
   ast_problem.wf_problem'_def
   ast_problem.wf_plan_action.simps
-  ast_problem.non_int_assign_list.simps
+  ast_problem.non_int_assign_list_def
   ast_problem.valid_plan_fromE.simps
   ast_problem.wf_init_of_a'.simps
   ast_problem.wf_init_nf_a'.simps
@@ -3042,6 +3042,9 @@ lemmas check_code =
   ast_domain.inst_of_upd'.simps
   ast_domain.inst_nf_upd'.simps
   ast_domain.is_some.simps
+  ast_domain.non_int_pred_upds_def
+  ast_domain.disjoint_upd_lists_def
+  ast_domain.disjoint_inst_upd_lists_def
   ast_domain.non_int_of_upd_list_def 
   ast_domain.valid_ret_val_inst.simps
   ast_domain.non_int_of_upds.simps
