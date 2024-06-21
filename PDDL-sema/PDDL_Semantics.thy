@@ -2118,7 +2118,6 @@ begin
 lemma "s = {} \<Longrightarrow> \<not>(\<exists> a \<in> s. P a)" by blast
 
 lemma "s = {} \<Longrightarrow> (\<forall>a \<in> s. \<forall>a \<in> t. \<not>(\<exists>b. a = b))" by blast
-
   
   text \<open>PDDL quantifiers act on typed lists of variables\<close>
   text \<open>This function removes duplicate parameters, keeping the last occurrence. It is not necessary. \<close>
@@ -4125,8 +4124,8 @@ lemma pddl_exists_precondition_sem:
   assumes "a = Action_Schema n params (pddl_exists vts \<phi>) eff"
     and "action_params_match a args"
     and "Ground_Action pre_inst eff_inst = instantiate_action_schema a args"
-  shows "pre_inst = map_pre (inst_term params args) (pddl_exists vts \<phi>) \<and>
-        valuation M \<Turnstile> pre_inst \<longleftrightarrow> valuation M \<Turnstile> map_pre (inst_term params args) (foldr (\<lambda>(v, ty) \<phi>. (\<^bold>\<exists>v - ty. \<phi>)) vts \<phi>)"
+  shows "pre_inst = map_pre (inst_term params args) (pddl_exists vts \<phi>) \<and> valuation M \<Turnstile> pre_inst 
+    \<longleftrightarrow> valuation M \<Turnstile> map_pre (inst_term params args) (foldr (\<lambda>(v, ty) \<phi>. (\<^bold>\<exists>v - ty. \<phi>)) vts \<phi>)"
 proof -
   have "map_pre (inst_term params args) (pddl_exists vts \<phi>) 
         = map_pre (inst_term params args) (foldr (\<lambda>(v, ty) \<phi>. (\<^bold>\<exists>v - ty. \<phi>)) vts \<phi>)" unfolding pddl_exists_def assms
@@ -4148,7 +4147,7 @@ lemma pddl_univ_effect_sem:
   shows "foldr (inst_apply_conditional_effect M) ces' M = foldr (inst_apply_conditional_effect M) ces1' M"
   using assms unfolding pddl_univ_effect_list_def
   by simp
-  
+
 end \<comment> \<open>Context of \<open>ast_problem\<close>\<close>
 
 end \<comment> \<open>Theory\<close>
