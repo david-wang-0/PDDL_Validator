@@ -1,0 +1,2 @@
+expected `(string * ((PDDL.PDDL_VAR list * PDDL.PDDL_PRIM_TYPE list) list * (PDDL.PDDL_DURATION_CONSTRAINT option * PDDL.PDDL_DA_GD option * PDDL.PDDL_DA_EFFECT option)), char) ParserCombinators.parser * (string * (a * (z * y * x)) -> PDDL.PDDL_STRUCTURE)`
+     found `(string * ((PDDL.PDDL_VAR list * PDDL.PDDL_PRIM_TYPE list) list * (PDDL.PDDL_DURATION_CONSTRAINT option * PDDL.PDDL_DA_GD option * PDDL.PDDL_DA_EFFECT option)), char) ParserCombinators.parser * (string * a * (z * y * x) -> PDDL.PDDL_STRUCTURE)
