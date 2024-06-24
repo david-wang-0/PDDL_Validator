@@ -1,4 +1,5 @@
-(* This is the grammar for PDDL. We tried to follow the grammar spec by Kovacs as closely as we could. *)
+(* This is the grammar for PDDL. The grammar spec by Kovacs is roughly followed, but 
+  simplifications are made, where they lead to nicer code (by my judgement). *)
 
 
 (* Some utility functions. *)
@@ -56,13 +57,13 @@ struct
 
     val reservedOpNames = requirementKeywords @ 
       ["define", "domain", ":requirements", ":predicates", ":functions",
-        ":types", ":constants", ":action", ":parameters", ":precondition", ":effect", 
+        ":types", ":constants", ":action", ":durative-action", ":parameters", ":precondition", ":effect", 
         ":invariant", ":name", ":vars", ":set-constraint",
         "problem", ":domain", ":init", ":objects", ":goal", ":metric", "maximize", "minimize",              
         "=", "+", "-", "/", "*", "<", ">", "<=", ">=", ".", "and", "or", "imply", "not", "forall", "exists", "when",
-        "either", "assign", "scale-up", "scale-down", "increase", "decrease"
+        "either", "assign", "scale-up", "scale-down", "increase", "decrease", "at"
         ]
-    val reservedNames = reservedOpNames @ ["number", "undefined", "total-cost", "object"]
+    val reservedNames = reservedOpNames @ ["number", "undefined", "total-cost", "object", "?duration", "#t"]
     
     val caseSensitive  = false
 
@@ -141,7 +142,7 @@ struct
 
   type RAT = string * string option
 
-  (* F_Head is a term, with a well-formedness condition, because assignment updates are ambiguous. *)
+  (* F_Head is a term with a well-formedness condition, because assignment updates are ambiguous. *)
 
   datatype PDDL_F_EXP = 
     PDDL_Num of RAT
@@ -163,8 +164,10 @@ struct
   | PDDL_Num_Ge of (PDDL_F_EXP * PDDL_F_EXP)
 
   datatype PDDL_OBJ_ATOM =
-    PDDL_Obj_Pred of (string * PDDL_OBJ_CONS list)
-  | PDDL_Obj_Eq of (PDDL_OBJ_CONS * PDDL_OBJ_CONS)
+    PDDL_Obj_Pred of string * PDDL_OBJ_CONS list
+  | PDDL_Obj_Eq of PDDL_OBJ_CONS * PDDL_OBJ_CONS
+
+  type PDDL_PREF_NAME = string
 
   datatype PDDL_FORM =
     PDDL_Form_Atom of PDDL_TERM_ATOM
@@ -174,6 +177,9 @@ struct
   | PDDL_Imply of PDDL_FORM * PDDL_FORM
   | PDDL_All of PDDL_VAR PDDL_TYPED_LIST * PDDL_FORM
   | PDDL_Exists of PDDL_VAR PDDL_TYPED_LIST * PDDL_FORM
+  | PDDL_Pref of PDDL_PREF_NAME * PDDL_FORM
+
+
 
   datatype PDDL_EFFECT = 
     Add of PDDL_TERM_ATOM
@@ -187,27 +193,63 @@ struct
   | EFF_And of PDDL_EFFECT list
   | EFF_Cond of (PDDL_FORM * PDDL_EFFECT)
   | EFF_All of PDDL_VAR PDDL_TYPED_LIST * PDDL_EFFECT
+  
+  datatype PDDL_SIMPLE_DURATION_CONSTRAINT =
+    DUR_Eq of PDDL_F_EXP
+  | DUR_Le of PDDL_F_EXP
+  | DUR_Ge of PDDL_F_EXP
+  | DUR_At_Start of PDDL_SIMPLE_DURATION_CONSTRAINT
+  | DUR_At_End of PDDL_SIMPLE_DURATION_CONSTRAINT
+
+  datatype PDDL_DURATION_CONSTRAINT = 
+    DUR_And of PDDL_DURATION_CONSTRAINT list
+  | Simple_Duration_Constraint of PDDL_SIMPLE_DURATION_CONSTRAINT
+
+  datatype PDDL_TIMED_GD = 
+    PDDL_Over_All of PDDL_FORM
+  | PDDL_At_Start of PDDL_FORM 
+  | PDDL_At_End of PDDL_FORM
+
+  datatype PDDL_DA_GD =
+    PDDL_Timed_Gd of PDDL_TIMED_GD
+  | PDDL_Temp_All of PDDL_VAR PDDL_TYPED_LIST * PDDL_DA_GD
+  | PDDL_Temp_And of PDDL_DA_GD list
+  | PDDL_Temp_Pref of PDDL_PREF_NAME * PDDL_TIMED_GD
+
+  datatype PDDL_F_EXP_T = 
+    PDDL_Time
+  | PDDL_Time_Mult of PDDL_F_EXP
+
+  datatype PDDL_F_EXP_DA =
+    PDDL_F_Assign
+
+  datatype PDDL_F_ASSIGN_DA = 
+
+  datatype PDDL_TIMED_EFFECT = 
+
+  datatype PDDL_DA_EFFECT = 
 
 
   (* Actions *)
   type PDDL_PRE_GD = PDDL_FORM
 
   type PDDL_ACTION_DEF_BODY = (PDDL_PRE_GD option * PDDL_EFFECT option)
+  type PDDL_DA_DEF_BODY = (PDDL_DURATION_CONSTRAINT option * PDDL_DA_GD option * PDDL_DA_EFFECT option)
 
   type PDDL_ACTION_SYMBOL = string
 
-  type PDDL_ACTION = (PDDL_ACTION_SYMBOL * 
-                        PDDL_VAR PDDL_TYPED_LIST *
-                          PDDL_ACTION_DEF_BODY)
+  datatype PDDL_STRUCTURE = 
+      PDDL_ACTION of (PDDL_ACTION_SYMBOL * PDDL_VAR PDDL_TYPED_LIST * PDDL_ACTION_DEF_BODY)
+    | PDDL_DURATIVE_ACTION of (PDDL_ACTION_SYMBOL * PDDL_VAR PDDL_TYPED_LIST * PDDL_DA_DEF_BODY)
 
-  type PDDL_ACTIONS_DEF = (PDDL_ACTION list) (* good *)
+  type PDDL_STRUCTURES_DEF = (PDDL_STRUCTURE list) (* good *)
 
   (* The actual domain *)
   type PDDL_DOMAIN = (PDDL_TYPES_DEF option * 
                         PDDL_CONSTS_DEF option * 
                           PDDL_PREDS_DEF option * 
                             PDDL_FUNS_DEF option * 
-                              PDDL_ACTIONS_DEF)
+                              PDDL_STRUCTURES_DEF)
 
 
   (* Parsed types in the problem *)
@@ -258,6 +300,8 @@ struct
   val type_ = (in_paren (pddl_reserved "either" >> (repeat1 primitive_type))
                || (primitive_type wth (fn tp =>(tp::[])))) ?? "type"
 
+
+  (* The default use of the object type should not be hardcoded here, I think. TODO *)
   fun typed_list x = repeat (((repeat1 x) && (pddl_reserved "-" >> type_))
                               || (repeat1 x) wth (fn tlist => (tlist, [PDDL_PRIM_TYPE "object"]))) ?? "typed_list"
 
@@ -302,8 +346,6 @@ struct
          (function_typed_list atomic_function_skeleton)))?? "functions def"
 
 
-  (* Functions can be declared without arguments. <typed-list> permits 0 arguments. Therefore
-      we cannot syntactically distinguish between objects and functions. To do *)
   val term = fix (fn pddl_term => 
        pddl_var wth VAR_TERM
     || in_paren (function_symbol && repeat pddl_term) wth FUN_TERM
@@ -385,8 +427,6 @@ struct
     || (in_paren (pddl_reserved "and" >> repeat1 p_effect)) wth EFF_And
     )?? "cond_effect"
 
-  (* effect and c_effect are mutually recursive in Kovac's definition.
-      I have convinced myself that this definition is equivalent.*)
   val c_effect = 
     fix (fn c_eff => 
         cond_effect
@@ -399,16 +439,73 @@ struct
   fun emptyOR x = (x wth SOME || (char #"(" && char #")") return NONE )
 
   val action_def_body: PDDL_ACTION_DEF_BODY pddl_parser = 
-    ((pddl_reserved ":precondition" >> emptyOR pre_GD)
-      && (pddl_reserved ":effect" >> emptyOR effect)) ?? "action_def_body"
+    (pddl_reserved ":precondition" >> emptyOR pre_GD)
+      && (pddl_reserved ":effect" >> emptyOR effect) ?? "action_def_body"
 
   val action_symbol: PDDL_ACTION_SYMBOL pddl_parser = pddl_name
+
+  val da_symbol = pddl_name
 
   val action_def: PDDL_ACTION pddl_parser = 
     (in_paren 
       (pddl_reserved ":action" >> action_symbol
         && (pddl_reserved ":parameters" >> (in_paren (optional_typed_list pddl_var)))
         && action_def_body)) wth flat3 ?? "action def"
+
+  val d_value = f_exp
+
+  val simple_duration_constraint: PDDL_SIMPLE_DURATION_CONSTRAINT pddl_parser =
+    fix (fn sdc => (in_paren 
+      (pddl_reserved "<=" >> pddl_reserved "?duration" >> d_value wth DUR_Le)
+    || (pddl_reserved ">=" >> pddl_reserved "?duration" >> d_value wth DUR_Ge)
+    || (pddl_reserved "=" >> pddl_reserved "?duration" >> d_value wth DUR_Eq)
+    || (pddl_reserved "at" >> pddl_reserved "start" >> sdc wth DUR_At_Start)
+    || (pddl_reserved "at" >> pddl_reserved "end" >> sdc wth DUR_At_End)
+    )) ?? "simple duration constraint"
+
+  val duration_constraint: PDDL_DURATION_CONSTRAINT option pddl_parser = 
+    (in_paren
+      (pddl_reserved "and" >> simple_duration_constraint wth (SOME o Simple_Duration_Constraint))
+      || char#"(">>char#")" return NONE
+      || simple_duration_constraint wth (SOME o Simple_Duration_Constraint)
+    ) ?? "duration constraint"
+
+  val pref_name = pddl_name
+
+  val timed_GD: PDDL_TIMED_GD pddl_parser =
+    (in_paren 
+      (pddl_reserved "at" >> pddl_reserved "start" >> GD wth PDDL_At_Start
+    || pddl_reserved "at" >> pddl_reserved "end" >> GD wth PDDL_At_End
+    || pddl_reserved "over" >> pddl_reserved "all" >> GD wth PDDL_Over_All
+    )) ?? "timed GD"
+
+  val pref_timed_GD: PDDL_DA_GD pddl_parser = 
+    (timed_GD wth PDDL_Timed_Gd
+    || in_paren (pddl_reserved "preference" >> pref_name && timed_GD wth PDDL_Temp_Pref)  
+    ) ?? "pref timed GD"
+
+  val da_GD: PDDL_DA_GD pddl_parser = 
+    fix (fn dgd => 
+      pref_timed_GD
+    || in_paren (pddl_reserved "and" >> repeat dgd wth PDDL_Temp_And)
+    || in_paren (pddl_reserved "forall" >> in_paren (typed_list pddl_var) && dgd wth PDDL_Temp_All)
+    ) ?? "da GD"
+
+  val da_effect: PDDL_DA_EFFECT pddl_parser = 
+    fix (fn da_eff =>
+      timed_effect wth 
+    )
+
+  val da_def_body: PDDL_DA_DEF_BODY pddl_parser = 
+      (pddl_reserved ":duration" >> duration_constraint
+        && (pddl_reserved ":condition" >> emptyOR da_GD)
+        && (pddl_reserved ":effect" >> emptyOR da_effect)) ?? "da def"
+
+  val durative_action_def: PDDL_DURATIVE_ACTION pddl_parser = 
+    (in_paren 
+      (pddl_reserved ":durative-action" >> da_symbol
+        && (pddl_reserved ":parameters" >> (in_paren (optional_typed_list pddl_var)))
+        && da_def_body)) ?? "durative action def"
 
   val structure_def = action_def (*|| durative_action_def || derived_def*) ?? "struct def"
 
