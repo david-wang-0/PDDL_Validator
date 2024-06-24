@@ -169,6 +169,8 @@ struct
 
   type PDDL_PREF_NAME = string
 
+
+  (* This type needs preferences *)
   datatype PDDL_FORM =
     PDDL_Form_Atom of PDDL_TERM_ATOM
   | PDDL_Not of PDDL_FORM
@@ -291,8 +293,6 @@ struct
   structure RTP = TokenParser (PDDLDef)
   open RTP
 
-  (* Most keywords in PDDL are prefix operators. 
-    Important: use char #"<op>" reservedOp somehow does not work. *)
   fun pddl_reserved wrd = ((reservedOp wrd) return wrd) ?? "reserved word '" ^ wrd ^ "'"
 
   val lparen = (char #"(") ?? "lparen"
@@ -305,6 +305,8 @@ struct
   (* identifier ensures that the parsed identifier is not a reserved word *)
   (* the rules above define what counts as an identifier in parcom *)
   val pddl_name = identifier ?? "pddl identifier" 
+
+  val pref_name = pddl_name
 
   fun reserved_name name = ((reserved name) return name) ?? "reserved word '" ^ name ^ "'"
 
@@ -426,8 +428,9 @@ struct
       || in_paren(pddl_reserved "imply" >> f && f) wth PDDL_Imply
       || in_paren(pddl_reserved "forall" >> (in_paren(typed_list pddl_var) && f)) wth PDDL_All
       || in_paren(pddl_reserved "exists" >> (in_paren(typed_list pddl_var) && f)) wth PDDL_Exists
+      || in_paren(pddl_reserved "preference" >> pref_name && f wth PDDL_Pref)
       ) ?? "GD"
-  
+
   val pre_GD = GD ?? "pre_GD" (* the (and ...) in the pre_GD is parsed by GD *)
 
 
@@ -490,8 +493,6 @@ struct
       || string "()" return NONE
       || simple_duration_constraint wth (SOME o Simple_Duration_Constraint)
     ) ?? "duration constraint"
-
-  val pref_name = pddl_name
 
   val timed_GD: PDDL_TIMED_GD pddl_parser =
     (in_paren 
