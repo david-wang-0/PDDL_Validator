@@ -268,11 +268,12 @@ struct
   type PDDL_STRUCTURES_DEF = (PDDL_STRUCTURE list) (* good *)
 
   (* The actual domain *)
-  type PDDL_DOMAIN = (PDDL_TYPES_DEF option * 
-                        PDDL_CONSTS_DEF option * 
-                          PDDL_PREDS_DEF option * 
-                            PDDL_FUNS_DEF option * 
-                              PDDL_STRUCTURES_DEF)
+  type PDDL_DOMAIN = (
+    PDDL_TYPES_DEF option * 
+    PDDL_CONSTS_DEF option * 
+    PDDL_PREDS_DEF option * 
+    PDDL_FUNS_DEF option * 
+    PDDL_STRUCTURES_DEF)
 
 
   (* Parsed types in the problem *)
@@ -286,9 +287,45 @@ struct
 
   type PDDL_GOAL = PDDL_FORM
 
-  type PDDL_PROBLEM = (PDDL_OBJ_DEF option *
-                        PDDL_INIT list *
-                          PDDL_GOAL)
+  datatype PDDL_CON_GD =
+    PDDL_Con_And of PDDL_CON_GD list
+  | PDDL_Con_All of PDDL_VAR PDDL_TYPED_LIST * PDDL_CON_GD
+  | PDDL_At_End of PDDL_CON_GD
+  | PDDL_Always of PDDL_CON_GD
+  | PDDL_Sometime of PDDL_CON_GD
+  | PDDL_Within of RAT * PDDL_CON_GD
+  | PDDL_At_Most_Once of PDDL_CON_GD
+  | PDDL_Sometime_After of PDDL_CON_GD * PDDL_CON_GD
+  | PDDL_Sometime_Before of PDDL_CON_GD * PDDL_CON_GD
+  | PDDL_Always_Within of RAT * PDDL_CON_GD * PDDL_CON_GD
+  | PDDL_Hold_During of RAT * RAT * PDDL_CON_GD
+  | PDDL_Hold_After of RAT * PDDL_CON_GD
+  | PDDL_Con_Pref of PDDL_PREF_NAME * PDDL_CON_GD
+  | PDDL_Gd of PDDL_FORM
+
+  datatype PDDL_METRIC_F_EXP =
+    PDDL_Metric_Times of PDDL_METRIC_F_EXP list
+  | PDDL_Metric_Plus of PDDL_METRIC_F_EXP list
+  | PDDL_Metric_Minus of PDDL_METRIC_F_EXP * PDDL_METRIC_F_EXP
+  | PDDL_Metric_Div of PDDL_METRIC_F_EXP * PDDL_METRIC_F_EXP
+  | PDDL_Metric_Neg of PDDL_METRIC_F_EXP
+  | PDDL_Metric_Num of RAT
+  | PDDL_Metric_Fun of PDDL_FUN * PDDL_OBJ_CONS list
+  | PDDL_Metric_Is_Violated of PDDL_PREF_NAME
+
+  datatype PDDL_OPT_OP = 
+    Minimize
+  | Maximize
+
+  type PDDL_METRIC_SPEC = PDDL_OPT_OP * PDDL_METRIC_F_EXP
+
+  type PDDL_PROBLEM = (
+    PDDL_OBJ_DEF option *
+    PDDL_INIT list *
+    PDDL_GOAL *
+    PDDL_CON_GD option *
+    PDDL_METRIC_SPEC option
+  )
 
   structure RTP = TokenParser (PDDLDef)
   open RTP
@@ -626,21 +663,64 @@ struct
 
   val goal = in_paren(pddl_reserved ":goal" >> pre_GD)
 
-  val optimisation = (pddl_reserved "maximize" || pddl_reserved "minimize") ?? "Optimisation"
+  val con_GD: PDDL_CON_GD pddl_parser = 
+    fix (fn cGD => 
+      in_paren (pddl_reserved "and" >> repeat cGD wth PDDL_Con_And)
+    || in_paren (pddl_reserved "forall" >> typed_list pddl_var && cGD wth PDDL_Con_All)
+    || in_paren (pddl_reserved "at end" >> cGD wth PDDL_At_End)
+    || in_paren (pddl_reserved "always" >> cGD wth PDDL_Always)
+    || in_paren (pddl_reserved "sometime" >> cGD wth PDDL_Sometime)
+    || in_paren (pddl_reserved "within" >> dec_num && cGD wth PDDL_Within)
+    || in_paren (pddl_reserved "at-most-once" >> cGD wth PDDL_At_Most_Once)
+    || in_paren (pddl_reserved "sometime-after" >> cGD && cGD wth PDDL_Sometime_After)
+    || in_paren (pddl_reserved "sometime-before" >> cGD && cGD wth PDDL_Sometime_Before)
+    || in_paren (pddl_reserved "always-within" >> dec_num && cGD && cGD wth PDDL_Always_Within o flat3)
+    || in_paren (pddl_reserved "hold-during" >> dec_num && dec_num && cGD wth PDDL_Hold_During o flat3)
+    || in_paren (pddl_reserved "hold_after" >> dec_num && cGD wth PDDL_Hold_After)
+    || GD wth PDDL_Gd
+    ) ?? "con GD"
 
-  val metric_f_exp = function_symbol
+  val pref_con_GD: PDDL_CON_GD pddl_parser =
+    fix (fn pcGD =>
+      in_paren (pddl_reserved "and" >> repeat pcGD wth PDDL_Con_And)
+    || in_paren (pddl_reserved "forall" >> typed_list pddl_var && pcGD wth PDDL_Con_All)
+    || in_paren (pddl_reserved "preference" >> pref_name && con_GD wth PDDL_Con_Pref)
+    || con_GD
+    ) ?? "pref con GD"
 
-  val metric_spec = in_paren(pddl_reserved ":metric" >> optimisation >> in_paren(metric_f_exp))
+  val constraints: PDDL_CON_GD pddl_parser =
+    (pddl_reserved ":constraints" >> pref_con_GD) ?? "constraints"
+
+  val metric_f_exp: PDDL_METRIC_F_EXP pddl_parser =
+    fix (fn mfe =>
+      in_paren (pddl_reserved "+" >> repeat mfe wth PDDL_Metric_Plus)
+    || in_paren (pddl_reserved "*" >> repeat mfe wth PDDL_Metric_Times)
+    || in_paren (pddl_reserved "-" >> mfe && mfe wth PDDL_Metric_Minus)
+    || in_paren (pddl_reserved "/" >> mfe && mfe wth PDDL_Metric_Div)
+    || in_paren (pddl_reserved "-" >> mfe wth PDDL_Metric_Neg)
+    || dec_num wth PDDL_Metric_Num
+    || in_paren (function_symbol && repeat pddl_obj_cons wth PDDL_Metric_Fun)
+    || in_paren (pddl_reserved "is-violated" >> pref_name wth PDDL_Metric_Is_Violated)
+    ) ?? "metric f exp"
+
+  val optimisation: PDDL_OPT_OP pddl_parser = 
+    (pddl_reserved "maximize" return Maximize
+    || pddl_reserved "minimize" return Minimize) ?? "Optimisation"
+
+  val metric_spec: PDDL_METRIC_SPEC pddl_parser = 
+    in_paren(pddl_reserved ":metric" >> optimisation && metric_f_exp) ?? "metric spec"
 
   val problem: PDDL_PROBLEM pddl_parser = 
     in_paren (
       pddl_reserved "define" 
       >> in_paren(pddl_reserved "problem" >> pddl_name)
       >> in_paren(pddl_reserved ":domain" >> pddl_name)
-      >> (opt require_def) (* My assumption is that this will fail with an error message when the requirements are malformed *)
+      >> (opt require_def) 
       >> (opt object_declar)
       && init
-      && goal) wth flat3 ?? "problem"
+      && goal
+      && (opt constraints)
+      && (opt metric_spec)) wth flat5 ?? "problem"
 
   val plan_action = in_paren(pddl_name && repeat pddl_obj_cons)
   val plan = repeat plan_action
