@@ -61,7 +61,9 @@ struct
         ":invariant", ":name", ":vars", ":set-constraint",
         "problem", ":domain", ":init", ":objects", ":goal", ":metric", "maximize", "minimize",              
         "=", "+", "-", "/", "*", "<", ">", "<=", ">=", ".", "and", "or", "imply", "not", "forall", "exists", "when",
-        "either", "assign", "scale-up", "scale-down", "increase", "decrease", "at"
+        "either", "assign", "scale-up", "scale-down", "increase", "decrease", 
+        "at", "start", "end", "always", "sometime", "within", "at-most-once", "sometime-after", "sometime-before",
+        "always-within", "hold-during", "hold-after", "is-violated"
         ]
     val reservedNames = reservedOpNames @ ["number", "undefined", "total-cost", "object", "?duration", "#t"]
     
@@ -182,28 +184,28 @@ struct
   | PDDL_Pref of PDDL_PREF_NAME * PDDL_FORM
 
   datatype PDDL_EFFECT = 
-    Add of PDDL_TERM_ATOM
-  | Del of PDDL_TERM_ATOM
-  | Unassign of F_HEAD
+    PDDL_Add of PDDL_TERM_ATOM
+  | PDDL_Del of PDDL_TERM_ATOM
+  | PDDL_Unassign of F_HEAD
   | PDDL_Assign of (F_HEAD * PDDL_F_EXP) 
-  | N_ScaleUp of (F_HEAD * PDDL_F_EXP)
-  | N_ScaleDown of (F_HEAD * PDDL_F_EXP)
-  | N_Increase of (F_HEAD * PDDL_F_EXP)
-  | N_Decrease of (F_HEAD * PDDL_F_EXP)
-  | EFF_And of PDDL_EFFECT list
-  | EFF_Cond of (PDDL_FORM * PDDL_EFFECT)
-  | EFF_All of PDDL_VAR PDDL_TYPED_LIST * PDDL_EFFECT
+  | PDDL_EFF_ScaleUp of (F_HEAD * PDDL_F_EXP)
+  | PDDL_EFF_ScaleDown of (F_HEAD * PDDL_F_EXP)
+  | PDDL_EFF_Increase of (F_HEAD * PDDL_F_EXP)
+  | PDDL_EFF_Decrease of (F_HEAD * PDDL_F_EXP)
+  | PDDL_EFF_And of PDDL_EFFECT list
+  | PDDL_EFF_Cond of (PDDL_FORM * PDDL_EFFECT)
+  | PDDL_EFF_All of PDDL_VAR PDDL_TYPED_LIST * PDDL_EFFECT
   
   datatype PDDL_SIMPLE_DURATION_CONSTRAINT =
-    DUR_Eq of PDDL_F_EXP
-  | DUR_Le of PDDL_F_EXP
-  | DUR_Ge of PDDL_F_EXP
-  | DUR_At_Start of PDDL_SIMPLE_DURATION_CONSTRAINT
-  | DUR_At_End of PDDL_SIMPLE_DURATION_CONSTRAINT
+    PDDL_DUR_Eq of PDDL_F_EXP
+  | PDDL_DUR_Le of PDDL_F_EXP
+  | PDDL_DUR_Ge of PDDL_F_EXP
+  | PDDL_DUR_At_Start of PDDL_SIMPLE_DURATION_CONSTRAINT
+  | PDDL_DUR_At_End of PDDL_SIMPLE_DURATION_CONSTRAINT
 
   datatype PDDL_DURATION_CONSTRAINT = 
-    DUR_And of PDDL_DURATION_CONSTRAINT list
-  | Simple_Duration_Constraint of PDDL_SIMPLE_DURATION_CONSTRAINT
+    PDDL_DUR_CON_And of PDDL_DURATION_CONSTRAINT list
+  | PDDL_Simple_Duration_Constraint of PDDL_SIMPLE_DURATION_CONSTRAINT
 
   datatype PDDL_TIMED_GD = 
     PDDL_Over_All of PDDL_FORM
@@ -228,7 +230,6 @@ struct
   | PDDL_DA_Neg of PDDL_F_EXP_DA
   | PDDL_DA_Dur
   | PDDL_F_Exp of PDDL_F_EXP
-  (* Maybe combine this with f_exp, since this would reduce code duplication *)
 
 
   datatype PDDL_F_ASSIGN_DA =
@@ -242,7 +243,7 @@ struct
     PDDL_Dur_Eff_At_Start of PDDL_F_ASSIGN_DA
   | PDDL_Dur_Eff_At_End of PDDL_F_ASSIGN_DA
   | PDDL_Eff_At_Start of PDDL_EFFECT
-  | PDDL_Eff_At_End of PDDL_EFFECT (* cond effect is an effect without a condition*)
+  | PDDL_Eff_At_End of PDDL_EFFECT
   | PDDL_Cont_Eff_Increase of F_HEAD * PDDL_F_EXP_T
   | PDDL_Cont_Eff_Decrease of F_HEAD * PDDL_F_EXP_T
 
@@ -263,7 +264,7 @@ struct
   datatype PDDL_STRUCTURE = 
       PDDL_ACTION of (PDDL_ACTION_SYMBOL * PDDL_VAR PDDL_TYPED_LIST * PDDL_ACTION_DEF_BODY)
     | PDDL_DURATIVE_ACTION of (PDDL_ACTION_SYMBOL * PDDL_VAR PDDL_TYPED_LIST * PDDL_DA_DEF_BODY)
-    | PDDL_DERIVED of (PDDL_PREDICATE_NAME * (PDDL_VAR PDDL_TYPED_LIST) * PDDL_FORM)
+    | PDDL_DERIVED of (PDDL_PREDICATE_NAME * PDDL_VAR PDDL_TYPED_LIST * PDDL_FORM)
 
   type PDDL_STRUCTURES_DEF = (PDDL_STRUCTURE list) (* good *)
 
@@ -290,7 +291,7 @@ struct
   datatype PDDL_CON_GD =
     PDDL_Con_And of PDDL_CON_GD list
   | PDDL_Con_All of PDDL_VAR PDDL_TYPED_LIST * PDDL_CON_GD
-  | PDDL_At_End of PDDL_CON_GD
+  | PDDL_Con_At_End of PDDL_FORM
   | PDDL_Always of PDDL_CON_GD
   | PDDL_Sometime of PDDL_CON_GD
   | PDDL_Within of RAT * PDDL_CON_GD
@@ -451,11 +452,6 @@ struct
     (in_paren(predicate && repeat pddl_obj_cons) wth PDDL_Obj_Pred)
   || in_paren((pddl_reserved "=") >> pddl_obj_cons && pddl_obj_cons) wth PDDL_Obj_Eq) ?? "Atomic formula"
 
-  (* The first two clauses are ambiguous:
-    - Equality on terms 
-    - Equality on numbers
-    - f_exp can parse two terms
-    - f_comp can parse two f_exps, which are ambiguous with terms  *)
   val GD: PDDL_FORM pddl_parser = fix (fn f => 
       atomic_formula_term wth PDDL_Form_Atom 
       || f_comp wth PDDL_Form_Atom
@@ -465,35 +461,42 @@ struct
       || in_paren(pddl_reserved "imply" >> f && f) wth PDDL_Imply
       || in_paren(pddl_reserved "forall" >> (in_paren(typed_list pddl_var) && f)) wth PDDL_All
       || in_paren(pddl_reserved "exists" >> (in_paren(typed_list pddl_var) && f)) wth PDDL_Exists
-      || in_paren(pddl_reserved "preference" >> pref_name && f wth PDDL_Pref)
       ) ?? "GD"
 
-  val pre_GD = GD ?? "pre_GD" (* the (and ...) in the pre_GD is parsed by GD *)
+  val pref_GD: PDDL_FORM pddl_parser = 
+    in_paren(pddl_reserved "preference" >> pref_name && GD wth PDDL_Pref)
+  || GD ?? "pref GD"
+  
+  val pre_GD =
+    fix (fn f =>
+      pref_GD
+      || in_paren (pddl_reserved "and" >> repeat pref_GD wth PDDL_And)
+      || in_paren (pddl_reserved "forall" >> in_paren (typed_list pddl_var) && f wth PDDL_All)  
+    ) ?? "pre_GD" 
 
 
-  (* The assign is sketchy. The second Assign case cannot work, we will disambiguate assignments later *)
   val p_effect: PDDL_EFFECT pddl_parser =
-      (atomic_formula_term wth Add
-      || (in_paren (pddl_reserved "not" >> atomic_formula_term) wth Del)
-      || (in_paren (pddl_reserved "assign" >> f_head << reserved_name "undefined") wth Unassign)
+      (atomic_formula_term wth PDDL_Add
+      || (in_paren (pddl_reserved "not" >> atomic_formula_term) wth PDDL_Del)
+      || (in_paren (pddl_reserved "assign" >> f_head << reserved_name "undefined") wth PDDL_Unassign)
       || (in_paren (pddl_reserved "assign" >> f_head && f_exp) wth PDDL_Assign) 
       || (in_paren (pddl_reserved "assign" >> f_head && term) wth (fn (h, t) => PDDL_Assign (h, F_Head t)))
-      || (in_paren (pddl_reserved "scale-up" >> f_head && f_exp) wth N_ScaleUp)
-      || (in_paren (pddl_reserved "scale-down" >> f_head && f_exp) wth N_ScaleDown)
-      || (in_paren (pddl_reserved "increase" >> f_head && f_exp) wth N_Increase)
-      || (in_paren (pddl_reserved "decrease" >> f_head && f_exp) wth N_Decrease)) ?? "p_effect"
+      || (in_paren (pddl_reserved "scale-up" >> f_head && f_exp) wth PDDL_EFF_ScaleUp)
+      || (in_paren (pddl_reserved "scale-down" >> f_head && f_exp) wth PDDL_EFF_ScaleDown)
+      || (in_paren (pddl_reserved "increase" >> f_head && f_exp) wth PDDL_EFF_Increase)
+      || (in_paren (pddl_reserved "decrease" >> f_head && f_exp) wth PDDL_EFF_Decrease)) ?? "p_effect"
 
   val cond_effect = (
       p_effect 
-    || (in_paren (pddl_reserved "and" >> repeat1 p_effect)) wth EFF_And
+    || (in_paren (pddl_reserved "and" >> repeat1 p_effect)) wth PDDL_EFF_And
     )?? "cond_effect"
 
   val c_effect = 
     fix (fn c_eff => 
         cond_effect
-      || in_paren (pddl_reserved "when" >> pre_GD && cond_effect) wth EFF_Cond
-      || in_paren (pddl_reserved "and" >> repeat1 c_eff) wth EFF_And
-      || in_paren (pddl_reserved "forall" >> (in_paren (typed_list pddl_var)) && c_eff) wth EFF_All) ?? "c_effect"
+      || in_paren (pddl_reserved "when" >> pre_GD && cond_effect) wth PDDL_EFF_Cond
+      || in_paren (pddl_reserved "and" >> repeat1 c_eff) wth PDDL_EFF_And
+      || in_paren (pddl_reserved "forall" >> (in_paren (typed_list pddl_var)) && c_eff) wth PDDL_EFF_All) ?? "c_effect"
 
   val effect = c_effect ?? "effect"
   
@@ -517,18 +520,18 @@ struct
 
   val simple_duration_constraint: PDDL_SIMPLE_DURATION_CONSTRAINT pddl_parser =
     fix (fn sdc => (in_paren 
-      (pddl_reserved "<=" >> pddl_reserved "?duration" >> d_value wth DUR_Le)
-    || (pddl_reserved ">=" >> pddl_reserved "?duration" >> d_value wth DUR_Ge)
-    || (pddl_reserved "=" >> pddl_reserved "?duration" >> d_value wth DUR_Eq)
-    || (pddl_reserved "at" >> pddl_reserved "start" >> sdc wth DUR_At_Start)
-    || (pddl_reserved "at" >> pddl_reserved "end" >> sdc wth DUR_At_End)
+      (pddl_reserved "<=" >> pddl_reserved "?duration" >> d_value wth PDDL_DUR_Le)
+    || (pddl_reserved ">=" >> pddl_reserved "?duration" >> d_value wth PDDL_DUR_Ge)
+    || (pddl_reserved "=" >> pddl_reserved "?duration" >> d_value wth PDDL_DUR_Eq)
+    || (pddl_reserved "at" >> pddl_reserved "start" >> sdc wth PDDL_DUR_At_Start)
+    || (pddl_reserved "at" >> pddl_reserved "end" >> sdc wth PDDL_DUR_At_End)
     )) ?? "simple duration constraint"
 
   val duration_constraint: PDDL_DURATION_CONSTRAINT option pddl_parser = 
     (in_paren
-      (pddl_reserved "and" >> simple_duration_constraint wth (SOME o Simple_Duration_Constraint))
+      (pddl_reserved "and" >> simple_duration_constraint wth (SOME o PDDL_Simple_Duration_Constraint))
       || string "()" return NONE
-      || simple_duration_constraint wth (SOME o Simple_Duration_Constraint)
+      || simple_duration_constraint wth (SOME o PDDL_Simple_Duration_Constraint)
     ) ?? "duration constraint"
 
   val timed_GD: PDDL_TIMED_GD pddl_parser =
@@ -667,7 +670,7 @@ struct
     fix (fn cGD => 
       in_paren (pddl_reserved "and" >> repeat cGD wth PDDL_Con_And)
     || in_paren (pddl_reserved "forall" >> typed_list pddl_var && cGD wth PDDL_Con_All)
-    || in_paren (pddl_reserved "at end" >> cGD wth PDDL_At_End)
+    || in_paren (pddl_reserved "at end" >> GD wth PDDL_Con_At_End)
     || in_paren (pddl_reserved "always" >> cGD wth PDDL_Always)
     || in_paren (pddl_reserved "sometime" >> cGD wth PDDL_Sometime)
     || in_paren (pddl_reserved "within" >> dec_num && cGD wth PDDL_Within)
@@ -700,6 +703,8 @@ struct
     || in_paren (pddl_reserved "-" >> mfe wth PDDL_Metric_Neg)
     || dec_num wth PDDL_Metric_Num
     || in_paren (function_symbol && repeat pddl_obj_cons wth PDDL_Metric_Fun)
+    || function_symbol wth (fn f => PDDL_Metric_Fun (f, []))
+    || pddl_reserved "total-time" return PDDL_Metric_Fun ("total-time", [])
     || in_paren (pddl_reserved "is-violated" >> pref_name wth PDDL_Metric_Is_Violated)
     ) ?? "metric f exp"
 
