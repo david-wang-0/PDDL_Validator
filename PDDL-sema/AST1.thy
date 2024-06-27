@@ -14,6 +14,8 @@ datatype func = Function (fun_name: name)
 
 datatype pref = Preference (pref_name: name)
 
+datatype type = Either (primitives: "name list")
+
 datatype variable = Variable (var_name: name)
 
 datatype object = name: Object (obj_name: name)
@@ -41,25 +43,6 @@ datatype (ent: 'ent) atom =
 | Num_Le "'ent f_exp" "'ent f_exp"
 | Num_Lt "'ent f_exp" "'ent f_exp"
 
-datatype 'ent f_exp_da =
-  Duration
-| NFun func (arguments: "'ent list")
-| Num rat
-| FExp "'ent f_exp"
-| Neg "'ent f_exp_da"
-| Add "'ent f_exp_da" "'ent f_exp_da"
-| Sub "'ent f_exp_da" "'ent f_exp_da"
-| Mult "'ent f_exp_da" "'ent f_exp_da"
-| Div "'ent f_exp_da" "'ent f_exp_da"
-
-datatype 'ent da_atom =
-  Pred (pred: pred) (arguments: "'ent list")
-| TermEq (lhs: 'ent) (rhs: 'ent)
-| Num_Eq "'ent f_exp_da" "'ent f_exp"
-| Num_Le "'ent f_exp" "'ent f_exp"
-| Num_Lt "'ent f_exp" "'ent f_exp"
-datatype type = Either (primitives: "name list")
-
 
 datatype ('x, atoms: 'a) formula = 
   Atom 'a
@@ -69,13 +52,99 @@ datatype ('x, atoms: 'a) formula =
 | Or "('x, 'a) formula" "('x, 'a) formula"
 | Imp "('x, 'a) formula" "('x, 'a) formula"
 | ForAll "'x" "('x, 'a) formula"
-| Implies "'x" "('x, 'a) formula"
 
-(* This is used in the preconditions of durative actions *)
-datatype ('x, atoms: 'a) da_GD =
+datatype ('x, atoms: 'a) timed_GD =
   OverAll "('x, 'a) formula"
 | AtStart "('x, 'a) formula"
 | AtEnd "('x, 'a) formula"
+
+datatype ('x, atoms: 'a) da_GD =
+  ForAll "'x" "('x, 'a) da_GD"
+| And "('x, 'a) da_GD" "('x, 'a) da_GD"
+| tGD "('x, 'a) timed_GD"
+
+datatype upd_op = 
+  Assign
+| ScaleUp
+| ScaleDown
+| Increase
+| Decrease
+
+datatype (ent: 'ent) of_upd = OF_Upd func "'ent list" (ret_val: "'ent option")
+datatype (ent: 'ent) nf_upd = NF_Upd upd_op func "'ent list" "'ent f_exp"
+
+datatype 'ent simple_update =
+  OU "'ent of_upd"
+| NU "'ent nf_upd"
+| Add "'ent atom"
+| Del "'ent atom"
+
+datatype ('x, 'ent) simple_effect =
+  Eff "'ent simple_update"
+| Eff_And "('x, 'ent) simple_effect list"
+| Eff_All 'x "('x, 'ent) simple_effect"
+| Eff_When "('x, 'ent atom) formula" "('x, 'ent) simple_effect"
+
+datatype 'ent f_exp_da =
+  Duration
+| NFun func (arguments: "'ent list")
+| Num rat
+| Neg "'ent f_exp_da"
+| Add "'ent f_exp_da" "'ent f_exp_da"
+| Sub "'ent f_exp_da" "'ent f_exp_da"
+| Mult "'ent f_exp_da" "'ent f_exp_da"
+| Div "'ent f_exp_da" "'ent f_exp_da"
+
+datatype (ent: 'ent) d_nf_upd = D_NF_Upd upd_op func "'ent list" "'ent f_exp_da"
+
+datatype 'ent durative_update =
+  D_Add "'ent atom"
+| D_Del "'ent atom"
+| D_OU "'ent of_upd"
+| D_NU "'ent d_nf_upd"
+
+datatype ('x, 'ent) timed_effect = 
+  DUpd_At_Start "'ent durative_update"
+| DUpd_At_End "'ent durative_update"
+| Eff_At_Start "'ent simple_update list"
+| Eff_At_End "'ent simple_update list"
+
+(* Happenings can interfere. Effects can interfere, but conjunction in effects is not commutative.
+    Also consider how to handle conditional effects with conditions at the end and effects at the start *)
+datatype ('x, 'ent) durative_effect =
+  Timed_Effect "('x, 'ent) timed_effect"
+| DEff_And "('x, 'ent) durative_effect list" 
+| DEff_All 'x "('x, 'ent) durative_effect"
+| DEff_When "('x, 'ent atom) da_GD" "('x, 'ent) timed_effect"
+  
+type_synonym simple_formula_schema = "((variable \<times> type) list, variable term atom) formula"
+type_synonym simple_effect_schema = "((variable \<times> type) list, variable term) simple_effect"
+
+datatype simple_action = Simple_Action_Schema
+  (name: name)
+  (parameters: "(variable \<times> type) list")
+  (precondition: simple_formula_schema)
+  (effect: simple_effect_schema)
+
+type_synonym durative_formula_schema = "((variable \<times> type) list, variable term atom) da_GD"
+type_synonym durative_effect_schema = "((variable \<times> type) list, variable term) durative_effect"
+
+datatype ('ent) duration_constraint = 
+  DurLe "'ent f_exp"
+| DurGe "'ent f_exp"
+| DurEq "'ent f_exp"
+
+datatype durative_action = 
+  Durative_Action_Schema 
+    (name: name)
+    (duration: "variable term duration_constraint")
+    (parameters: "(variable \<times> type) list")
+    (condition: durative_formula_schema)
+    (effect: durative_effect_schema)
+
+datatype action_schema = 
+  Simple_Action_Schema simple_action
+| Durative_Action_Schema durative_action
 
 (* This is used for constraints *)
 datatype ('x, atoms: 'a) ltl_form = 
@@ -95,72 +164,16 @@ datatype ('x, atoms: 'a) ltl_form =
 | HoldAfter rat "('x, 'a) ltl_form"
 | ConPref pref "('x, 'a) ltl_form"
 
-(* effects *)
-datatype upd_op = 
-  Assign
-| ScaleUp
-| ScaleDown
-| Increase
-| Decrease
 
-datatype (ent: 'ent) of_upd = OF_Upd func "'ent list" (ret_val: "'ent option")
-datatype (ent: 'ent) nf_upd = NF_Upd upd_op func "'ent list" "'ent f_exp"
-
-datatype ('x, 'ent) compound_effect =
-  OU "'ent of_upd"
-| NU "'ent nf_upd"
-| Add "'ent atom"
-| Del "'ent atom"
-| Eff_And "('x, 'ent) compound_effect list"
-| Eff_All 'x "('x, 'ent) compound_effect"
-| Eff_When "('x, 'ent atom) formula" "('x, 'ent) compound_effect"
-
-datatype (ent: 'ent) d_nf_upd = D_NF_Upd upd_op func "'ent list" "'ent f_exp_da"
-
-datatype ('x, 'ent) durative_effect =
-  DEff_Add "'ent atom"
-| DEff_Del "'ent atom"
-| D_OU "'ent of_upd"
-| D_NU "'ent d_nf_upd"
-| DEff_And "('x, 'ent) durative_effect list"
-| DEff_All 'x "('x, 'ent) durative_effect"
-| DEff_When "('x, 'ent atom) formula" "('x, 'ent) durative_effect"
-| DEff_At_Start "('x, 'ent) durative_effect"
-| DEff_At_End "('x, 'ent) durative_effect"
-| DEff_Over_All "('x, 'ent) durative_effect"
-  
-type_synonym schematic_formula = "((variable \<times> type) list, symbol term atom) formula"
-type_synonym schematic_effect = "symbol term ast_effect"
-
-
-type_synonym ground_formula = "(unit, object term atom) formula"
-type_synonym ground_effect = "object term ast_effect"
-
-
-datatype applicable_of_upd = IOFU func "object option list" (return_value: "object option")
-datatype applicable_nf_upd = INFU upd_op func "object option list" "rat option"
-
-datatype fully_instantiated_effect =
-  Eff (eff_adds: "(object predicate option) list")
-      (eff_dels: "(object predicate option) list")
-      (ous: "instantiated_of_upd list")
-      (nus: "instantiated_nf_upd list")
-
-datatype ast_action_schema = 
-  Simple_Action_Schema
-  (name: name)
-  (parameters: "(variable \<times> type) list")
-  (precondition: "schematic_formula")
-  (effects: "(schematic_formula \<times> schematic_effect) list")
-
+datatype applicable_of_upd = AOFU func "object option list" (return_value: "object option")
+datatype applicable_nf_upd = ANFU upd_op func "object option list" "rat option"
 
 
 type_synonym object_function_interpretation = "func \<rightharpoonup> (object list \<rightharpoonup> object)"
-
 type_synonym numeric_function_interpretation = "func \<rightharpoonup> (object list \<rightharpoonup> rat)"
 
-datatype world_model = World_Model 
-  (predicates: "object predicate set")
+datatype state = State 
+  (predicates: "object atom set")
   (of_int: "object_function_interpretation")
   (nf_int: "numeric_function_interpretation")
 
@@ -182,31 +195,26 @@ definition "nf_name = fun_name o NFName"
 
 
 datatype ast_domain_decs = DomainDecls
+ 
+type_synonym fact = "pred \<times> object list"
+
+datatype ast_domain = Domain 
   (types: "(name \<times> name) list") \<comment> \<open> \<open>(type, supertype)\<close> declarations. \<close>
   ("consts": "(object \<times> type) list")
   (preds: "pred_decl list")
   (obj_funs: "obj_func_decl list")
   (num_funs: "num_func_decl list")
-
-
-type_synonym fact = "pred \<times> object list"
-
-datatype ast_problem_decs = ProbDecls
-  (domain_decs: ast_domain_decs)
-  (objects: "(object \<times> type) list")
-
-datatype ast_domain = Domain
-  (problem_decs: ast_problem_decs)
-  (actions: "ast_action_schema list")
+  (actions: "action_schema list")
 
 text \<open>A problem consists of a domain, a list of objects,
   a description of the initial state, and a description of the goal state.\<close>
 datatype ast_problem = Problem
   (domain: ast_domain)
-  (init_ps: "object predicate list")
+  (init_ps: "object atom list")
   (init_ofs: "(func \<times> object list \<times> object) list")
   (init_nfs: "(func \<times> object list \<times> rat) list")
-  (goal: "schematic_formula")
+  (goal: "simple_formula_schema")
+  (objects: "(object \<times> type) list")
 
 subsubsection \<open>Plans\<close>
 datatype plan_action = PAction
@@ -216,12 +224,10 @@ datatype plan_action = PAction
 type_synonym plan = "plan_action list"
 
 subsubsection \<open>Ground Actions\<close>
-text \<open>The following datatype represents an action schema that has been
-  instantiated by replacing the variable arguments with concrete objects.\<close>
 
 datatype ground_action = Ground_Action
-  (precondition: "ground_formula")
-  (effects: "(ground_formula \<times> ground_effect) list")
+  (condition: "simple_formula_schema")
+  (effects: "(sim \<times> ground_effect) list")
 
 subsubsection \<open>Utility functions\<close>
 text \<open>These utility functions help extract deeply embedded terms from
@@ -329,16 +335,16 @@ definition atom_syms::"'ent term atom \<Rightarrow> 'ent set" where
 definition f_syms::"'ent term atom formula \<Rightarrow> 'ent set" where
   "f_syms \<phi> = \<Union> (atom_syms ` atoms \<phi>)"
 
-definition f_vars::"schematic_formula \<Rightarrow> variable set" where
+definition f_vars::"simple_formula_schema \<Rightarrow> variable set" where
   "f_vars \<phi> = \<Union> (atom_vars ` atoms \<phi>)" 
 
-definition f_consts::"schematic_formula \<Rightarrow> object set" where
+definition f_consts::"simple_formula_schema \<Rightarrow> object set" where
   "f_consts \<phi> = \<Union> (atom_consts ` atoms \<phi>)" 
 
 definition f_subst where 
   "f_subst v c \<equiv> map_formula (atom_subst v c)"
 
-fun eff_vars::"schematic_effect \<Rightarrow> variable set" where
+fun eff_vars::"simple_effect_schema \<Rightarrow> variable set" where
   "eff_vars (Effect a d tu nu) = 
       \<Union> (predicate_vars ` (set a)) 
     \<union> \<Union> (predicate_vars ` (set d)) 
@@ -354,7 +360,7 @@ definition of_upd_syms where
 definition nf_upd_syms where
   "nf_upd_syms u = \<Union> (sym ` nf_upd.ent u)"
 
-fun eff_syms::"schematic_effect \<Rightarrow> symbol set" where
+fun eff_syms::"simple_effect_schema \<Rightarrow> symbol set" where
   "eff_syms (Effect a d tu nu) = 
     \<Union> (predicate_syms ` (set a))
   \<union> \<Union> (predicate_syms ` (set d))
@@ -364,7 +370,7 @@ fun eff_syms::"schematic_effect \<Rightarrow> symbol set" where
 fun cond_effect_ent::"'ent atom formula \<times> 'ent ast_effect \<Rightarrow> 'ent set" where
   "cond_effect_ent (pre, eff) = f_ent pre \<union> ast_effect.ent eff"
 
-fun cond_effect_vars::"schematic_formula \<times> schematic_effect \<Rightarrow> variable set" where
+fun cond_effect_vars::"simple_formula_schema \<times> simple_effect_schema \<Rightarrow> variable set" where
   "cond_effect_vars (pre, eff) = f_vars pre \<union> eff_vars eff"
 
 abbreviation map_cond_effect::"('a \<Rightarrow> 'b) \<Rightarrow> 'a atom formula \<times> 'a ast_effect 
@@ -373,8 +379,8 @@ abbreviation map_cond_effect::"('a \<Rightarrow> 'b) \<Rightarrow> 'a atom formu
 
 
 fun cond_effect_subst::"variable \<Rightarrow> object 
-  \<Rightarrow> schematic_formula \<times> schematic_effect 
-  \<Rightarrow> schematic_formula \<times> schematic_effect" where
+  \<Rightarrow> simple_formula_schema \<times> simple_effect_schema 
+  \<Rightarrow> simple_formula_schema \<times> simple_effect_schema" where
 "cond_effect_subst v c (pre, eff) = 
   (f_subst v c pre, ast_effect_subst v c eff)"
 
