@@ -1,5 +1,3 @@
  
 - Total cost can never decrease
-- What does a PDDL plan look like?
-- 
-- 
+- By 11.07.: Parse a PDDL domain and problem

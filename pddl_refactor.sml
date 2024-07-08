@@ -23,7 +23,7 @@ struct
 
   open ParserCombinators
   open CharParser
-  open PDDL_Checker_Exported
+  open AST1
 
   infixr 4 << >>
   infixr 3 &&
@@ -241,8 +241,8 @@ struct
 
   datatype PDDL_TIMED_EFFECT =
     PDDL_Dur_Eff_At_Start of PDDL_F_ASSIGN_DA
-  | PDDL_Dur_Eff_At_End of PDDL_F_ASSIGN_DA
-  | PDDL_Eff_At_Start of PDDL_EFFECT
+  | PDDL_Dur_Eff_At_End of PDDL_F_ASSIGN_DA 
+  | PDDL_Eff_At_Start of PDDL_EFFECT (* Ambiguity due to function assignments*)
   | PDDL_Eff_At_End of PDDL_EFFECT
   | PDDL_Cont_Eff_Increase of F_HEAD * PDDL_F_EXP_T
   | PDDL_Cont_Eff_Decrease of F_HEAD * PDDL_F_EXP_T
@@ -679,7 +679,7 @@ struct
     || in_paren (pddl_reserved "sometime-before" >> cGD && cGD wth PDDL_Sometime_Before)
     || in_paren (pddl_reserved "always-within" >> dec_num && cGD && cGD wth PDDL_Always_Within o flat3)
     || in_paren (pddl_reserved "hold-during" >> dec_num && dec_num && cGD wth PDDL_Hold_During o flat3)
-    || in_paren (pddl_reserved "hold_after" >> dec_num && cGD wth PDDL_Hold_After)
+    || in_paren (pddl_reserved "hold-after" >> dec_num && cGD wth PDDL_Hold_After)
     || GD wth PDDL_Gd
     ) ?? "con GD"
 

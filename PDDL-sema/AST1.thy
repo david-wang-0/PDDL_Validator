@@ -8,11 +8,9 @@ begin
   
 type_synonym name = String.literal
 
-datatype pred = Predicate (pred_name: name)
-
-datatype func = Function (fun_name: name)
-
-datatype pref = Preference (pref_name: name)
+type_synonym pred = name
+type_synonym func = name
+type_synonym pref = name
 
 datatype type = Either (primitives: "name list")
 
@@ -51,17 +49,31 @@ datatype ('x, atoms: 'a) formula =
 | And "('x, 'a) formula" "('x, 'a) formula"
 | Or "('x, 'a) formula" "('x, 'a) formula"
 | Imp "('x, 'a) formula" "('x, 'a) formula"
-| ForAll "'x" "('x, 'a) formula"
+| ForAll 'x "('x, 'a) formula"
+| Exists 'x "('x, 'a) formula"
+
+datatype ('x, 'a) pref_GD = 
+  Pref pref "('x, 'a) formula"
+  | GD "('x, 'a) formula"
+
+datatype ('x, 'a) pre_GD =
+  PrefGD "('x, 'a) pref_GD"
+  | ForAll 'x "('x, 'a) pre_GD"
+  | And 'x "('x, 'a) pre_GD"
 
 datatype ('x, atoms: 'a) timed_GD =
   OverAll "('x, 'a) formula"
 | AtStart "('x, 'a) formula"
 | AtEnd "('x, 'a) formula"
 
+datatype ('x, atoms: 'a) pref_timed_GD =
+  Pref pref "('x, 'a) timed_GD"
+  | tGD "('x, 'a) timed_GD"
+
 datatype ('x, atoms: 'a) da_GD =
   ForAll "'x" "('x, 'a) da_GD"
 | And "('x, 'a) da_GD" "('x, 'a) da_GD"
-| tGD "('x, 'a) timed_GD"
+| tGD "('x, 'a) pref_timed_GD"
 
 datatype upd_op = 
   Assign
@@ -95,6 +107,10 @@ datatype 'ent f_exp_da =
 | Mult "'ent f_exp_da" "'ent f_exp_da"
 | Div "'ent f_exp_da" "'ent f_exp_da"
 
+datatype 'ent f_exp_t = 
+  Time
+| MultTime "'ent f_exp"
+
 datatype (ent: 'ent) d_nf_upd = D_NF_Upd upd_op func "'ent list" "'ent f_exp_da"
 
 datatype 'ent durative_update =
@@ -103,41 +119,40 @@ datatype 'ent durative_update =
 | D_OU "'ent of_upd"
 | D_NU "'ent d_nf_upd"
 
-datatype ('x, 'ent) timed_effect = 
+datatype 'ent timed_effect = 
   DUpd_At_Start "'ent durative_update"
 | DUpd_At_End "'ent durative_update"
-| Eff_At_Start "'ent simple_update list"
-| Eff_At_End "'ent simple_update list"
+| DurScaleUp func "'ent list" "'ent f_exp_t"
+| DurScaleDown func "'ent list" "'ent f_exp_t"
 
-(* Happenings can interfere. Effects can interfere, but conjunction in effects is not commutative.
-    Also consider how to handle conditional effects with conditions at the end and effects at the start *)
 datatype ('x, 'ent) durative_effect =
-  Timed_Effect "('x, 'ent) timed_effect"
+  Timed_Effect "'ent timed_effect"
 | DEff_And "('x, 'ent) durative_effect list" 
 | DEff_All 'x "('x, 'ent) durative_effect"
-| DEff_When "('x, 'ent atom) da_GD" "('x, 'ent) timed_effect"
+| DEff_When "('x, 'ent atom) da_GD" "'ent timed_effect"
   
-type_synonym simple_formula_schema = "((variable \<times> type) list, variable term atom) formula"
+type_synonym pre_GD_form = "((variable \<times> type) list, variable term atom) pre_GD"
 type_synonym simple_effect_schema = "((variable \<times> type) list, variable term) simple_effect"
 
 datatype simple_action = Simple_Action_Schema
   (name: name)
   (parameters: "(variable \<times> type) list")
-  (precondition: simple_formula_schema)
+  (precondition: pre_GD_form)
   (effect: simple_effect_schema)
 
 type_synonym durative_formula_schema = "((variable \<times> type) list, variable term atom) da_GD"
 type_synonym durative_effect_schema = "((variable \<times> type) list, variable term) durative_effect"
 
-datatype ('ent) duration_constraint = 
+datatype 'ent simple_duration_constraint = 
   DurLe "'ent f_exp"
 | DurGe "'ent f_exp"
 | DurEq "'ent f_exp"
 
+
 datatype durative_action = 
   Durative_Action_Schema 
     (name: name)
-    (duration: "variable term duration_constraint")
+    (duration: "variable term simple_duration_constraint list")
     (parameters: "(variable \<times> type) list")
     (condition: durative_formula_schema)
     (effect: durative_effect_schema)
@@ -145,6 +160,36 @@ datatype durative_action =
 datatype action_schema = 
   Simple_Action_Schema simple_action
 | Durative_Action_Schema durative_action
+
+text \<open>A pred declaration contains the pred's name and its
+  argument types.\<close>
+datatype pred_decl = PredDecl
+  (predicate: pred)
+  (argTs: "type list")
+
+datatype fun_decl = 
+  ObjFunDecl (OFName: func) "type list" type
+  | NumFunDecl (NFName: func) "type list"
+
+datatype derived_pred = 
+  DerivedPred pred 
+    (params: "(variable \<times> type) list")
+    pre_GD_form
+
+datatype ast_domain = Domain 
+  (types: "(name \<times> name) list") \<comment> \<open> \<open>(type, supertype)\<close> declarations. \<close>
+  ("consts": "(object \<times> type) list")
+  (preds: "pred_decl list")
+  (obj_funs: "fun_decl list")
+  (actions: "action_schema list")
+  (derived: "derived_pred list")
+
+datatype init_asmt = 
+  At rat "object atom"
+  | NotAt rat "object atom"
+  | ObjAsmt func "object list" object
+  | NumAsmt func "object list" rat
+
 
 (* This is used for constraints *)
 datatype ('x, atoms: 'a) ltl_form = 
@@ -162,59 +207,34 @@ datatype ('x, atoms: 'a) ltl_form =
 | AlwaysWithin rat "('x, 'a) ltl_form" "('x, 'a) ltl_form"
 | HoldDuring rat rat "('x, 'a) ltl_form"
 | HoldAfter rat "('x, 'a) ltl_form"
-| ConPref pref "('x, 'a) ltl_form"
 
+datatype ('x, 'a) pref_con_GD =
+  con_GD "('x, 'a) ltl_form"
+  | ForAll 'x "('x, 'a) pref_con_GD"
+  | And "('x, 'a) pref_con_GD list"
+  | Pref pref "('x, 'a) ltl_form"
 
-datatype applicable_of_upd = AOFU func "object option list" (return_value: "object option")
-datatype applicable_nf_upd = ANFU upd_op func "object option list" "rat option"
+type_synonym constraint = "(variable \<times> type list, symbol term atom) pref_con_GD"
 
-
-type_synonym object_function_interpretation = "func \<rightharpoonup> (object list \<rightharpoonup> object)"
-type_synonym numeric_function_interpretation = "func \<rightharpoonup> (object list \<rightharpoonup> rat)"
-
-datatype state = State 
-  (predicates: "object atom set")
-  (of_int: "object_function_interpretation")
-  (nf_int: "numeric_function_interpretation")
-
-
-text \<open>A pred declaration contains the pred's name and its
-  argument types.\<close>
-datatype pred_decl = PredDecl
-  (predicate: pred)
-  (argTs: "type list")
-
-datatype obj_func_decl = ObjFunDecl (OFName: func) "type list" type
-
-definition "of_name = fun_name o OFName"
-
-
-datatype num_func_decl = NumFunDecl (NFName: func) "type list"
-
-definition "nf_name = fun_name o NFName"
-
-
-datatype ast_domain_decs = DomainDecls
- 
-type_synonym fact = "pred \<times> object list"
-
-datatype ast_domain = Domain 
-  (types: "(name \<times> name) list") \<comment> \<open> \<open>(type, supertype)\<close> declarations. \<close>
-  ("consts": "(object \<times> type) list")
-  (preds: "pred_decl list")
-  (obj_funs: "obj_func_decl list")
-  (num_funs: "num_func_decl list")
-  (actions: "action_schema list")
+datatype metric_f_exp =
+  Plus "metric_f_exp" "'metric_f_exp"
+  | Minus "metric_f_exp" "metric_f_exp"
+  | Times "metric_f_exp" "metric_f_exp"
+  | Divide "metric_f_exp" "metric_f_exp"
+  | Neg "metric_f_exp"
+  | Number rat
+  | FFun func "object list"
+  | IsViolated pref
 
 text \<open>A problem consists of a domain, a list of objects,
   a description of the initial state, and a description of the goal state.\<close>
 datatype ast_problem = Problem
   (domain: ast_domain)
-  (init_ps: "object atom list")
-  (init_ofs: "(func \<times> object list \<times> object) list")
-  (init_nfs: "(func \<times> object list \<times> rat) list")
-  (goal: "simple_formula_schema")
+  (init_asmts: "init_asmt list")
   (objects: "(object \<times> type) list")
+  (goal: "pre_GD_form")
+  (constraints: "constraint list")
+
 
 subsubsection \<open>Plans\<close>
 datatype plan_action = PAction
@@ -223,10 +243,18 @@ datatype plan_action = PAction
 
 type_synonym plan = "plan_action list"
 
+
+export_code
+  Domain Either Variable Sym Fun
+  in SML
+  module_name AST1
+  file "AST1.sml"
+
+(* 
 subsubsection \<open>Ground Actions\<close>
 
 datatype ground_action = Ground_Action
-  (condition: "simple_formula_schema")
+  (condition: "pre_GD_form")
   (effects: "(sim \<times> ground_effect) list")
 
 subsubsection \<open>Utility functions\<close>
@@ -335,10 +363,10 @@ definition atom_syms::"'ent term atom \<Rightarrow> 'ent set" where
 definition f_syms::"'ent term atom formula \<Rightarrow> 'ent set" where
   "f_syms \<phi> = \<Union> (atom_syms ` atoms \<phi>)"
 
-definition f_vars::"simple_formula_schema \<Rightarrow> variable set" where
+definition f_vars::"pre_GD_form \<Rightarrow> variable set" where
   "f_vars \<phi> = \<Union> (atom_vars ` atoms \<phi>)" 
 
-definition f_consts::"simple_formula_schema \<Rightarrow> object set" where
+definition f_consts::"pre_GD_form \<Rightarrow> object set" where
   "f_consts \<phi> = \<Union> (atom_consts ` atoms \<phi>)" 
 
 definition f_subst where 
@@ -370,7 +398,7 @@ fun eff_syms::"simple_effect_schema \<Rightarrow> symbol set" where
 fun cond_effect_ent::"'ent atom formula \<times> 'ent ast_effect \<Rightarrow> 'ent set" where
   "cond_effect_ent (pre, eff) = f_ent pre \<union> ast_effect.ent eff"
 
-fun cond_effect_vars::"simple_formula_schema \<times> simple_effect_schema \<Rightarrow> variable set" where
+fun cond_effect_vars::"pre_GD_form \<times> simple_effect_schema \<Rightarrow> variable set" where
   "cond_effect_vars (pre, eff) = f_vars pre \<union> eff_vars eff"
 
 abbreviation map_cond_effect::"('a \<Rightarrow> 'b) \<Rightarrow> 'a atom formula \<times> 'a ast_effect 
@@ -379,8 +407,8 @@ abbreviation map_cond_effect::"('a \<Rightarrow> 'b) \<Rightarrow> 'a atom formu
 
 
 fun cond_effect_subst::"variable \<Rightarrow> object 
-  \<Rightarrow> simple_formula_schema \<times> simple_effect_schema 
-  \<Rightarrow> simple_formula_schema \<times> simple_effect_schema" where
+  \<Rightarrow> pre_GD_form \<times> simple_effect_schema 
+  \<Rightarrow> pre_GD_form \<times> simple_effect_schema" where
 "cond_effect_subst v c (pre, eff) = 
   (f_subst v c pre, ast_effect_subst v c eff)"
 
@@ -490,6 +518,6 @@ lemma f_subst_replaces:
   "v \<notin> f_vars (f_subst v c \<phi>)"
   unfolding f_vars_def f_subst_def
   by (simp add: formula.set_map atom_subst_replaces)
-
+ *)
 
 end
