@@ -42,19 +42,21 @@ datatype (ent: 'ent) atom =
 | Num_Lt "'ent f_exp" "'ent f_exp"
 
 
-datatype ('x, atoms: 'a) formula = 
+datatype ('x, atoms: 'a) GD = 
   Atom 'a
 | Bot
-| Not "('x, 'a) formula"
-| And "('x, 'a) formula" "('x, 'a) formula"
-| Or "('x, 'a) formula" "('x, 'a) formula"
-| Imp "('x, 'a) formula" "('x, 'a) formula"
-| ForAll 'x "('x, 'a) formula"
-| Exists 'x "('x, 'a) formula"
+| Not "('x, 'a) GD"
+| And "('x, 'a) GD" "('x, 'a) GD"
+| Or "('x, 'a) GD" "('x, 'a) GD"
+| Imp "('x, 'a) GD" "('x, 'a) GD"
+| ForAll 'x "('x, 'a) GD"
+| Exists 'x "('x, 'a) GD"
 
 datatype ('x, 'a) pref_GD = 
-  Pref pref "('x, 'a) formula"
-  | GD "('x, 'a) formula"
+  Pref pref "('x, 'a) GD"
+  | GD "('x, 'a) GD"
+
+(* preferences cannot be in conditions of conditional effects *)
 
 datatype ('x, 'a) pre_GD =
   PrefGD "('x, 'a) pref_GD"
@@ -62,9 +64,9 @@ datatype ('x, 'a) pre_GD =
   | And 'x "('x, 'a) pre_GD"
 
 datatype ('x, atoms: 'a) timed_GD =
-  OverAll "('x, 'a) formula"
-| AtStart "('x, 'a) formula"
-| AtEnd "('x, 'a) formula"
+  OverAll "('x, 'a) GD"
+| AtStart "('x, 'a) GD"
+| AtEnd "('x, 'a) GD"
 
 datatype ('x, atoms: 'a) pref_timed_GD =
   Pref pref "('x, 'a) timed_GD"
@@ -95,7 +97,7 @@ datatype ('x, 'ent) simple_effect =
   Eff "'ent simple_update"
 | Eff_And "('x, 'ent) simple_effect list"
 | Eff_All 'x "('x, 'ent) simple_effect"
-| Eff_When "('x, 'ent atom) formula" "('x, 'ent) simple_effect"
+| Eff_When "('x, 'ent atom) GD" "('x, 'ent) simple_effect"
 
 datatype 'ent f_exp_da =
   Duration
@@ -140,7 +142,7 @@ datatype simple_action = Simple_Action_Schema
   (precondition: pre_GD_form)
   (effect: simple_effect_schema)
 
-type_synonym durative_formula_schema = "((variable \<times> type) list, variable term atom) da_GD"
+type_synonym durative_GD_schema = "((variable \<times> type) list, variable term atom) da_GD"
 type_synonym durative_effect_schema = "((variable \<times> type) list, variable term) durative_effect"
 
 datatype 'ent simple_duration_constraint = 
@@ -154,7 +156,7 @@ datatype durative_action =
     (name: name)
     (duration: "variable term simple_duration_constraint list")
     (parameters: "(variable \<times> type) list")
-    (condition: durative_formula_schema)
+    (condition: durative_GD_schema)
     (effect: durative_effect_schema)
 
 datatype action_schema = 
@@ -214,10 +216,10 @@ datatype ('x, 'a) pref_con_GD =
   | And "('x, 'a) pref_con_GD list"
   | Pref pref "('x, 'a) ltl_form"
 
-type_synonym constraint = "(variable \<times> type list, symbol term atom) pref_con_GD"
+type_synonym constraint = "((variable \<times> type) list, symbol term atom) pref_con_GD"
 
 datatype metric_f_exp =
-  Plus "metric_f_exp" "'metric_f_exp"
+  Plus "metric_f_exp" "metric_f_exp"
   | Minus "metric_f_exp" "metric_f_exp"
   | Times "metric_f_exp" "metric_f_exp"
   | Divide "metric_f_exp" "metric_f_exp"
@@ -243,12 +245,6 @@ datatype plan_action = PAction
 
 type_synonym plan = "plan_action list"
 
-
-export_code
-  Domain Either Variable Sym Fun
-  in SML
-  module_name AST1
-  file "AST1.sml"
 
 (* 
 subsubsection \<open>Ground Actions\<close>
@@ -348,10 +344,10 @@ definition ast_effect_subst where
 "ast_effect_subst v c = map_ast_effect (term_subst v c)"
 
 
-text \<open>\<^term>\<open>f_ent\<close> extracts the entities from a formula. Ent in this context
+text \<open>\<^term>\<open>f_ent\<close> extracts the entities from a GD. Ent in this context
       are entities to which preds and numeric functions are applied. For instance,
       these could be {@typ object term}s, {@typ object}s, {@typ symbol term}s, etc.\<close>
-definition f_ent::"'ent atom formula \<Rightarrow> 'ent set" where
+definition f_ent::"'ent atom GD \<Rightarrow> 'ent set" where
   "f_ent \<phi> = \<Union> (atom.ent ` atoms \<phi>)"
 
 text \<open>Given an {@typ atom} which contains {@typ 'ent term}s, this
@@ -360,7 +356,7 @@ text \<open>Given an {@typ atom} which contains {@typ 'ent term}s, this
 definition atom_syms::"'ent term atom \<Rightarrow> 'ent set" where
   "atom_syms a = \<Union> (sym ` atom.ent a)"
 
-definition f_syms::"'ent term atom formula \<Rightarrow> 'ent set" where
+definition f_syms::"'ent term atom GD \<Rightarrow> 'ent set" where
   "f_syms \<phi> = \<Union> (atom_syms ` atoms \<phi>)"
 
 definition f_vars::"pre_GD_form \<Rightarrow> variable set" where
@@ -370,7 +366,7 @@ definition f_consts::"pre_GD_form \<Rightarrow> object set" where
   "f_consts \<phi> = \<Union> (atom_consts ` atoms \<phi>)" 
 
 definition f_subst where 
-  "f_subst v c \<equiv> map_formula (atom_subst v c)"
+  "f_subst v c \<equiv> map_GD (atom_subst v c)"
 
 fun eff_vars::"simple_effect_schema \<Rightarrow> variable set" where
   "eff_vars (Effect a d tu nu) = 
@@ -395,15 +391,15 @@ fun eff_syms::"simple_effect_schema \<Rightarrow> symbol set" where
   \<union> \<Union> (of_upd_syms ` (set tu))
   \<union> \<Union> (nf_upd_syms ` (set nu))"
 
-fun cond_effect_ent::"'ent atom formula \<times> 'ent ast_effect \<Rightarrow> 'ent set" where
+fun cond_effect_ent::"'ent atom GD \<times> 'ent ast_effect \<Rightarrow> 'ent set" where
   "cond_effect_ent (pre, eff) = f_ent pre \<union> ast_effect.ent eff"
 
 fun cond_effect_vars::"pre_GD_form \<times> simple_effect_schema \<Rightarrow> variable set" where
   "cond_effect_vars (pre, eff) = f_vars pre \<union> eff_vars eff"
 
-abbreviation map_cond_effect::"('a \<Rightarrow> 'b) \<Rightarrow> 'a atom formula \<times> 'a ast_effect 
-  \<Rightarrow> 'b atom formula \<times> 'b ast_effect" where
-"map_cond_effect f \<equiv> map_prod (map_formula (map_atom f)) (map_ast_effect f)"
+abbreviation map_cond_effect::"('a \<Rightarrow> 'b) \<Rightarrow> 'a atom GD \<times> 'a ast_effect 
+  \<Rightarrow> 'b atom GD \<times> 'b ast_effect" where
+"map_cond_effect f \<equiv> map_prod (map_GD (map_atom f)) (map_ast_effect f)"
 
 
 fun cond_effect_subst::"variable \<Rightarrow> object 
@@ -431,8 +427,8 @@ lemma stao_as_atom_syms: "atom_consts a = \<Union> (sym_consts ` atom_syms a)"
   unfolding atom_consts_def atom_syms_def term_consts_def
   by blast
 
-text \<open>The variables in a formula can be rewritten in terms of the
-      symbols in the formula.\<close>
+text \<open>The variables in a GD can be rewritten in terms of the
+      symbols in the GD.\<close>
 lemma f_vars_as_f_syms: "f_vars \<phi> = \<Union> (sym_vars ` f_syms \<phi>)"
   unfolding f_vars_def f_syms_def stav_as_atom_syms
   by blast
@@ -443,7 +439,7 @@ lemma f_consts_as_f_syms: "f_consts \<phi> = \<Union> (sym_consts ` f_syms \<phi
 
 text \<open>\<open>ent\<close> in this context refers to the entities to which 
       numeric functions and preds are applied. In the 
-      case of {@typ symbol term atom formula}s, these are 
+      case of {@typ symbol term atom GD}s, these are 
       {@typ symbol term}s. \<^term>\<open>sym\<close> extracts the symbols
       from the terms.\<close>
 lemma f_syms_as_f_ent: "f_syms \<phi> = \<Union> (sym ` f_ent \<phi>)"
@@ -451,7 +447,7 @@ lemma f_syms_as_f_ent: "f_syms \<phi> = \<Union> (sym ` f_ent \<phi>)"
   by blast
 
 text \<open>Since variables must be contained within symbols, we can
-      also rewrite the set of variables in a formula in terms
+      also rewrite the set of variables in a GD in terms
       of the entities (in this case {@typ symbol term}s).\<close>
 lemma f_vars_as_f_ent: "f_vars \<phi> = \<Union> (term_vars ` f_ent \<phi>)"
   unfolding f_syms_as_f_ent f_vars_as_f_syms f_vars_def term_vars_def 
@@ -491,7 +487,7 @@ lemma f_subst_idem:
   shows "f_subst v c \<phi> = \<phi>"
   using assms 
   unfolding f_vars_def f_subst_def
-  by (auto intro: atom_subst_idem formula.map_ident_strong)
+  by (auto intro: atom_subst_idem GD.map_ident_strong)
 
 text \<open>Substitution ensures that a variable is no longer present\<close>
 lemma sym_subst_replaces:
@@ -517,7 +513,7 @@ lemma atom_subst_replaces:
 lemma f_subst_replaces:
   "v \<notin> f_vars (f_subst v c \<phi>)"
   unfolding f_vars_def f_subst_def
-  by (simp add: formula.set_map atom_subst_replaces)
+  by (simp add: GD.set_map atom_subst_replaces)
  *)
 
 end
