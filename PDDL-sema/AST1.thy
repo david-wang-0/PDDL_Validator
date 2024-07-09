@@ -36,7 +36,7 @@ datatype (ent: 'ent) f_exp =
 
 datatype (ent: 'ent) atom = 
   Pred (pred: pred) (arguments: "'ent list")
-| TermEq (lhs: 'ent) (rhs: 'ent)
+| Ent_Eq (lhs: 'ent) (rhs: 'ent)
 | Num_Eq "'ent f_exp" "'ent f_exp"
 | Num_Le "'ent f_exp" "'ent f_exp"
 | Num_Lt "'ent f_exp" "'ent f_exp"
