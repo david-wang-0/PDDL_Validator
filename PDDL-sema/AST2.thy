@@ -221,6 +221,7 @@ begin
   definition "eq \<equiv> equivclp (\<lambda>x y. ofi x = Some y)"
 end
 
+(* better to work with object terms *)
 locale formulas1 = term_eq "of_i"
     for dom::"type \<Rightarrow> object set"
     and derived_preds::"pred \<rightharpoonup> ((variable \<times> type) list \<times> e_form)"
