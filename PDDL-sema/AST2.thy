@@ -189,32 +189,43 @@ begin
 end
 
 
-  type_synonym object_function_interpretation = "object term \<rightharpoonup> object term"
+  type_synonym 'sym function_interpretation = "'sym term \<rightharpoonup> 'sym term"
   type_synonym numeric_function_interpretation = "(func \<times> object term list) \<rightharpoonup> object term f_exp"
   
   datatype state = State 
     (true_preds: "object atom set")
     (false_preds: "object atom set")
-    (of_int: object_function_interpretation)
+    (of_int: "object function_interpretation")
     (nf_int: numeric_function_interpretation)
     (var_int: "variable \<rightharpoonup> object")
 
+fun subterms::"'a term \<Rightarrow> 'a term set" where
+  "subterms (Sym x) = {Sym x}"
+| "subterms (Fun f as) = insert (Fun f as) (\<Union> (subterms ` (set as)))"
+
+(* Normal forms for terms and interpretations *)
+inductive nf_fi::"'a function_interpretation \<Rightarrow> bool" 
+      and nf_term::"'a function_interpretation \<Rightarrow> 'a term \<Rightarrow> bool" where
+  "\<lbrakk>\<not>(\<exists>obj. Sym obj \<in> dom ofi); 
+    \<forall>(f, a) \<in> Map.graph ofi. (\<forall>t \<in> (subterms f - {f}). 
+      nf_term ofi t) \<and> (\<forall>t \<in> subterms a. nf_term ofi a)\<rbrakk> 
+    \<Longrightarrow> nf_fi ofi"
+| "nf_term ofi (Sym _)"
+| "\<lbrakk>nf_fi ofi; list_all (nf_term ofi) as\<rbrakk> 
+    \<Longrightarrow> nf_term ofi (Fun f as)"
+
 locale term_eq =
-  fixes ofs::object_function_interpretation
+  fixes ofi::"object function_interpretation"
+  assumes "nf_ofi ofi"
 begin
-inductive int::"object term \<Rightarrow> object term \<Rightarrow> bool" where
-  "(t1, t2) \<in> Map.graph ofs \<Longrightarrow> int t1 t2"
-| "(t1, t2) \<in> Map.graph ofs \<Longrightarrow> int t2 t1"
-
-definition "term_eq \<equiv> (int\<^sup>*\<^sup>*)"
-
+  definition "eq \<equiv> equivclp (\<lambda>x y. ofi x = Some y)"
 end
 
-locale formulas1 =
-  fixes dom::"type \<Rightarrow> object set"
+locale formulas1 = term_eq "of_i"
+    for dom::"type \<Rightarrow> object set"
     and derived_preds::"pred \<rightharpoonup> ((variable \<times> type) list \<times> e_form)"
-    and s::state
-  where 
+    and of_i::"object function_interpretation"
+    and nf_i::"numeric_function_interpretation"
 begin
 
 (* object terms are ground terms *)
