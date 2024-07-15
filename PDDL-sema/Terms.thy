@@ -58,6 +58,11 @@ qed
     | trans: "\<lbrakk>t1 \<rightarrow>\<^sub>t t2; t2 \<rightarrow>\<^sub>t t3\<rbrakk> \<Longrightarrow> t1 \<rightarrow>\<^sub>t t3"
     | def: "(t1, t2) \<in> Map.graph fi \<Longrightarrow> t1 \<rightarrow>\<^sub>t t2"
     | app: "list_all2 (\<rightarrow>\<^sub>t) as as' \<Longrightarrow> (Fun f as) \<rightarrow>\<^sub>t (Fun f as')"
+
+
+inductive_cases fun_reduceE: "Fun f as \<rightarrow>\<^sub>t t"
+
+thm fun_reduceE
   
     lemma "reduce = (reduce\<^sup>*\<^sup>*)"
       apply (rule ext)+
@@ -263,15 +268,51 @@ next
   qed
 next
   case (def t1 t2)
-  with nf
-  have "nf_term fi t2" 
-    apply (cases rule: nf_fi.cases)
-    by auto
-  with def
-  show ?case using unique_reduction 
+  from unique_reduction def(1)[THEN reduce.def] def
+  consider "t' = t1" | "t' = t2" by blast
+  then show ?case
+  proof (cases)
+    case 1
+    from def 
+    have "t1 \<rightarrow>\<^sub>t t2" using reduce.def by auto 
+    with 1
+    show ?thesis by simp
+  next
+    case 2
+    then show ?thesis using refl by auto
+  qed
 next
   case (app as as' f)
-  then show ?case sorry
+  have "list_all2 (\<lambda>x1 x2. x1 \<rightarrow>\<^sub>t x2) as as'" using app(1)
+    by (induction rule: list_all2_induct) auto
+  then
+  have "Fun f as \<rightarrow>\<^sub>t Fun f as'" using reduce.app by simp
+  with app(2, 1)
+  show ?case 
+  proof (induction arbitrary: t' rule: reduce.induct)
+    case refl
+    then show ?case by simp
+  next
+    case (trans t2 t3)
+    show ?case
+    proof (cases "t2 = Fun f as")
+      case True
+      with trans 
+      show ?thesis by auto
+    next
+      case False
+      from trans
+      have "Fun f as' \<rightarrow>\<^sub>t t2 \<or> t2 \<rightarrow>\<^sub>t Fun f as'" by auto
+      with trans
+      show ?thesis 
+    qed
+  next
+    case (def t2)
+    then show ?case sorry
+  next
+    case (app as')
+    then show ?case sorry
+  qed
 qed
 
 lemma nf_reachable: 
@@ -284,6 +325,7 @@ proof (induction arbitrary: t'' rule: reduce.induct)
   then show ?case using nf_cannot_reduce by blast
 next
   case (trans t1 t2 t3)
+  with 
   show ?case
   proof (cases "t2 = t3")
     case True
