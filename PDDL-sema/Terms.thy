@@ -48,52 +48,22 @@ next
   qed
 qed
 
-  (* Inspired by the proof of the Church-Rosser Theorem by Per-Martin Löf, as presented in the lecture
-    notes by M. Sørensen and P. Urzyczyn. *) 
   locale term_eq =
     fixes fi::"'sym function_interpretation"
   begin
-    inductive reduce::"'sym term \<Rightarrow> 'sym term \<Rightarrow> bool" (infix "\<rightarrow>\<^sub>t" 55) where
+    
+  inductive reduce::"'sym term \<Rightarrow> 'sym term \<Rightarrow> bool" (infix "\<rightarrow>\<^sub>t" 55)where
       refl: "t \<rightarrow>\<^sub>t t"
-    | trans: "\<lbrakk>t1 \<rightarrow>\<^sub>t t2; t2 \<rightarrow>\<^sub>t t3\<rbrakk> \<Longrightarrow> t1 \<rightarrow>\<^sub>t t3"
-    | def: "(t1, t2) \<in> Map.graph fi \<Longrightarrow> t1 \<rightarrow>\<^sub>t t2"
+    | step: "(t1, t2) \<in> Map.graph fi \<Longrightarrow> t1 \<rightarrow>\<^sub>t t2"
     | app: "list_all2 (\<rightarrow>\<^sub>t) as as' \<Longrightarrow> (Fun f as) \<rightarrow>\<^sub>t (Fun f as')"
 
+inductive_cases reduce_appE: "(Fun f as) \<rightarrow>\<^sub>t (Fun f as')"
 
-inductive_cases fun_reduceE: "Fun f as \<rightarrow>\<^sub>t t"
+inductive_cases reduce_funE: "(Fun f as) \<rightarrow>\<^sub>t t"
 
-thm fun_reduceE
-  
-    lemma "reduce = (reduce\<^sup>*\<^sup>*)"
-      apply (rule ext)+
-      subgoal for a b
-        apply (rule iffI)
-         apply (induction rule: reduce.induct)
-        subgoal by (rule rtranclp.rtrancl_refl)
-        subgoal for t t' t2
-          apply (rule rtranclp.rtrancl_into_rtrancl)
-          by assumption+
-        subgoal apply (drule def)
-          apply (rule rtranclp.rtrancl_into_rtrancl)
-           apply (rule rtranclp.rtrancl_refl)
-          by assumption
-        subgoal for as as' f
-          apply (rule rtranclp.rtrancl_into_rtrancl[where b = "Fun f as"])
-           apply (rule rtranclp.rtrancl_refl)
-          apply (rule app)
-          apply (induction rule: list_all2_induct)
-           apply simp
-            by auto
-        apply (induction rule: rtranclp.induct)
-         apply (rule refl)
-        subgoal for a b c
-          apply (rule trans)
-          by simp+
-        done
-      done
-  
-      definition eq::"'sym term \<Rightarrow> 'sym term \<Rightarrow> bool" (infix "=\<^sub>t" 55) where
-        "x =\<^sub>t y \<equiv> ((\<rightarrow>\<^sub>t)\<^sup>=\<^sup>=) x y"
+  definition eq::"'sym term \<Rightarrow> 'sym term \<Rightarrow> bool" (infix "=\<^sub>t" 55) where
+    "x =\<^sub>t y \<equiv> ((\<rightarrow>\<^sub>t)\<^sup>=\<^sup>=) x y"
+
   end
   
   locale decidable_eq = term_eq fi 
@@ -130,33 +100,52 @@ next
     by auto
 qed
 
+lemma nf_term_not_fst: "\<not>((x, y) \<in> Map.graph fi \<and> nf_term fi x)"
+  apply (rule notI)
+  apply (erule conjE)
+  apply (drule graph_domD)
+  apply (subst (asm) fst_conv)
+  apply (drule nf_cannot_reduce')
+  by simp
+
+
 lemma nf_cannot_reduce: 
-  assumes "nf_term fi t"
-      and "t \<rightarrow>\<^sub>t t'"
+  assumes "t \<rightarrow>\<^sub>t t'"
+      and "nf_term fi t"
     shows "t = t'"
-  using assms(2, 1)
-proof (induction rule: reduce.induct)
-  case (refl t)
-  then show ?case by simp
+  using assms
+proof (induction t arbitrary: t')
+  case (Sym x)
+  then show ?case 
+  proof (induction "Sym x" t' rule: reduce.induct)
+    case refl
+    then show ?case by simp
+  next
+    case (step t2)
+    then show ?case using nf_term_not_fst by simp
+  qed
 next
-  case (trans t1 t2 t3)
-  then show ?case by simp
-next
-  case (def t1 t2)
-  from nf_cannot_reduce'[OF \<open>nf_term fi t1\<close>] Map.graph_domD[OF \<open>(t1, t2) \<in> Map.graph fi\<close>]
-  have "False" by simp
-  then show ?case ..
-next
-  case (app as as' f)
-  from \<open>nf_term fi (Fun f as)\<close>
-  have "list_all (nf_term fi) as" 
-    apply (cases rule: nf_term.cases)
-    by simp
-  with \<open>list_all2 (\<lambda>x1 x2. x1 \<rightarrow>\<^sub>t x2 \<and> (nf_term fi x1 \<longrightarrow> x1 = x2)) as as'\<close>
-  have "as = as'" 
-    apply (induction rule: list_all2_induct)
-    by auto
-  then show ?case by simp
+  case (Fun f as)
+  show ?case
+  proof (cases rule: reduce_funE[OF Fun(2)])
+    case 1
+    then show ?thesis by simp
+  next
+    case 2
+    with Fun(3)
+    show ?thesis using nf_term_not_fst by simp
+  next
+    fix t' as'
+    assume a: "t' = Fun f as'"
+           "list_all2 (\<rightarrow>\<^sub>t) as as'"
+    from Fun(3)
+    have "list_all (nf_term fi) as" by (cases rule: nf_term.cases) auto
+    from a(2) Fun(1) this
+    have "list_all2 (=) as as'"
+      by (induction rule:list_all2_induct) auto
+    from a(1) this[simplified list_all2_eq[symmetric]]
+    show "Fun f as = t'" by blast
+  qed
 qed
 
 lemma unique_reduction:
@@ -245,6 +234,25 @@ next
   qed
 qed
 
+lemma unique_application:
+  assumes "Fun f as \<rightarrow>\<^sub>t Fun f as'"
+      and "Fun f as \<rightarrow>\<^sub>t t'"
+    shows "t' \<rightarrow>\<^sub>t Fun f as' \<or> Fun f as' \<rightarrow>\<^sub>t t'"
+  using assms(2,1)
+proof (induction rule: reduce.induct)
+  case (refl t)
+  then show ?case sorry
+next
+  case (trans t1 t2 t3)
+  then show ?case sorry
+next
+  case (def t1 t2)
+  then show ?case sorry
+next
+  case (app as as' f)
+  then show ?case sorry
+qed
+
 lemma idk:
   assumes "t1 \<rightarrow>\<^sub>t t2" 
       and "t1 \<rightarrow>\<^sub>t t'"
@@ -287,9 +295,9 @@ next
     by (induction rule: list_all2_induct) auto
   then
   have "Fun f as \<rightarrow>\<^sub>t Fun f as'" using reduce.app by simp
-  with app(2, 1)
+  with app(2, 1) this
   show ?case 
-  proof (induction arbitrary: t' rule: reduce.induct)
+  proof (induction "Fun f as" t' rule: reduce.induct)
     case refl
     then show ?case by simp
   next
@@ -303,7 +311,7 @@ next
       case False
       from trans
       have "Fun f as' \<rightarrow>\<^sub>t t2 \<or> t2 \<rightarrow>\<^sub>t Fun f as'" by auto
-      with trans
+      with trans(1,3,4,5,6,7) app
       show ?thesis 
     qed
   next
