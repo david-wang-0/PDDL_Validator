@@ -2,6 +2,94 @@ theory Terms
   imports AST1
 begin
 
+
+  find_theorems name: "list_all*"
+
+  thm rtranclp.induct
+
+lemma list_all2_rtranclp: "((list_all2 R)\<^sup>*\<^sup>*) xs ys \<Longrightarrow> list_all2 (R\<^sup>*\<^sup>*) xs ys"
+proof (induction rule: rtranclp.induct)
+  case (rtrancl_refl a)
+  then show ?case by (induction a; simp)
+next
+  case (rtrancl_into_rtrancl xs ys zs)
+  from this(2)[simplified list_all2_conv_all_nth]
+  have 1: "length ys = length zs \<and> (\<forall>i<length ys. R (ys ! i) (zs ! i))" by simp
+  from rtrancl_into_rtrancl(3)[simplified list_all2_conv_all_nth]
+  have 2: "length xs = length ys \<and> (\<forall>i<length xs. R\<^sup>*\<^sup>* (xs ! i) (ys ! i))" by simp
+  from 1 2
+  have "(\<forall>i<length xs. R\<^sup>*\<^sup>* (xs ! i) (ys ! i) \<and> R (ys ! i) (zs ! i))" by simp+
+  then
+  have "(\<forall>i<length xs. R\<^sup>*\<^sup>* (xs ! i) (zs ! i))" using rtrancl.rtrancl_into_rtrancl by auto
+  with 1 2
+  show ?case by (subst list_all2_conv_all_nth) simp
+qed
+
+lemma reflp_imp_step:
+  assumes "(R\<^sup>*\<^sup>*) x z" "reflp R" 
+  obtains y where "(R\<^sup>*\<^sup>*) x y" "R y z" 
+  using assms
+  by (simp add: reflpD)
+
+lemma list_all2_Cons_rtranclp': "((list_all2 R)\<^sup>*\<^sup>*) xs ys \<Longrightarrow> reflp R \<Longrightarrow> (R\<^sup>*\<^sup>*) x y \<Longrightarrow> ((list_all2 R)\<^sup>*\<^sup>*) (x#xs) (y#ys)"
+proof (induction arbitrary: x y rule: rtranclp_induct)
+  case base
+  from \<open>R\<^sup>*\<^sup>* x y\<close> 
+  show ?case
+  proof (induction rule: rtranclp_induct)
+    case base
+    then show ?case using rtranclp.rtrancl_refl by simp
+  next
+    case (step y z)
+    from \<open>R y z\<close> \<open>reflp R\<close>[THEN list.rel_reflp, THEN reflpD]
+    have "(list_all2 R) (y#xs) (z#xs)" by simp
+    from rtranclp.rtrancl_into_rtrancl[OF \<open>(list_all2 R)\<^sup>*\<^sup>* (x # xs) (y # xs)\<close> this] 
+    show ?case by simp
+  qed
+next
+  case (step ys zs)
+  then 
+  have "(list_all2 R)\<^sup>*\<^sup>* (x # xs) (y # ys)" by simp
+  moreover
+  from step(4)
+  have "R y y" using reflpD by fastforce
+  with step(2)
+  have "list_all2 R (y # ys) (y # zs)" by blast
+  ultimately
+  show ?case using rtranclp.rtrancl_into_rtrancl by force
+qed
+
+lemma list_all2_rtranclp': "list_all2 (R\<^sup>*\<^sup>*) xs ys \<Longrightarrow> reflp R \<Longrightarrow> ((list_all2 R)\<^sup>*\<^sup>*) xs ys"
+proof (induction rule: list_all2_induct)
+  case Nil
+  then show ?case by simp
+next
+  case (Cons x z xs zs)
+  from Cons(3)[OF Cons(4)]
+  obtain ys where
+    "((list_all2 R)\<^sup>*\<^sup>*) xs ys" 
+    "list_all2 R ys zs" 
+    using reflp_imp_step Cons(4) list.rel_reflp by metis
+  with Cons
+  show ?case using list_all2_Cons_rtranclp' by fast
+qed
+
+lemma rtranclp_mono_rel: assumes "(R\<^sup>*\<^sup>*) x y"
+  "\<And>a b. R a b \<Longrightarrow> R (F a) (F b)"
+shows "(R\<^sup>*\<^sup>*) (F x) (F y)"
+  using assms
+proof (induction rule: rtranclp_induct)
+  case base
+  then show ?case by simp
+next
+  case (step y z)
+  from step(3)[OF step(4), THEN rtranclp.rtrancl_into_rtrancl] step(4)[OF step(2)]
+  show ?case by blast
+qed
+
+lemma list_all2_singleton: "list_all2 R [x] [y] = R x y"
+  by simp
+
 type_synonym 'sym function_interpretation = "'sym term \<rightharpoonup> 'sym term"
 
 fun subterms::"'a term \<Rightarrow> 'a term set" where
@@ -61,7 +149,8 @@ begin
   
   inductive_cases reduce_funE: "(Fun f as) \<rightarrow>\<^sub>t t"
 
-  definition term_eq::"'sym term \<Rightarrow> 'sym term \<Rightarrow> bool" (infix "=\<^sub>t" 55) where
+  
+  abbreviation term_eq::"'sym term \<Rightarrow> 'sym term \<Rightarrow> bool" (infix "=\<^sub>t" 55) where
     "term_eq \<equiv> equivclp (\<rightarrow>\<^sub>t)"
 
   lemma reduce_refl: "(\<rightarrow>\<^sub>t)\<^sup>=\<^sup>= = (\<rightarrow>\<^sub>t)"
@@ -71,8 +160,6 @@ begin
     apply (rule ext)+
     subgoal by (auto simp: Nitpick.rtranclp_unfold intro: refl)
     done
-  
-  find_theorems "?a = ?b \<Longrightarrow> (?a \<Longrightarrow> ?b)"
 
   lemma reduce_rtranclp_induct': 
     assumes "reduce\<^sup>*\<^sup>* x y" 
@@ -85,6 +172,7 @@ begin
 
 lemmas reduce_rtranclp_induct = reduce_rtranclp_induct'[rotated, OF reduce.induct, rotated 5]
 thm rtranclp_induct[OF reduce.induct]
+
 end
   
 locale decidable_eq = term_eq fi 
@@ -170,80 +258,32 @@ begin
     qed
   qed
 
-  find_theorems name: "list_all*"
 
-  thm rtranclp.induct
-
-lemma list_all2_rtranclp: "((list_all2 R)\<^sup>*\<^sup>*) xs ys \<Longrightarrow> list_all2 (R\<^sup>*\<^sup>*) xs ys"
-proof (induction rule: rtranclp.induct)
-  case (rtrancl_refl a)
-  then show ?case by (induction a; simp)
-next
-  case (rtrancl_into_rtrancl xs ys zs)
-  from this(2)[simplified list_all2_conv_all_nth]
-  have 1: "length ys = length zs \<and> (\<forall>i<length ys. R (ys ! i) (zs ! i))" by simp
-  from rtrancl_into_rtrancl(3)[simplified list_all2_conv_all_nth]
-  have 2: "length xs = length ys \<and> (\<forall>i<length xs. R\<^sup>*\<^sup>* (xs ! i) (ys ! i))" by simp
-  from 1 2
-  have "(\<forall>i<length xs. R\<^sup>*\<^sup>* (xs ! i) (ys ! i) \<and> R (ys ! i) (zs ! i))" by simp+
-  then
-  have "(\<forall>i<length xs. R\<^sup>*\<^sup>* (xs ! i) (zs ! i))" using rtrancl.rtrancl_into_rtrancl by auto
-  with 1 2
-  show ?case by (subst list_all2_conv_all_nth) simp
-qed
-
-lemma reflp_imp_step:
-  assumes "reflp R" "(R\<^sup>*\<^sup>*) x z"
-  obtains y where "(R\<^sup>*\<^sup>*) x y" "R y z" 
-proof -
-  from \<open>reflp R\<close>
-  have 1: "(R\<^sup>*\<^sup>*) = (R\<^sup>+\<^sup>+)" 
-    apply (subst reflclp_tranclp[symmetric])
-    by (metis reflclp_ident_if_reflp reflp_mono tranclp.simps)
-  from assms(2)
-  show "(\<And>y. R\<^sup>*\<^sup>* x y \<Longrightarrow> R y z \<Longrightarrow> thesis) \<Longrightarrow> thesis"
-    
-qed
-lemma list_all2_rtranclp': "list_all2 (R\<^sup>*\<^sup>*) xs ys \<Longrightarrow> reflp R \<Longrightarrow> ((list_all2 R)\<^sup>*\<^sup>*) xs ys"
-proof (induction rule: list_all2_induct)
-  case Nil
-  then show ?case by simp
-next
-  case (Cons x z xs zs)
-  from Cons(3)[OF Cons(4)]
-  show ?case
-
-qed
-
-lemma normalise_in_trans_reduce: "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* t (normalise_term t)"
+lemma normalise_in_rtrancl_reduce: "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* t (normalise_term t)"
 proof (induction t)
   case (Sym x)
   then show ?case by simp
 next
   case (Fun f as)
-  have 1: "list_all2 ((\<rightarrow>\<^sub>t)\<^sup>*\<^sup>*) as (map normalise_term as)" 
+  have "list_all2 ((\<rightarrow>\<^sub>t)\<^sup>*\<^sup>*) as (map normalise_term as)" 
     using Fun.IH by (induction as, auto)
-  then obtain as\<^sub>1 where
-    "list_all2 (\<rightarrow>\<^sub>t) as as\<^sub>1"
-    "list_all2 ((\<rightarrow>\<^sub>t)\<^sup>*\<^sup>*) as\<^sub>1 (map normalise_term as)"
-  proof (induction rule: list_all2_induct)
-    case Nil
-    then show ?case by simp
-  next
-    case (Cons x y xs ys)
-    then show ?case sorry
-  qed
+  from this[THEN list_all2_rtranclp', OF reflpI]
+    have "(list_all2 (\<rightarrow>\<^sub>t))\<^sup>*\<^sup>* as (map normalise_term as)" by (auto simp: refl)
+  from rtranclp_mono_rel[OF this, where F = "\<lambda>x. [Fun f x]", 
+        simplified list_all2_singleton, OF reduce.app, 
+        THEN list_all2_rtranclp, simplified list_all2_singleton]
+  have 2: "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* (Fun f as) (Fun f (map normalise_term as))" by simp
   show ?case 
   proof (cases "fi (Fun f (map normalise_term as))")
     case None
-    then have 2: "normalise_term (Fun f as) = (Fun f (map normalise_term as))" by simp
-
-    
-    show ?thesis 
-      unfolding 2
+    then have 3: "normalise_term (Fun f as) = (Fun f (map normalise_term as))" by simp
+    with 2
+    show ?thesis by simp
   next
     case (Some a)
-    then show ?thesis sorry
+    then have "Fun f (map normalise_term as) \<rightarrow>\<^sub>t a" using in_graphI[of fi] reduce.step by blast
+    from rtranclp.rtrancl_into_rtrancl[OF 2 this]
+    show ?thesis using Some by simp
   qed
 qed
 
