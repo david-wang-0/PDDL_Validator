@@ -131,24 +131,6 @@ begin
     by simp
 
 
-  thm rtranclp_induct
-  find_theorems name: "rtranclp"
-lemma list_all2_tranclp: "list_all2 (R\<^sup>*\<^sup>*) xs ys \<Longrightarrow> reflp R \<Longrightarrow> (list_all2 R)\<^sup>*\<^sup>* xs ys"
-proof (induction rule: list_all2_induct)
-  case Nil
-  then show ?case by simp
-next
-  case (Cons x y xs ys)
-  then show ?case
-  proof (induction rule: rtranclp.induct)
-    case (rtrancl_refl a)
-    then show ?case sorry
-  next
-    case (rtrancl_into_rtrancl a b c)
-    then show ?case sorry
-  qed
-qed
-
   lemma nf_cannot_reduce: 
     assumes "t \<rightarrow>\<^sub>t t'"
         and "nf_term fi t"
@@ -190,6 +172,49 @@ qed
 
   find_theorems name: "list_all*"
 
+  thm rtranclp.induct
+
+lemma list_all2_rtranclp: "((list_all2 R)\<^sup>*\<^sup>*) xs ys \<Longrightarrow> list_all2 (R\<^sup>*\<^sup>*) xs ys"
+proof (induction rule: rtranclp.induct)
+  case (rtrancl_refl a)
+  then show ?case by (induction a; simp)
+next
+  case (rtrancl_into_rtrancl xs ys zs)
+  from this(2)[simplified list_all2_conv_all_nth]
+  have 1: "length ys = length zs \<and> (\<forall>i<length ys. R (ys ! i) (zs ! i))" by simp
+  from rtrancl_into_rtrancl(3)[simplified list_all2_conv_all_nth]
+  have 2: "length xs = length ys \<and> (\<forall>i<length xs. R\<^sup>*\<^sup>* (xs ! i) (ys ! i))" by simp
+  from 1 2
+  have "(\<forall>i<length xs. R\<^sup>*\<^sup>* (xs ! i) (ys ! i) \<and> R (ys ! i) (zs ! i))" by simp+
+  then
+  have "(\<forall>i<length xs. R\<^sup>*\<^sup>* (xs ! i) (zs ! i))" using rtrancl.rtrancl_into_rtrancl by auto
+  with 1 2
+  show ?case by (subst list_all2_conv_all_nth) simp
+qed
+
+lemma reflp_imp_step:
+  assumes "reflp R" "(R\<^sup>*\<^sup>*) x z"
+  obtains y where "(R\<^sup>*\<^sup>*) x y" "R y z" 
+proof -
+  from \<open>reflp R\<close>
+  have 1: "(R\<^sup>*\<^sup>*) = (R\<^sup>+\<^sup>+)" 
+    apply (subst reflclp_tranclp[symmetric])
+    by (metis reflclp_ident_if_reflp reflp_mono tranclp.simps)
+  from assms(2)
+  show "(\<And>y. R\<^sup>*\<^sup>* x y \<Longrightarrow> R y z \<Longrightarrow> thesis) \<Longrightarrow> thesis"
+    
+qed
+lemma list_all2_rtranclp': "list_all2 (R\<^sup>*\<^sup>*) xs ys \<Longrightarrow> reflp R \<Longrightarrow> ((list_all2 R)\<^sup>*\<^sup>*) xs ys"
+proof (induction rule: list_all2_induct)
+  case Nil
+  then show ?case by simp
+next
+  case (Cons x z xs zs)
+  from Cons(3)[OF Cons(4)]
+  show ?case
+
+qed
+
 lemma normalise_in_trans_reduce: "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* t (normalise_term t)"
 proof (induction t)
   case (Sym x)
@@ -198,18 +223,24 @@ next
   case (Fun f as)
   have 1: "list_all2 ((\<rightarrow>\<^sub>t)\<^sup>*\<^sup>*) as (map normalise_term as)" 
     using Fun.IH by (induction as, auto)
-  hence "((list_all2 (\<rightarrow>\<^sub>t))\<^sup>*\<^sup>*) as (map normalise_term as)"
-    apply (induction rule: list_all2_induct)
-     apply simp
-    
+  then obtain as\<^sub>1 where
+    "list_all2 (\<rightarrow>\<^sub>t) as as\<^sub>1"
+    "list_all2 ((\<rightarrow>\<^sub>t)\<^sup>*\<^sup>*) as\<^sub>1 (map normalise_term as)"
+  proof (induction rule: list_all2_induct)
+    case Nil
+    then show ?case by simp
+  next
+    case (Cons x y xs ys)
+    then show ?case sorry
+  qed
   show ?case 
   proof (cases "fi (Fun f (map normalise_term as))")
     case None
     then have 2: "normalise_term (Fun f as) = (Fun f (map normalise_term as))" by simp
 
+    
     show ?thesis 
       unfolding 2
-    proof (induction rule: rtranclp.induct)
   next
     case (Some a)
     then show ?thesis sorry
