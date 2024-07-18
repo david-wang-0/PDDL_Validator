@@ -149,6 +149,18 @@ begin
   abbreviation term_eq::"'sym term \<Rightarrow> 'sym term \<Rightarrow> bool" (infix "=\<^sub>t" 55) where
     "term_eq \<equiv> equivclp (\<rightarrow>\<^sub>t)"
 
+  find_theorems name: symp
+
+lemma symclp_rtranclp_reduce_comm: "symclp (rtranclp reduce) a b = rtranclp (symclp reduce) b a"
+  
+    
+  find_theorems name: symp
+  find_theorems name: symclp
+  find_theorems name: symclp
+
+lemma term_eq_imp_reduct: "a =\<^sub>t b \<Longrightarrow> ((\<rightarrow>\<^sub>t)\<^sup>*\<^sup>*) a b \<or> ((\<rightarrow>\<^sub>t)\<^sup>*\<^sup>*) b a"
+  apply (subst (asm) equivclp_def)
+  apply (subst (asm) symclp_rtranclp_eq_comm[symmetric])
   inductive_cases reduce_funE: "Fun f as \<rightarrow>\<^sub>t a"
 
   lemma reduce_refl: "(\<rightarrow>\<^sub>t)\<^sup>=\<^sup>= = (\<rightarrow>\<^sub>t)"
@@ -256,6 +268,18 @@ text \<open>When an interpretation is decidable, equality becomes decidable by i
     qed
   qed
 
+  lemma nf_cannot_reduce_trans: 
+    assumes "((\<rightarrow>\<^sub>t)\<^sup>*\<^sup>*) t t'"
+        and "nf_term fi t"
+      shows "t = t'"
+    using assms
+    apply (induction rule: rtranclp_induct)
+     apply simp
+    subgoal for y z
+      apply (drule nf_cannot_reduce)
+      by auto
+    done
+
   text \<open>The normalisation function returns something related to the original term by the 
         reflexive transitive close of the reduce relation\<close>
   lemma normalise_in_rtrancl_reduce: "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* t (normalise_term t)"
@@ -317,8 +341,6 @@ text \<open>When an interpretation is decidable, equality becomes decidable by i
     qed
   qed
 
-  
-
   lemma reduce_confluent: 
     assumes "t \<rightarrow>\<^sub>t t'"
             "t \<rightarrow>\<^sub>t t''"
@@ -377,9 +399,12 @@ text \<open>When an interpretation is decidable, equality becomes decidable by i
     qed
   next
     case (app as as' f)
-    have t': "Fun f as \<rightarrow>\<^sub>t Fun f as'" 
-      apply (rule reduce.app)
+    have as_as': "list_all2 (\<rightarrow>\<^sub>t) as as'"
+      using app(1) 
       using app(1) by (induction rule: list_all2_induct) auto
+    then have t': "Fun f as \<rightarrow>\<^sub>t Fun f as'"
+      by (rule reduce.app)
+      
     show ?case 
     proof (cases rule: reduce_funE[OF app(2)])
       case 1
@@ -390,25 +415,115 @@ text \<open>When an interpretation is decidable, equality becomes decidable by i
       then have "list_all (nf_term fi) as"
         apply (cases rule: n_fi.cases[OF nf])
         by auto
-      with t'
-      have "list_all2 (\<rightarrow>\<^sub>t) as as'"
-        
-      then have "as = as'"
-        using t'
-      then show ?thesis sorry
+      with as_as'
+      have "as = as'"
+        apply (subst list_all2_eq)
+        apply (induction rule: list_all2_induct)
+        by (auto dest: nf_cannot_reduce)
+      with app(2)
+      have "Fun f as' \<rightarrow>\<^sub>t t''" "t'' \<rightarrow>\<^sub>t t''"
+        using refl by simp+
+      then show ?thesis by blast
     next
-      case (3 as')
-      then show ?thesis sorry
+      case (3 as'')
+      from app.IH
+      have "list_all2 (\<lambda>x1 x2.\<forall>x. x1 \<rightarrow>\<^sub>t x \<longrightarrow> (\<exists>t'''. x2 \<rightarrow>\<^sub>t t''' \<and> x \<rightarrow>\<^sub>t t''')) as as'"
+        by (induction rule: list_all2_induct) auto
+      from this[simplified list_all2_conv_all_nth]
+      have "(\<forall>i<length as. \<forall>x. as ! i \<rightarrow>\<^sub>t x \<longrightarrow> (\<exists>t'''. as' ! i \<rightarrow>\<^sub>t t''' \<and> x \<rightarrow>\<^sub>t t'''))" by simp
+      moreover
+      from as_as'[simplified list_all2_conv_all_nth]
+      have "length as = length as'" "\<forall>i<length as. as ! i \<rightarrow>\<^sub>t as' ! i" by simp+
+      moreover
+      from 3(2)[simplified list_all2_conv_all_nth]
+      have "length as = length as''" "\<forall>i<length as. as ! i \<rightarrow>\<^sub>t as'' ! i" by simp+
+      ultimately
+      have "length as' = length as''" "\<forall>i<length as'.(\<exists>t'''. as' ! i \<rightarrow>\<^sub>t t''' \<and> as'' ! i \<rightarrow>\<^sub>t t''')"
+        by auto
+      then have "list_all2 (\<lambda>x y. \<exists>t. x \<rightarrow>\<^sub>t t \<and> y \<rightarrow>\<^sub>t t) as' as''" 
+        apply (subst list_all2_conv_all_nth)
+        by blast
+      then have "\<exists>as'''. list_all2 (\<rightarrow>\<^sub>t) as' as''' \<and> list_all2 (\<rightarrow>\<^sub>t) as'' as'''"
+        by (induction rule: list_all2_induct) auto
+      then obtain as''' where
+        "Fun f as' \<rightarrow>\<^sub>t Fun f as'''"
+        "Fun f as'' \<rightarrow>\<^sub>t Fun f as'''"
+        using reduce.app by blast
+      with 3 
+      show ?thesis by blast 
+      qed
     qed
-  qed
+
+lemma reduce_rtrancl_confluent':
+  assumes "((\<rightarrow>\<^sub>t)\<^sup>*\<^sup>*) t t'"
+          "t \<rightarrow>\<^sub>t t''"
+    shows "\<exists>t'''. t' \<rightarrow>\<^sub>t t''' \<and> ((\<rightarrow>\<^sub>t)\<^sup>*\<^sup>*) t'' t'''"
+  using assms
+proof (induction arbitrary: t'' rule: rtranclp_induct)
+  case base
+  then show ?case using rtranclp.rtrancl_refl by auto
+next
+  case (step y z)
+  then obtain t''' where
+    t''': "y \<rightarrow>\<^sub>t t'''" "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* t'' t'''" by blast
+  from reduce_confluent[OF this(1) step(2)]
+  obtain a where
+    "t''' \<rightarrow>\<^sub>t a" "z \<rightarrow>\<^sub>t a" by blast
+  from rtranclp.rtrancl_into_rtrancl[OF t'''(2) this(1)] this(2)
+  show ?case by blast
+qed
+
+lemma reduce_rtrancl_confluent: 
+  assumes "((\<rightarrow>\<^sub>t)\<^sup>*\<^sup>*) t t'"
+          "((\<rightarrow>\<^sub>t)\<^sup>*\<^sup>*) t t''"
+    shows "\<exists>t'''.((\<rightarrow>\<^sub>t)\<^sup>*\<^sup>*) t' t''' \<and> ((\<rightarrow>\<^sub>t)\<^sup>*\<^sup>*) t'' t'''"
+  using assms
+proof (induction arbitrary: t'' rule: rtranclp_induct)
+  case base
+  then show ?case 
+    using rtranclp.rtrancl_refl[where a = t'']
+    by blast
+next
+  case (step y z)
+  then obtain t''' where
+    t''': "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* y t'''" "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* t'' t'''"
+    by blast
+  from reduce_rtrancl_confluent'[OF this(1) step(2)]
+  obtain a where
+    "t''' \<rightarrow>\<^sub>t a" 
+    "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* z a" by blast
+  from rtranclp.rtrancl_into_rtrancl[OF t'''(2) this(1)] this(2)
+  show ?case by auto
+qed
+  
 
   lemma unique_nf: 
-    assumes t': "t (\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* t'" "nf_term fi t'" 
-        and t'': "t (\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* t''" "nf_term fi t''" 
+    assumes t': "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* t t'" "nf_term fi t'" 
+        and t'': "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* t t''" "nf_term fi t''" 
     shows "t'' = t'"
-    sorry   
+  proof -
+    from t'(1) t''(1)
+    obtain t''' where
+      "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* t' t'''"
+      "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* t'' t'''"
+      using reduce_rtrancl_confluent by blast
+    with t'(2) t''(2)
+    have "t' = t'''"
+         "t'' = t'''" using nf_cannot_reduce_trans by blast+
+    then show "t'' = t'" by simp
+  qed
+
+lemma eq_imp_eq_to_nf: 
+  assumes "term_eq a b"
+      and "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* a c"
+      and "nf_term fi c"
+    shows "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* b c"
+
   theorem decidable_eq_correct: "term_eq a b \<longleftrightarrow> decidable_eq a b"
-    sorry
+  proof -
+    have "decidable_eq a b = (normalise_term a = normalise_term b)" using decidable_eq_def by simp
+    have "
+  qed
 end
   
 end
