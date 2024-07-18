@@ -2,10 +2,7 @@ theory Terms
   imports AST1
 begin
 
-
-  find_theorems name: "list_all*"
-
-  thm rtranclp.induct
+text \<open>Some useful lemmas to reason about the reflexive transitive closure. \<close>
 
 lemma list_all2_rtranclp: "((list_all2 R)\<^sup>*\<^sup>*) xs ys \<Longrightarrow> list_all2 (R\<^sup>*\<^sup>*) xs ys"
 proof (induction rule: rtranclp.induct)
@@ -90,6 +87,8 @@ qed
 lemma list_all2_singleton: "list_all2 R [x] [y] = R x y"
   by simp
 
+subsection \<open>Terms, interpretations, normal forms, and normalisation\<close>
+
 type_synonym 'sym function_interpretation = "'sym term \<rightharpoonup> 'sym term"
 
 fun subterms::"'a term \<Rightarrow> 'a term set" where
@@ -102,13 +101,13 @@ lemma term_in_subterms: "x \<in> subterms x"
 lemma args_in_subterms: "set as \<subseteq> subterms (Fun f as)"
   using term_in_subterms by auto
   
-inductive nf_fi::"'a function_interpretation \<Rightarrow> bool"
+inductive n_fi::"'a function_interpretation \<Rightarrow> bool"
       and nf_term::"'a function_interpretation \<Rightarrow> 'a term \<Rightarrow> bool" where
-  "\<lbrakk>\<not>(\<exists>obj. Sym obj \<in> dom fi); 
+  int_normalising: "\<lbrakk>\<not>(\<exists>obj. Sym obj \<in> dom fi); 
       \<forall>(l, r) \<in> Map.graph fi. \<exists>f as. Fun f as = l \<and> list_all (nf_term fi) as \<and> nf_term fi r\<rbrakk> 
-    \<Longrightarrow> nf_fi fi"
-| "nf_fi fi \<Longrightarrow> nf_term fi (Sym s)"
-| "\<lbrakk>nf_fi fi; list_all (nf_term fi) as; fi (Fun f as) = None\<rbrakk> 
+    \<Longrightarrow> n_fi fi"
+| sym_normal: "n_fi fi \<Longrightarrow> nf_term fi (Sym s)"
+| fun_normal: "\<lbrakk>n_fi fi; list_all (nf_term fi) as; fi (Fun f as) = None\<rbrakk> 
     \<Longrightarrow> nf_term fi (Fun f as)"
 
 lemma nf_subterms:
@@ -136,22 +135,21 @@ next
   qed
 qed
 
+inductive_cases n_fiE: "n_fi fi"
+
 locale term_eq =
   fixes fi::"'sym function_interpretation"
 begin
-    
+  subsubsection \<open>Reduction under an interpretation and equality\<close>
   inductive reduce::"'sym term \<Rightarrow> 'sym term \<Rightarrow> bool" (infix "\<rightarrow>\<^sub>t" 55)where
       refl: "t \<rightarrow>\<^sub>t t"
     | step: "(t1, t2) \<in> Map.graph fi \<Longrightarrow> t1 \<rightarrow>\<^sub>t t2"
     | app: "list_all2 (\<rightarrow>\<^sub>t) as as' \<Longrightarrow> (Fun f as) \<rightarrow>\<^sub>t (Fun f as')"
-
-  inductive_cases reduce_appE: "(Fun f as) \<rightarrow>\<^sub>t (Fun f as')"
-  
-  inductive_cases reduce_funE: "(Fun f as) \<rightarrow>\<^sub>t t"
-
   
   abbreviation term_eq::"'sym term \<Rightarrow> 'sym term \<Rightarrow> bool" (infix "=\<^sub>t" 55) where
     "term_eq \<equiv> equivclp (\<rightarrow>\<^sub>t)"
+
+  inductive_cases reduce_funE: "Fun f as \<rightarrow>\<^sub>t a"
 
   lemma reduce_refl: "(\<rightarrow>\<^sub>t)\<^sup>=\<^sup>= = (\<rightarrow>\<^sub>t)"
     by (blast intro: refl)
@@ -174,12 +172,12 @@ lemmas reduce_rtranclp_induct = reduce_rtranclp_induct'[rotated, OF reduce.induc
 thm rtranclp_induct[OF reduce.induct]
 
 end
-  
+
 locale decidable_eq = term_eq fi 
-  for fi::"'sym term \<Rightarrow> 'sym term option" +
-  assumes nf: "nf_fi fi"
+  for fi::"'sym function_interpretation" +
+  assumes nf: "n_fi fi"
 begin
-  
+text \<open>When an interpretation is decidable, equality becomes decidable by inside-out reduction.\<close>  
   fun normalise_term::"'sym term \<Rightarrow> 'sym term" where
     "normalise_term (Sym s) = (Sym s)"
   | "normalise_term (Fun f as) = (
@@ -200,7 +198,7 @@ begin
     case (Sym s)
     with nf
     show "t \<notin> dom fi" 
-      apply (cases rule: nf_fi.cases)
+      apply (cases rule: n_fi.cases)
       by simp
   next
     case (Fun f as)
@@ -218,7 +216,7 @@ begin
     apply (drule nf_cannot_reduce')
     by simp
 
-
+  text \<open>If a term is in normal form, it can only reduce to itself.\<close>
   lemma nf_cannot_reduce: 
     assumes "t \<rightarrow>\<^sub>t t'"
         and "nf_term fi t"
@@ -258,39 +256,157 @@ begin
     qed
   qed
 
-
-lemma normalise_in_rtrancl_reduce: "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* t (normalise_term t)"
-proof (induction t)
-  case (Sym x)
-  then show ?case by simp
-next
-  case (Fun f as)
-  have "list_all2 ((\<rightarrow>\<^sub>t)\<^sup>*\<^sup>*) as (map normalise_term as)" 
-    using Fun.IH by (induction as, auto)
-  from this[THEN list_all2_rtranclp', OF reflpI]
-    have "(list_all2 (\<rightarrow>\<^sub>t))\<^sup>*\<^sup>* as (map normalise_term as)" by (auto simp: refl)
-  from rtranclp_mono_rel[OF this, where F = "\<lambda>x. [Fun f x]", 
-        simplified list_all2_singleton, OF reduce.app, 
-        THEN list_all2_rtranclp, simplified list_all2_singleton]
-  have 2: "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* (Fun f as) (Fun f (map normalise_term as))" by simp
-  show ?case 
-  proof (cases "fi (Fun f (map normalise_term as))")
-    case None
-    then have 3: "normalise_term (Fun f as) = (Fun f (map normalise_term as))" by simp
-    with 2
-    show ?thesis by simp
+  text \<open>The normalisation function returns something related to the original term by the 
+        reflexive transitive close of the reduce relation\<close>
+  lemma normalise_in_rtrancl_reduce: "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* t (normalise_term t)"
+  proof (induction t)
+    case (Sym x)
+    then show ?case by simp
   next
-    case (Some a)
-    then have "Fun f (map normalise_term as) \<rightarrow>\<^sub>t a" using in_graphI[of fi] reduce.step by blast
-    from rtranclp.rtrancl_into_rtrancl[OF 2 this]
-    show ?thesis using Some by simp
+    case (Fun f as)
+    have 1: "list_all2 ((\<rightarrow>\<^sub>t)\<^sup>*\<^sup>*) as (map normalise_term as)" 
+      using Fun.IH by (induction as, auto)
+    from this[THEN list_all2_rtranclp', OF reflpI]
+      have "(list_all2 (\<rightarrow>\<^sub>t))\<^sup>*\<^sup>* as (map normalise_term as)" by (auto simp: refl)
+    from rtranclp_mono_rel[OF this, where F = "\<lambda>x. [Fun f x]", 
+          simplified list_all2_singleton, OF reduce.app, 
+          THEN list_all2_rtranclp, simplified list_all2_singleton]
+    have 2: "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* (Fun f as) (Fun f (map normalise_term as))" by simp
+    show ?case 
+    proof (cases "fi (Fun f (map normalise_term as))")
+      case None
+      then have 3: "normalise_term (Fun f as) = (Fun f (map normalise_term as))" by simp
+      with 2
+      show ?thesis by simp
+    next
+      case (Some a)
+      then have "Fun f (map normalise_term as) \<rightarrow>\<^sub>t a" using in_graphI[of fi] reduce.step by blast
+      from rtranclp.rtrancl_into_rtrancl[OF 2 this]
+      show ?thesis using Some by simp
+    qed
   qed
-qed
+
+  text \<open>The normalisation function returns a term in normal form.\<close>
+  lemma normalise_nf: "nf_term fi (normalise_term t)"
+  proof (induction t)
+    case (Sym x)
+    then show ?case using sym_normal[OF nf] by simp
+  next
+    case (Fun f as)
+    show ?case
+    proof (cases "fi (Fun f (map normalise_term as))")
+      case None
+      then have "normalise_term (Fun f as) = Fun f (map normalise_term as)" by simp
+      moreover
+      have "list_all (nf_term fi) (map normalise_term as)" using Fun.IH
+        apply (subst list_all_iff)
+        by simp
+      ultimately
+      show ?thesis using fun_normal[OF nf] None by presburger
+    next
+      case (Some a)
+      have "nf_term fi a"
+        apply (cases rule: n_fi.cases[OF nf])
+        using Some in_graphI[where m = fi]
+        by fast
+      moreover
+      from Some
+      have "normalise_term (Fun f as) = a" by simp
+      ultimately
+      show ?thesis by simp
+    qed
+  qed
 
   
-  lemma normalise_nf: "nf_term fi (normalise_term t)"
-    sorry
-  
+
+  lemma reduce_confluent: 
+    assumes "t \<rightarrow>\<^sub>t t'"
+            "t \<rightarrow>\<^sub>t t''"
+      shows "\<exists>t'''. t' \<rightarrow>\<^sub>t t''' \<and> t'' \<rightarrow>\<^sub>t t'''"
+    using assms
+  proof (induction arbitrary: t'' rule: reduce.induct)
+    case (refl t)
+    then show ?case using reduce.refl[of t''] by blast
+  next
+    case (step t1 t2)
+    obtain f as where
+      t1: "t1 = Fun f as"
+      using step(1)
+      by (cases rule: n_fiE[OF nf], auto)
+
+    from step(1)[simplified t1] 
+    have as_nf: "list_all (nf_term fi) as"
+      by (cases rule: n_fi.cases[OF nf]) auto
+    
+    have t'': "t'' = t1 \<or> t'' = t2"
+    proof (cases rule: reduce_funE[OF step(2)[simplified t1]])
+      case 1
+      then show ?thesis using t1 by simp
+    next
+      case 2
+      with step(1)[simplified t1]
+      show ?thesis
+        apply -
+        apply (drule in_graphD)+
+        by simp
+    next
+      case (3 as')
+      from this(2)
+      have "as' = as"
+        using as_nf nf_cannot_reduce
+        by (induction rule: list_all2_induct) auto
+      with t1 3
+      show ?thesis by simp
+    qed
+    show ?case 
+    proof (cases rule: disjE[OF t''])
+      case 1
+      show ?thesis
+        using step
+        apply (subst 1)
+        apply (subst (asm) 1)
+        apply (drule reduce.step)
+        apply (insert refl[of t2])
+        by auto
+    next
+      case 2
+      show ?thesis
+        apply (subst 2)
+        using refl[of t2]
+        by auto
+    qed
+  next
+    case (app as as' f)
+    have t': "Fun f as \<rightarrow>\<^sub>t Fun f as'" 
+      apply (rule reduce.app)
+      using app(1) by (induction rule: list_all2_induct) auto
+    show ?case 
+    proof (cases rule: reduce_funE[OF app(2)])
+      case 1
+      with t'
+      show ?thesis using refl[of "Fun f as'"] by auto
+    next
+      case 2
+      then have "list_all (nf_term fi) as"
+        apply (cases rule: n_fi.cases[OF nf])
+        by auto
+      with t'
+      have "list_all2 (\<rightarrow>\<^sub>t) as as'"
+        
+      then have "as = as'"
+        using t'
+      then show ?thesis sorry
+    next
+      case (3 as')
+      then show ?thesis sorry
+    qed
+  qed
+
+  lemma unique_nf: 
+    assumes t': "t (\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* t'" "nf_term fi t'" 
+        and t'': "t (\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* t''" "nf_term fi t''" 
+    shows "t'' = t'"
+    sorry   
   theorem decidable_eq_correct: "term_eq a b \<longleftrightarrow> decidable_eq a b"
     sorry
 end
