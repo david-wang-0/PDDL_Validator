@@ -149,18 +149,6 @@ begin
   abbreviation term_eq::"'sym term \<Rightarrow> 'sym term \<Rightarrow> bool" (infix "=\<^sub>t" 55) where
     "term_eq \<equiv> equivclp (\<rightarrow>\<^sub>t)"
 
-  find_theorems name: symp
-
-lemma symclp_rtranclp_reduce_comm: "symclp (rtranclp reduce) a b = rtranclp (symclp reduce) b a"
-  
-    
-  find_theorems name: symp
-  find_theorems name: symclp
-  find_theorems name: symclp
-
-lemma term_eq_imp_reduct: "a =\<^sub>t b \<Longrightarrow> ((\<rightarrow>\<^sub>t)\<^sup>*\<^sup>*) a b \<or> ((\<rightarrow>\<^sub>t)\<^sup>*\<^sup>*) b a"
-  apply (subst (asm) equivclp_def)
-  apply (subst (asm) symclp_rtranclp_eq_comm[symmetric])
   inductive_cases reduce_funE: "Fun f as \<rightarrow>\<^sub>t a"
 
   lemma reduce_refl: "(\<rightarrow>\<^sub>t)\<^sup>=\<^sup>= = (\<rightarrow>\<^sub>t)"
@@ -279,6 +267,7 @@ text \<open>When an interpretation is decidable, equality becomes decidable by i
       apply (drule nf_cannot_reduce)
       by auto
     done
+
 
   text \<open>The normalisation function returns something related to the original term by the 
         reflexive transitive close of the reduce relation\<close>
@@ -512,17 +501,91 @@ qed
          "t'' = t'''" using nf_cannot_reduce_trans by blast+
     then show "t'' = t'" by simp
   qed
-
-lemma eq_imp_eq_to_nf: 
-  assumes "term_eq a b"
-      and "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* a c"
-      and "nf_term fi c"
-    shows "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* b c"
-
-  theorem decidable_eq_correct: "term_eq a b \<longleftrightarrow> decidable_eq a b"
-  proof -
-    have "decidable_eq a b = (normalise_term a = normalise_term b)" using decidable_eq_def by simp
-    have "
+  
+  theorem decidable_eq_correct: "a =\<^sub>t b \<longleftrightarrow> decidable_eq a b"
+  proof (rule iffI)
+    assume a: "term_eq a b"
+    then have "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* a (normalise_term b) \<or> (\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* b (normalise_term a)"
+    proof (induction rule: equivclp_induct)
+      case base
+      then show ?case using normalise_in_rtrancl_reduce by simp
+    next
+      case (step y z)
+      from step consider "y \<rightarrow>\<^sub>t z" | "z \<rightarrow>\<^sub>t y" by auto
+      note 1 = this
+      from step consider "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* a (normalise_term y)" | "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* y (normalise_term a)" by auto
+      note 2 = this
+      then show ?case 
+      proof (cases rule: 1)
+        assume yz: "y \<rightarrow>\<^sub>t z"
+        then
+        have yz': "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* y z" by blast
+        show ?thesis 
+        proof (cases rule: 2)
+          assume ay: "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* a (normalise_term y)"
+          have "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* y (normalise_term y)" using normalise_in_rtrancl_reduce by simp
+          with yz'
+          have "\<exists>y'. (\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* (normalise_term y) y' \<and> (\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* z y'" using reduce_rtrancl_confluent by blast
+          hence "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* z (normalise_term y)" using nf_cannot_reduce_trans normalise_nf[of y] by blast
+          with normalise_in_rtrancl_reduce[of z]
+          have "\<exists>y'. (\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* (normalise_term y) y' \<and> (\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* (normalise_term z) y'" using reduce_rtrancl_confluent by blast
+          hence "normalise_term y = normalise_term z" using nf_cannot_reduce_trans normalise_nf[of z] normalise_nf[of y] by blast
+          with ay
+          show ?thesis by simp
+        next
+          assume ya: "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* y (normalise_term a)"
+          with yz'
+          have "\<exists>z'. (\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* (normalise_term a) z' \<and> (\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* z z'" using reduce_rtrancl_confluent by blast
+          then
+          show ?thesis using nf_cannot_reduce_trans[OF _ normalise_nf[of a]] by blast
+        qed
+      next
+        assume zy: "z \<rightarrow>\<^sub>t y"
+        then have zy': "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* z y" by blast
+        show ?thesis
+        proof (cases rule: 2)
+          assume ay: "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* a (normalise_term y)"
+          from zy' normalise_in_rtrancl_reduce[of y]
+          have "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* z (normalise_term y)" using rtranclp_trans by simp
+          from reduce_rtrancl_confluent[OF this normalise_in_rtrancl_reduce[of z]]
+          have "normalise_term z = normalise_term y" 
+            using nf_cannot_reduce_trans[OF _ normalise_nf[of z]] nf_cannot_reduce_trans[OF _ normalise_nf[of y]] 
+            by blast
+          with ay
+          show ?thesis by simp
+        next
+          assume ya: "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* y (normalise_term a)"
+          from rtranclp_trans[OF zy' this]
+          show ?thesis by simp
+        qed
+      qed
+    qed
+    then 
+    consider "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* a (normalise_term b)" | "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* b (normalise_term a)" by blast
+    then have "normalise_term a = normalise_term b"
+    proof cases
+      assume ab: "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* a (normalise_term b)"
+      from normalise_in_rtrancl_reduce[of a]
+      have "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* a (normalise_term a)" .
+      from reduce_rtrancl_confluent[OF ab this]
+      show "normalise_term a = normalise_term b" 
+        using nf_cannot_reduce_trans[OF _ normalise_nf] by blast
+    next
+      assume ba: "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* b (normalise_term a)"
+      from normalise_in_rtrancl_reduce[of b]
+      have "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* b (normalise_term b)" .
+      from reduce_rtrancl_confluent[OF ba this]
+      show "normalise_term a = normalise_term b" 
+        using nf_cannot_reduce_trans[OF _ normalise_nf] by blast
+    qed
+    then show "decidable_eq a b" using decidable_eq_def by simp
+  next
+    assume a: "decidable_eq a b"
+    have "a =\<^sub>t normalise_term a" using normalise_in_rtrancl_reduce[THEN rtranclp_into_equivclp] .
+    with a
+    have "a =\<^sub>t normalise_term b" using decidable_eq_def by simp
+    from equivclp_trans[OF this] normalise_in_rtrancl_reduce[of b, THEN rtranclp_into_equivclp, THEN equivclp_sym]
+    show "a =\<^sub>t b" by simp
   qed
 end
   
