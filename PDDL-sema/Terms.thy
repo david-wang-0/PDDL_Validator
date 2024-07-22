@@ -177,7 +177,7 @@ locale decidable_eq = term_eq fi
   for fi::"'sym function_interpretation" +
   assumes nf: "n_fi fi"
 begin
-text \<open>When an interpretation is decidable, equality becomes decidable by inside-out reduction.\<close>  
+text \<open>When an interpretation is normalising, equality becomes decidable by inside-out reduction.\<close>  
   fun normalise_term::"'sym term \<Rightarrow> 'sym term" where
     "normalise_term (Sym s) = (Sym s)"
   | "normalise_term (Fun f as) = (
@@ -188,8 +188,8 @@ text \<open>When an interpretation is decidable, equality becomes decidable by i
       )
     )"
 
-  definition decidable_eq::"'sym term \<Rightarrow> 'sym term \<Rightarrow> bool" where
-    "decidable_eq a b \<equiv> (normalise_term a) = (normalise_term b)"
+  definition check_eq::"'sym term \<Rightarrow> 'sym term \<Rightarrow> bool" where
+    "check_eq a b \<equiv> (normalise_term a) = (normalise_term b)"
 
   lemma nf_cannot_reduce': 
     assumes "nf_term fi t"
@@ -502,7 +502,7 @@ qed
     then show "t'' = t'" by simp
   qed
   
-  theorem decidable_eq_correct: "a =\<^sub>t b \<longleftrightarrow> decidable_eq a b"
+  theorem decidable_eq_correct: "a =\<^sub>t b \<longleftrightarrow> check_eq a b"
   proof (rule iffI)
     assume a: "term_eq a b"
     then have "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* a (normalise_term b) \<or> (\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* b (normalise_term a)"
@@ -578,15 +578,16 @@ qed
       show "normalise_term a = normalise_term b" 
         using nf_cannot_reduce_trans[OF _ normalise_nf] by blast
     qed
-    then show "decidable_eq a b" using decidable_eq_def by simp
+    then show "check_eq a b" using check_eq_def by simp
   next
-    assume a: "decidable_eq a b"
+    assume a: "check_eq a b"
     have "a =\<^sub>t normalise_term a" using normalise_in_rtrancl_reduce[THEN rtranclp_into_equivclp] .
     with a
-    have "a =\<^sub>t normalise_term b" using decidable_eq_def by simp
+    have "a =\<^sub>t normalise_term b" using check_eq_def by simp
     from equivclp_trans[OF this] normalise_in_rtrancl_reduce[of b, THEN rtranclp_into_equivclp, THEN equivclp_sym]
     show "a =\<^sub>t b" by simp
   qed
 end
-  
+
+
 end
