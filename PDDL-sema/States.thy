@@ -28,20 +28,24 @@ fun nf_f_exp::"'sym function_interpretation \<Rightarrow> 'sym num_fun_interpret
 abbreviation n_nfi::"'sym function_interpretation \<Rightarrow>'sym num_fun_interpretation \<Rightarrow> bool" where
   "n_nfi fi nfi \<equiv> (\<forall>(l, r) \<in> Map.graph nfi. nf_f_exp fi nfi l \<and> nf_f_exp fi nfi r)"
 
-locale atom_sem = decidable_eq fi
-  for fi::"'sym function_interpretation" +
-  fixes nfi::"'sym num_fun_interpretation"
+context
+  fixes fi::"'sym function_interpretation" 
+    and nfi::"'sym num_fun_interpretation"
     and tp::"'sym term atom set"
     and fp::"'sym term atom set"
-  assumes nf_nfi: "n_nfi fi nfi"
+  assumes n_fi: "n_fi fi"
+      and nf_nfi: "n_nfi fi nfi"
       and nf_tp: "\<forall>a \<in> tp. \<forall>t \<in> (atom.ent a). nf_term fi t"
       and nf_fp: "\<forall>a \<in> fp. \<forall>t \<in> (atom.ent a). nf_term fi t"
 begin
 
+abbreviation "nt \<equiv> normalise_term fi"
+abbreviation "ce \<equiv> check_eq fi"
+
 (* Arithmetic simplifications could be applied here but are not. *)
 fun eval_f_exp::"'sym term f_exp \<Rightarrow> 'sym term f_exp" where
   "eval_f_exp (f_exp.NFun f as) = (
-      let as' = map normalise_term  as
+      let as' = map nt  as
       in (case nfi (f_exp.NFun f as') of
         Some v  \<Rightarrow> v
       | None    \<Rightarrow> f_exp.NFun f as')
@@ -71,8 +75,10 @@ fun eval_f_exp::"'sym term f_exp \<Rightarrow> 'sym term f_exp" where
 
 (* We could capture more cases of numeric (in-)equalities using rewrite rules, 
     but they are not trivial *)
+
+(* Derived predicates make PDDL as expressive as an extended logic programming language. *)
 fun atom_sem::"'sym term atom \<Rightarrow> bool option" where
-  "atom_sem (Ent_Eq a b) = (if (check_eq a b) then Some True else None)"
+  "atom_sem (Ent_Eq a b) = (if (ce a b) then Some True else None)"
 | "atom_sem (Num_Eq a b) = 
     (case (eval_f_exp a, eval_f_exp b) of
       (f_exp.Num a', f_exp.Num b')  \<Rightarrow> Some (a' = b')
@@ -86,20 +92,25 @@ fun atom_sem::"'sym term atom \<Rightarrow> bool option" where
       (f_exp.Num a', f_exp.Num b')  \<Rightarrow> Some (a' < b')
     | (a', b')                      \<Rightarrow> if (a' = b') then Some False else None)"
 | "atom_sem (Pred p as) = 
-    (let as' = map normalise_term as in
+    (let as' = map nt as in
       if      (Pred p as') \<in> tp then Some True 
       else if (Pred p as') \<in> fp then Some False 
       else None)"
 end
 
-locale form_sem = atom_sem fi nfi tp fp
-  for fi::"object function_interpretation"
-  and nfi::"object num_fun_interpretation"
-  and tp::"object term atom set"
-  and fp::"object term atom set"
-  and ty_dom::"type \<Rightarrow> object list"
-
+context 
+  fixes fi::"object function_interpretation"
+    and nfi::"object num_fun_interpretation"
+    and tp::"object term atom set"
+    and fp::"object term atom set"
+    and ty_dom::"type \<Rightarrow> object list"
+  assumes n_fi: "n_fi fi"
+      and nf_nfi: "n_nfi fi nfi"
+      and nf_tp: "\<forall>a \<in> tp. \<forall>t \<in> (atom.ent a). nf_term fi t"
+      and nf_fp: "\<forall>a \<in> fp. \<forall>t \<in> (atom.ent a). nf_term fi t"
 begin
+
+abbreviation "at_sem \<equiv> atom_sem fi nfi tp fp"
 text \<open>The variables in a symbol\<close>
 fun sym_vars where
   "sym_vars (Var x) = {x}" 
@@ -146,7 +157,7 @@ fun f_vars'::"(variable \<times> 'x, symbol term atom) GD \<Rightarrow> variable
 | "f_vars' (GD.Exists (v, os) f) = f_vars' f - {v}"
 
 fun ground_GD_sem::"(unit, object term atom) GD \<Rightarrow> bool option" where
-  "ground_GD_sem (GD.Atom a)   = atom_sem a"
+  "ground_GD_sem (GD.Atom a)   = at_sem a"
 | "ground_GD_sem GD.Bot        = Some False"
 | "ground_GD_sem (GD.Not gd)   = map_option (\<lambda>x. \<not>x) (ground_GD_sem gd)"
 | "ground_GD_sem (GD.And x y)  = combine_options (\<lambda>x y. x \<and> y) (ground_GD_sem x) (ground_GD_sem y)"
@@ -260,6 +271,14 @@ fun ground_pre_GD_sem::"(unit, object term atom) pre_GD \<Rightarrow> bool optio
 definition pre_GD_sem::"(symbol \<Rightarrow> object) \<Rightarrow> ((variable \<times> type) list, symbol term atom) pre_GD \<Rightarrow> bool option" where
   "pre_GD_sem f \<phi> = ground_pre_GD_sem (ground_pre_GD f (replace_pre_GD_types_with_objects (split_pre_GD_quant \<phi>)))"
 
+
+(* To do: add preprocessing to remove preferences *)
+
+end
+
+context 
+begin
+
 datatype ('x, atoms: 'a) timed_GD =
   OverAll "('x, 'a) GD"
 | AtStart "('x, 'a) GD"
@@ -273,6 +292,7 @@ datatype ('x, atoms: 'a) da_GD =
   ForAll "'x" "('x, 'a) da_GD"
 | And "('x, 'a) da_GD" "('x, 'a) da_GD"
 | tGD "('x, 'a) pref_timed_GD"
+
 end
 
 end

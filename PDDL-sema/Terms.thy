@@ -138,9 +138,10 @@ qed
 
 inductive_cases n_fiE: "n_fi fi"
 
-(* To do: refactor using contexts *)
-locale term_eq =
+
+context
   fixes fi::"'sym function_interpretation"
+  assumes nf: "n_fi fi"
 begin
   subsubsection \<open>Reduction under an interpretation and equality\<close>
   inductive reduce::"'sym term \<Rightarrow> 'sym term \<Rightarrow> bool" (infix "\<rightarrow>\<^sub>t" 55)where
@@ -161,31 +162,6 @@ begin
     subgoal by (auto simp: Nitpick.rtranclp_unfold intro: refl)
     done
 
-  lemma reduce_rtranclp_induct': 
-    assumes "reduce\<^sup>*\<^sup>* x y" 
-      "\<And>a b. reduce a b \<Longrightarrow> P a b" 
-      "\<And>a b c. reduce\<^sup>+\<^sup>+ a b \<Longrightarrow> P a b \<Longrightarrow> reduce b c \<Longrightarrow> P a c" 
-    shows "P x y"
-    using assms(1)[simplified reduce_rtrancl_is_trancl]
-    apply (induction rule: tranclp.induct)
-    using assms(2,3) by auto
-
-lemmas reduce_rtranclp_induct = reduce_rtranclp_induct'[rotated, OF reduce.induct, rotated 5]
-thm rtranclp_induct[OF reduce.induct]
-
-end
-
-context 
-  fixes fi::"'sym function_interpretation"
-  assumes nf: "n_fi fi"
-begin
-
-end
-
-locale decidable_eq = term_eq fi 
-  for fi::"'sym function_interpretation" +
-  assumes nf: "n_fi fi"
-begin
 text \<open>When an interpretation is normalising, equality becomes decidable by inside-out reduction.\<close>  
   fun normalise_term::"'sym term \<Rightarrow> 'sym term" where
     "normalise_term (Sym s) = (Sym s)"
