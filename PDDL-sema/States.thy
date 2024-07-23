@@ -97,52 +97,111 @@ locale form_sem = atom_sem fi nfi tp fp
   and nfi::"object num_fun_interpretation"
   and tp::"object term atom set"
   and fp::"object term atom set"
-  and ty_dom::"type \<Rightarrow> object set"
+  and ty_dom::"type \<Rightarrow> object list"
+
 begin
+text \<open>The variables in a symbol\<close>
+fun sym_vars where
+  "sym_vars (Var x) = {x}" 
+| "sym_vars (Const c) = {}"
 
-find_consts name: "Set*fold"
+fun term_vars::"symbol term \<Rightarrow> variable set" where
+  "term_vars (Sym x) = sym_vars x"
+| "term_vars (Fun f as) = fold (\<union>) (map term_vars as) {}"
 
-  definition all::"variable \<Rightarrow> type \<Rightarrow> schematic_formula \<Rightarrow> schematic_formula" ("\<^bold>\<forall>_ - _._") where
-    "all v t \<phi> \<equiv> (if (v \<notin> f_vars \<phi> \<and> (t_dom t \<noteq> [])) then \<phi> else \<^bold>\<And>(map (\<lambda>c. f_subst v c \<phi>) (t_dom t)))"
-                                                                  
-  definition exists::"variable \<Rightarrow> type \<Rightarrow> schematic_formula \<Rightarrow> schematic_formula" ("\<^bold>\<exists>_ - _._") where
-    "exists v t \<phi> \<equiv> (if (v \<notin> f_vars \<phi> \<and> (t_dom t \<noteq> [])) then \<phi> else \<^bold>\<Or>(map (\<lambda>c. f_subst v c \<phi>) (t_dom t)))"
+fun f_exp_vars::"symbol term f_exp \<Rightarrow> variable set" where
+    "f_exp_vars (f_exp.NFun f as) = fold (\<union>) (map term_vars as) {}"
+  | "f_exp_vars (f_exp.Num n) = {}"
+  | "f_exp_vars (f_exp.Neg e) = f_exp_vars e"
+  | "f_exp_vars (f_exp.Add a b) = f_exp_vars a \<union> f_exp_vars b"
+  | "f_exp_vars (f_exp.Sub a b) = f_exp_vars a \<union> f_exp_vars b"
+  | "f_exp_vars (f_exp.Mult a b) = f_exp_vars a \<union> f_exp_vars b"
+  | "f_exp_vars (f_exp.Div a b) = f_exp_vars a \<union> f_exp_vars b"
 
-fun GD_sem::"(unit, object term atom) GD \<Rightarrow> bool option" where
-  "GD_sem (GD.Atom a)   = atom_sem a"
-| "GD_sem GD.Bot        = Some False"
-| "GD_sem (GD.Not gd)   = map_option (\<lambda>x. \<not>x) (GD_sem gd)"
-| "GD_sem (GD.And x y)  = combine_options (\<lambda>x y. x \<and> y) (GD_sem x) (GD_sem y)"
-| "GD_sem (GD.Or x y)   = 
-    (case (GD_sem x, GD_sem y) of 
+fun atom_vars::"symbol term atom \<Rightarrow> variable set" where
+  "atom_vars (Pred p as) = fold (\<union>) (map term_vars as) {}"
+| "atom_vars (Ent_Eq a b) = term_vars a \<union> term_vars b"
+| "atom_vars (Num_Eq a b) = f_exp_vars a \<union> f_exp_vars b"
+| "atom_vars (Num_Le a b) = f_exp_vars a \<union> f_exp_vars b"
+| "atom_vars (Num_Lt a b) = f_exp_vars a \<union> f_exp_vars b"
+
+fun f_vars::"((variable \<times> 'x) list, symbol term atom) GD \<Rightarrow> variable set" where
+  "f_vars (GD.Atom a) = atom_vars a"
+| "f_vars GD.Bot = {}"
+| "f_vars (GD.Not f) = f_vars f"
+| "f_vars (GD.Or f g) = f_vars f \<union> f_vars g"
+| "f_vars (GD.And f g) = f_vars f \<union> f_vars g"
+| "f_vars (GD.Imp f g) = f_vars f \<union> f_vars g"
+| "f_vars (GD.ForAll vts f) = f_vars f - (set (map fst vts))"
+| "f_vars (GD.Exists vts f) = f_vars f - (set (map fst vts))"
+
+fun f_vars'::"(variable \<times> 'x, symbol term atom) GD \<Rightarrow> variable set" where
+  "f_vars' (GD.Atom a) = atom_vars a"
+| "f_vars' GD.Bot = {}"
+| "f_vars' (GD.Not f) = f_vars' f"
+| "f_vars' (GD.Or f g) = f_vars' f \<union> f_vars' g"
+| "f_vars' (GD.And f g) = f_vars' f \<union> f_vars' g"
+| "f_vars' (GD.Imp f g) = f_vars' f \<union> f_vars' g"
+| "f_vars' (GD.ForAll (v, os) f) = f_vars' f - {v}"
+| "f_vars' (GD.Exists (v, os) f) = f_vars' f - {v}"
+
+fun ground_GD_sem::"(unit, object term atom) GD \<Rightarrow> bool option" where
+  "ground_GD_sem (GD.Atom a)   = atom_sem a"
+| "ground_GD_sem GD.Bot        = Some False"
+| "ground_GD_sem (GD.Not gd)   = map_option (\<lambda>x. \<not>x) (ground_GD_sem gd)"
+| "ground_GD_sem (GD.And x y)  = combine_options (\<lambda>x y. x \<and> y) (ground_GD_sem x) (ground_GD_sem y)"
+| "ground_GD_sem (GD.Or x y)   = 
+    (case (ground_GD_sem x, ground_GD_sem y) of 
       (Some True, _)            \<Rightarrow> Some True
     | (_, Some True)            \<Rightarrow> Some True
     | (Some False, Some False)  \<Rightarrow> Some False
     | _                         \<Rightarrow> None)"
-| "GD_sem (GD.Imp x y)   = 
-    (case (GD_sem x, GD_sem y) of
+| "ground_GD_sem (GD.Imp x y)   = 
+    (case (ground_GD_sem x, ground_GD_sem y) of
       (_, Some True)            \<Rightarrow> Some True
     | (Some False, _)           \<Rightarrow> Some True
     | (Some x', Some y')        \<Rightarrow> Some (\<not>x' \<or> y')
     | _                         \<Rightarrow> None)"
+| "ground_GD_sem (GD.ForAll _ _) = None"
+| "ground_GD_sem (GD.Exists _ _) = None"
 
-fun GD_sem::"('sym \<Rightarrow> object) \<Rightarrow> (('sym \<times> type) list, 'sym term atom) GD \<Rightarrow> bool option" where
-  "GD_sem f (GD.Atom a)   = atom_sem (map_atom (map_term f) a)"
-| "GD_sem f GD.Bot        = Some False"
-| "GD_sem f (GD.Not gd)   = map_option (\<lambda>x. \<not>x) (GD_sem f gd)"
-| "GD_sem f (GD.And x y)  = combine_options (\<lambda>x y. x \<and> y) (GD_sem f x) (GD_sem f y)"
-| "GD_sem f (GD.Or x y)   = 
-    (case (GD_sem f x, GD_sem f y) of 
-      (Some True, _)            \<Rightarrow> Some True
-    | (_, Some True)            \<Rightarrow> Some True
-    | (Some False, Some False)  \<Rightarrow> Some False
-    | _                         \<Rightarrow> None)"
-| "GD_sem f (GD.Imp x y)   = 
-    (case (GD_sem f x, GD_sem f y) of
-      (_, Some True)            \<Rightarrow> Some True
-    | (Some False, _)           \<Rightarrow> Some True
-    | (Some x', Some y')        \<Rightarrow> Some (\<not>x' \<or> y')
-    | _                         \<Rightarrow> None)"
+fun BigAnd::"('a, 'b) GD list \<Rightarrow> ('a, 'b) GD" where
+  "BigAnd [] = (GD.Not (GD.Bot))"
+| "BigAnd (f#fs) = GD.And f (BigAnd fs)"
+
+fun BigOr::"('a, 'b) GD list \<Rightarrow> ('a, 'b) GD" where
+  "BigOr [] = GD.Bot"
+| "BigOr (f#fs) = GD.Or f (BigOr fs)"
+
+  fun subst_sym_with_obj where
+    "subst_sym_with_obj psubst (Var x) = psubst x"
+  | "subst_sym_with_obj psubst (Const c) = c"
+
+fun ground_GD::"(symbol \<Rightarrow> object) \<Rightarrow> (variable \<times> (object list), symbol term atom) GD \<Rightarrow> (unit, object term atom) GD" where
+  "ground_GD f (GD.Atom a) = GD.Atom (map_atom (map_term f) a)"
+| "ground_GD f GD.Bot = GD.Bot"
+| "ground_GD f (GD.Not x) = GD.Not (ground_GD f x)"
+| "ground_GD f (GD.And x y) = GD.And (ground_GD f x) (ground_GD f y)"
+| "ground_GD f (GD.Or x y) = GD.Or (ground_GD f x) (ground_GD f y)"
+| "ground_GD f (GD.Imp x y) = GD.Imp (ground_GD f x) (ground_GD f y)"
+| "ground_GD f (GD.ForAll (v, os) x) = (if (v \<notin> f_vars' x \<and> os \<noteq> []) then ground_GD f x else BigAnd (map (\<lambda>obj. ground_GD (f((Var v):=obj)) x) os))"
+| "ground_GD f (GD.Exists (v, os) x) = (if (v \<notin> f_vars' x \<and> os \<noteq> []) then ground_GD f x else BigOr (map (\<lambda>obj. ground_GD (f((Var v):=obj)) x) os))"
+
+abbreviation replace_types_with_objects where
+  "replace_types_with_objects \<equiv> map_GD (\<lambda>(v, t). (v, ty_dom t)) id"
+
+fun split_quant::"(('a \<times> 'b) list, 'c) GD \<Rightarrow> ('a \<times> 'b, 'c) GD" where
+  "split_quant (GD.Atom a) = GD.Atom a"
+| "split_quant GD.Bot = GD.Bot"
+| "split_quant (GD.Not x) = GD.Not (split_quant x)"
+| "split_quant (GD.And x y) = GD.And (split_quant x) (split_quant y)"
+| "split_quant (GD.Or x y) = GD.Or (split_quant x) (split_quant y)"
+| "split_quant (GD.Imp x y) = GD.Imp (split_quant x) (split_quant y)"
+| "split_quant (GD.ForAll vs x) = fold (\<lambda>v x. GD.ForAll v x) vs (split_quant x)"
+| "split_quant (GD.Exists vs x) = fold (\<lambda>v x. GD.Exists v x) vs (split_quant x)"
+
+definition GD_sem::"(symbol \<Rightarrow> object) \<Rightarrow> ((variable \<times> type) list, symbol term atom) GD \<Rightarrow> bool option" where
+  "GD_sem f \<phi> = ground_GD_sem (ground_GD f (replace_types_with_objects (split_quant \<phi>)))"
 
 end
 
