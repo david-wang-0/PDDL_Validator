@@ -230,19 +230,35 @@ fun ground_pref_GD::"(symbol \<Rightarrow> object) \<Rightarrow> (variable \<tim
   "ground_pref_GD f (pref_GD.Pref p \<phi>) = (pref_GD.Pref p (ground_GD f \<phi>))"
 | "ground_pref_GD f (pref_GD.GD \<phi>) = pref_GD.GD (ground_GD f \<phi>)"
 
-fun ground_pre_GD::"(symbol \<Rightarrow> object) \<Rightarrow> (variable \<times> (object list), symbol term atom) pref_GD \<Rightarrow> (unit, object term atom) pref_GD" where
-  
+fun pref_GD_vars'::"(variable \<times> 'x, symbol term atom) pref_GD \<Rightarrow> variable set" where
+  "pref_GD_vars' (pref_GD.Pref p \<phi>) = f_vars' \<phi>"
+| "pref_GD_vars' (pref_GD.GD \<phi>) = f_vars' \<phi>"
 
-fun pre_GD_sem::"(symbol \<Rightarrow> object) \<Rightarrow> ((variable \<times> type) list, symbol term atom) pre_GD \<Rightarrow> bool option" where
-  "pre_GD_sem f (pre_GD.PrefGD p) = pref_GD_sem f p"
-| "pre_GD_sem f (pre_GD.ForAll 
+fun pre_GD_vars'::"(variable \<times> 'x, symbol term atom) pre_GD \<Rightarrow> variable set" where
+  "pre_GD_vars' (pre_GD.PrefGD \<phi>) = pref_GD_vars' \<phi>"
+| "pre_GD_vars' (pre_GD.ForAll (v, os) \<phi>) = pre_GD_vars' \<phi> - {v}"
+| "pre_GD_vars' (pre_GD.And x y) = pre_GD_vars' x \<union> pre_GD_vars' y"
 
-(* preferences cannot be in conditions of conditional effects *)
+fun BigPreAnd::"('a, 'b) pre_GD list \<Rightarrow> ('a, 'b) pre_GD" where
+  "BigPreAnd [] = (pre_GD.PrefGD (pref_GD.GD (GD.Not (GD.Bot))))"
+| "BigPreAnd (f#fs) = pre_GD.And f (BigPreAnd fs)"
 
-datatype ('x, 'a) pre_GD =
-  PrefGD "('x, 'a) pref_GD"
-  | ForAll 'x "('x, 'a) pre_GD"
-  | And 'x "('x, 'a) pre_GD"
+fun ground_pre_GD::"(symbol \<Rightarrow> object) \<Rightarrow> (variable \<times> (object list), symbol term atom) pre_GD \<Rightarrow> (unit, object term atom) pre_GD" where
+  "ground_pre_GD f (pre_GD.PrefGD p) = pre_GD.PrefGD (ground_pref_GD f p)"
+| "ground_pre_GD f (pre_GD.ForAll (v, os) \<phi>) = (if (v \<notin> pre_GD_vars' \<phi> \<and> os \<noteq> []) then ground_pre_GD f \<phi> else BigPreAnd (map (\<lambda>obj. ground_pre_GD (f((Var v):=obj)) \<phi>) os))"
+| "ground_pre_GD f (pre_GD.And x y) = pre_GD.And (ground_pre_GD f x) (ground_pre_GD f y)"
+
+fun ground_pref_GD_sem::"(unit, object term atom) pref_GD \<Rightarrow> bool option" where
+  "ground_pref_GD_sem (pref_GD.Pref p \<phi>) = Some True"
+| "ground_pref_GD_sem (pref_GD.GD \<phi>) = ground_GD_sem \<phi>"
+
+fun ground_pre_GD_sem::"(unit, object term atom) pre_GD \<Rightarrow> bool option" where
+  "ground_pre_GD_sem (pre_GD.PrefGD \<phi>) = ground_pref_GD_sem \<phi>"
+| "ground_pre_GD_sem (pre_GD.ForAll _ _) = None"
+| "ground_pre_GD_sem (pre_GD.And x y) = combine_options (\<and>) (ground_pre_GD_sem x) (ground_pre_GD_sem y)"
+
+definition pre_GD_sem::"(symbol \<Rightarrow> object) \<Rightarrow> ((variable \<times> type) list, symbol term atom) pre_GD \<Rightarrow> bool option" where
+  "pre_GD_sem f \<phi> = ground_pre_GD_sem (ground_pre_GD f (replace_pre_GD_types_with_objects (split_pre_GD_quant \<phi>)))"
 
 datatype ('x, atoms: 'a) timed_GD =
   OverAll "('x, 'a) GD"

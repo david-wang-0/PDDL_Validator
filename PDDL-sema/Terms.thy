@@ -12,9 +12,10 @@ next
   case (rtrancl_into_rtrancl xs ys zs)
   from this(2)[simplified list_all2_conv_all_nth]
   have 1: "length ys = length zs \<and> (\<forall>i<length ys. R (ys ! i) (zs ! i))" by simp
+  moreover
   from rtrancl_into_rtrancl(3)[simplified list_all2_conv_all_nth]
   have 2: "length xs = length ys \<and> (\<forall>i<length xs. R\<^sup>*\<^sup>* (xs ! i) (ys ! i))" by simp
-  from 1 2
+  ultimately
   have "(\<forall>i<length xs. R\<^sup>*\<^sup>* (xs ! i) (ys ! i) \<and> R (ys ! i) (zs ! i))" by simp+
   then
   have "(\<forall>i<length xs. R\<^sup>*\<^sup>* (xs ! i) (zs ! i))" using rtrancl.rtrancl_into_rtrancl by auto
@@ -137,6 +138,7 @@ qed
 
 inductive_cases n_fiE: "n_fi fi"
 
+(* To do: refactor using contexts *)
 locale term_eq =
   fixes fi::"'sym function_interpretation"
 begin
