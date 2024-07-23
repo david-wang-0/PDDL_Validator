@@ -61,7 +61,7 @@ datatype ('x, 'a) pref_GD =
 datatype ('x, 'a) pre_GD =
   PrefGD "('x, 'a) pref_GD"
   | ForAll 'x "('x, 'a) pre_GD"
-  | And 'x "('x, 'a) pre_GD"
+  | And "('x, 'a) pre_GD" "('x, 'a) pre_GD"
 
 datatype ('x, atoms: 'a) timed_GD =
   OverAll "('x, 'a) GD"

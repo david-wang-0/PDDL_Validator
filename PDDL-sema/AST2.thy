@@ -206,7 +206,7 @@ fun subterms::"'a term \<Rightarrow> 'a term set" where
 
 (* better to work with object terms *)
 locale formulas1 = 
-    where dom::"type \<Rightarrow> object set"
+  fixes dom::"type \<Rightarrow> object set"
     and derived_preds::"pred \<rightharpoonup> ((variable \<times> type) list \<times> e_form)"
     and of_i::"object function_interpretation"
     and nf_i::"numeric_function_interpretation"

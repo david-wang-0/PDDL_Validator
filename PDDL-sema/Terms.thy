@@ -173,6 +173,13 @@ thm rtranclp_induct[OF reduce.induct]
 
 end
 
+context 
+  fixes fi::"'sym function_interpretation"
+  assumes nf: "n_fi fi"
+begin
+
+end
+
 locale decidable_eq = term_eq fi 
   for fi::"'sym function_interpretation" +
   assumes nf: "n_fi fi"
