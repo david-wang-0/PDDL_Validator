@@ -169,9 +169,8 @@ datatype pred_decl = PredDecl
   (predicate: pred)
   (argTs: "type list")
 
-datatype fun_decl = 
-  ObjFunDecl (OFName: func) "type list" type
-  | NumFunDecl (NFName: func) "type list"
+datatype obj_fun_decl = ObjFunDecl (of_name: func) "type list" type
+datatype num_fun_decl = NumFunDecl (nf_name: func) "type list"
 
 datatype derived_pred = 
   DerivedPred pred 
@@ -182,7 +181,8 @@ datatype ast_domain = Domain
   (types: "(name \<times> name) list") \<comment> \<open> \<open>(type, supertype)\<close> declarations. \<close>
   ("consts": "(object \<times> type) list")
   (preds: "pred_decl list")
-  (obj_funs: "fun_decl list")
+  (ofs: "obj_fun_decl list")
+  (nfs: "num_fun_decl list")
   (actions: "action_schema list")
   (derived: "derived_pred list")
 
@@ -239,9 +239,10 @@ datatype ast_problem = Problem
 
 
 subsubsection \<open>Plans\<close>
-datatype plan_action = PAction
-  (name: name)
-  (arguments: "object list")
+datatype plan_action = 
+  Simple_Plan_Action (name: name) (arguments: "object list")
+| Durative_Plan_Action (name: name) (arguments: "object list") (duration: "rat option")
+
 
 type_synonym plan = "plan_action list"
 

@@ -11,7 +11,9 @@ begin
           (false_preds: "'sym term atom set")
 
 
-fun nf_f_exp::"'sym function_interpretation \<Rightarrow> 'sym num_fun_interpretation \<Rightarrow> 'sym term f_exp \<Rightarrow> bool" where
+fun nf_f_exp::"'sym function_interpretation 
+  \<Rightarrow> 'sym num_fun_interpretation 
+  \<Rightarrow> 'sym term f_exp \<Rightarrow> bool" where
 "nf_f_exp fi nfi e = (
   nfi e = None
 \<and> (case e of 
@@ -211,8 +213,14 @@ fun split_quant::"(('a \<times> 'b) list, 'c) GD \<Rightarrow> ('a \<times> 'b, 
 | "split_quant (GD.ForAll vs x) = fold (\<lambda>v x. GD.ForAll v x) vs (split_quant x)"
 | "split_quant (GD.Exists vs x) = fold (\<lambda>v x. GD.Exists v x) vs (split_quant x)"
 
+text \<open>This is the process of instantiating and executing an action.\<close>
+
 definition GD_sem::"(symbol \<Rightarrow> object) \<Rightarrow> ((variable \<times> type) list, symbol term atom) GD \<Rightarrow> bool option" where
   "GD_sem f \<phi> = ground_GD_sem (ground_GD f (replace_types_with_objects (split_quant \<phi>)))"
+
+
+text \<open>The following are probably unnecessary\<close>
+
 
 fun remove_pref::"('a, 'b) pref_GD \<Rightarrow> ('a, 'b) GD" where
   "remove_pref (pref_GD.Pref _ _) = GD.Not (GD.Bot)"
