@@ -1,14 +1,14 @@
 theory States
-  imports Terms
+  imports Terms "Propositional_Proof_Systems.Formulas"
 begin
 
 
-  type_synonym 'sym num_fun_interpretation = "'sym term f_exp \<rightharpoonup> 'sym term f_exp"
-  datatype 'sym state = 
-    State (term_int: "'sym function_interpretation") 
-          (num_term_int: "'sym num_fun_interpretation")
-          (true_preds: "'sym term atom set") 
-          (false_preds: "'sym term atom set")
+type_synonym 'sym num_fun_interpretation = "'sym term f_exp \<rightharpoonup> 'sym term f_exp"
+datatype 'sym state = 
+  State (term_int: "'sym function_interpretation") 
+        (num_term_int: "'sym num_fun_interpretation")
+        (true_preds: "'sym term atom set") 
+        (false_preds: "'sym term atom set")
 
 
 fun nf_f_exp::"'sym function_interpretation 
@@ -123,13 +123,13 @@ fun term_vars::"symbol term \<Rightarrow> variable set" where
 | "term_vars (Fun f as) = fold (\<union>) (map term_vars as) {}"
 
 fun f_exp_vars::"symbol term f_exp \<Rightarrow> variable set" where
-    "f_exp_vars (f_exp.NFun f as) = fold (\<union>) (map term_vars as) {}"
-  | "f_exp_vars (f_exp.Num n) = {}"
-  | "f_exp_vars (f_exp.Neg e) = f_exp_vars e"
-  | "f_exp_vars (f_exp.Add a b) = f_exp_vars a \<union> f_exp_vars b"
-  | "f_exp_vars (f_exp.Sub a b) = f_exp_vars a \<union> f_exp_vars b"
-  | "f_exp_vars (f_exp.Mult a b) = f_exp_vars a \<union> f_exp_vars b"
-  | "f_exp_vars (f_exp.Div a b) = f_exp_vars a \<union> f_exp_vars b"
+  "f_exp_vars (f_exp.NFun f as) = fold (\<union>) (map term_vars as) {}"
+| "f_exp_vars (f_exp.Num n) = {}"
+| "f_exp_vars (f_exp.Neg e) = f_exp_vars e"
+| "f_exp_vars (f_exp.Add a b) = f_exp_vars a \<union> f_exp_vars b"
+| "f_exp_vars (f_exp.Sub a b) = f_exp_vars a \<union> f_exp_vars b"
+| "f_exp_vars (f_exp.Mult a b) = f_exp_vars a \<union> f_exp_vars b"
+| "f_exp_vars (f_exp.Div a b) = f_exp_vars a \<union> f_exp_vars b"
 
 fun atom_vars::"symbol term atom \<Rightarrow> variable set" where
   "atom_vars (Pred p as) = fold (\<union>) (map term_vars as) {}"
@@ -175,8 +175,7 @@ fun ground_GD_sem::"(unit, object term atom) GD \<Rightarrow> bool option" where
     | (Some False, _)           \<Rightarrow> Some True
     | (Some x', Some y')        \<Rightarrow> Some (\<not>x' \<or> y')
     | _                         \<Rightarrow> None)"
-| "ground_GD_sem (GD.ForAll _ _) = None"
-| "ground_GD_sem (GD.Exists _ _) = None"
+(* No quantifiers in ground formulas *)
 
 fun BigAnd::"('a, 'b) GD list \<Rightarrow> ('a, 'b) GD" where
   "BigAnd [] = (GD.Not (GD.Bot))"
@@ -186,9 +185,9 @@ fun BigOr::"('a, 'b) GD list \<Rightarrow> ('a, 'b) GD" where
   "BigOr [] = GD.Bot"
 | "BigOr (f#fs) = GD.Or f (BigOr fs)"
 
-  fun subst_sym_with_obj where
-    "subst_sym_with_obj psubst (Var x) = psubst x"
-  | "subst_sym_with_obj psubst (Const c) = c"
+fun subst_sym_with_obj where
+  "subst_sym_with_obj psubst (Var x) = psubst x"
+| "subst_sym_with_obj psubst (Const c) = c"
 
 fun ground_GD::"(symbol \<Rightarrow> object) \<Rightarrow> (variable \<times> (object list), symbol term atom) GD \<Rightarrow> (unit, object term atom) GD" where
   "ground_GD f (GD.Atom a) = GD.Atom (map_atom (map_term f) a)"
@@ -217,89 +216,6 @@ text \<open>This is the process of instantiating and executing an action.\<close
 
 definition GD_sem::"(symbol \<Rightarrow> object) \<Rightarrow> ((variable \<times> type) list, symbol term atom) GD \<Rightarrow> bool option" where
   "GD_sem f \<phi> = ground_GD_sem (ground_GD f (replace_types_with_objects (split_quant \<phi>)))"
-
-
-text \<open>The following are probably unnecessary\<close>
-
-
-fun remove_pref::"('a, 'b) pref_GD \<Rightarrow> ('a, 'b) GD" where
-  "remove_pref (pref_GD.Pref _ _) = GD.Not (GD.Bot)"
-| "remove_pref (pref_GD.GD \<phi>) = \<phi>"
-
-fun pref_GD_sem::"(symbol \<Rightarrow> object) \<Rightarrow> ((variable \<times> type) list, symbol term atom) pref_GD \<Rightarrow> bool option" where
-  "pref_GD_sem f (pref_GD.Pref _ _) = Some True"
-| "pref_GD_sem f (pref_GD.GD \<phi>) = GD_sem f \<phi>"
-
-lemma pref_GD_sem_alt[code]: "pref_GD_sem f x = GD_sem f (remove_pref x)"
-  by (cases x, auto simp: GD_sem_def)
-
-fun split_pref_GD_quant::"(('a \<times> 'b) list, 'c) pref_GD \<Rightarrow> ('a \<times> 'b, 'c) pref_GD" where
-  "split_pref_GD_quant (pref_GD.Pref p \<phi>) = (pref_GD.Pref p (split_quant \<phi>))"
-| "split_pref_GD_quant (pref_GD.GD \<phi>) = pref_GD.GD (split_quant \<phi>)"
-
-fun split_pre_GD_quant::"(('a \<times> 'b) list, 'c) pre_GD \<Rightarrow> ('a \<times> 'b, 'c) pre_GD" where
-  "split_pre_GD_quant (pre_GD.PrefGD \<phi>) = (pre_GD.PrefGD (split_pref_GD_quant \<phi>))"
-| "split_pre_GD_quant (pre_GD.ForAll vs \<phi>) = fold (\<lambda>v x. pre_GD.ForAll v x) vs (split_pre_GD_quant \<phi>)"
-| "split_pre_GD_quant (pre_GD.And x y) = pre_GD.And (split_pre_GD_quant x) (split_pre_GD_quant y)"
-
-abbreviation replace_pre_GD_types_with_objects where
-  "replace_pre_GD_types_with_objects \<equiv> map_pre_GD (\<lambda>(v, t). (v, ty_dom t)) id"
-
-fun ground_pref_GD::"(symbol \<Rightarrow> object) \<Rightarrow> (variable \<times> (object list), symbol term atom) pref_GD \<Rightarrow> (unit, object term atom) pref_GD" where
-  "ground_pref_GD f (pref_GD.Pref p \<phi>) = (pref_GD.Pref p (ground_GD f \<phi>))"
-| "ground_pref_GD f (pref_GD.GD \<phi>) = pref_GD.GD (ground_GD f \<phi>)"
-
-fun pref_GD_vars'::"(variable \<times> 'x, symbol term atom) pref_GD \<Rightarrow> variable set" where
-  "pref_GD_vars' (pref_GD.Pref p \<phi>) = f_vars' \<phi>"
-| "pref_GD_vars' (pref_GD.GD \<phi>) = f_vars' \<phi>"
-
-fun pre_GD_vars'::"(variable \<times> 'x, symbol term atom) pre_GD \<Rightarrow> variable set" where
-  "pre_GD_vars' (pre_GD.PrefGD \<phi>) = pref_GD_vars' \<phi>"
-| "pre_GD_vars' (pre_GD.ForAll (v, os) \<phi>) = pre_GD_vars' \<phi> - {v}"
-| "pre_GD_vars' (pre_GD.And x y) = pre_GD_vars' x \<union> pre_GD_vars' y"
-
-fun BigPreAnd::"('a, 'b) pre_GD list \<Rightarrow> ('a, 'b) pre_GD" where
-  "BigPreAnd [] = (pre_GD.PrefGD (pref_GD.GD (GD.Not (GD.Bot))))"
-| "BigPreAnd (f#fs) = pre_GD.And f (BigPreAnd fs)"
-
-fun ground_pre_GD::"(symbol \<Rightarrow> object) \<Rightarrow> (variable \<times> (object list), symbol term atom) pre_GD \<Rightarrow> (unit, object term atom) pre_GD" where
-  "ground_pre_GD f (pre_GD.PrefGD p) = pre_GD.PrefGD (ground_pref_GD f p)"
-| "ground_pre_GD f (pre_GD.ForAll (v, os) \<phi>) = (if (v \<notin> pre_GD_vars' \<phi> \<and> os \<noteq> []) then ground_pre_GD f \<phi> else BigPreAnd (map (\<lambda>obj. ground_pre_GD (f((Var v):=obj)) \<phi>) os))"
-| "ground_pre_GD f (pre_GD.And x y) = pre_GD.And (ground_pre_GD f x) (ground_pre_GD f y)"
-
-fun ground_pref_GD_sem::"(unit, object term atom) pref_GD \<Rightarrow> bool option" where
-  "ground_pref_GD_sem (pref_GD.Pref p \<phi>) = Some True"
-| "ground_pref_GD_sem (pref_GD.GD \<phi>) = ground_GD_sem \<phi>"
-
-fun ground_pre_GD_sem::"(unit, object term atom) pre_GD \<Rightarrow> bool option" where
-  "ground_pre_GD_sem (pre_GD.PrefGD \<phi>) = ground_pref_GD_sem \<phi>"
-| "ground_pre_GD_sem (pre_GD.ForAll _ _) = None"
-| "ground_pre_GD_sem (pre_GD.And x y) = combine_options (\<and>) (ground_pre_GD_sem x) (ground_pre_GD_sem y)"
-
-definition pre_GD_sem::"(symbol \<Rightarrow> object) \<Rightarrow> ((variable \<times> type) list, symbol term atom) pre_GD \<Rightarrow> bool option" where
-  "pre_GD_sem f \<phi> = ground_pre_GD_sem (ground_pre_GD f (replace_pre_GD_types_with_objects (split_pre_GD_quant \<phi>)))"
-
-
-(* To do: add preprocessing to remove preferences *)
-
-end
-
-context 
-begin
-
-datatype ('x, atoms: 'a) timed_GD =
-  OverAll "('x, 'a) GD"
-| AtStart "('x, 'a) GD"
-| AtEnd "('x, 'a) GD"
-
-datatype ('x, atoms: 'a) pref_timed_GD =
-  Pref pref "('x, 'a) timed_GD"
-  | tGD "('x, 'a) timed_GD"
-
-datatype ('x, atoms: 'a) da_GD =
-  ForAll "'x" "('x, 'a) da_GD"
-| And "('x, 'a) da_GD" "('x, 'a) da_GD"
-| tGD "('x, 'a) pref_timed_GD"
 
 end
 

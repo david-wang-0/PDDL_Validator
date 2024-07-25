@@ -1,5 +1,8 @@
 theory Terms
-  imports AST1
+  imports AST1 
+  "Automatic_Refinement.Misc"
+  "Automatic_Refinement.Refine_Util"
+  Util
 begin
 
 text \<open>Some useful lemmas to reason about the reflexive transitive closure. \<close>
