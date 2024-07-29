@@ -104,12 +104,11 @@ lemma term_in_subterms: "x \<in> subterms x"
 
 lemma args_in_subterms: "set as \<subseteq> subterms (Fun f as)"
   using term_in_subterms by auto
-  
-inductive n_fi::"'a function_interpretation \<Rightarrow> bool"
+   
+(* inductive n_fi::"'a function_interpretation \<Rightarrow> bool"
       and nf_term::"'a function_interpretation \<Rightarrow> 'a term \<Rightarrow> bool" where
   int_normalising: "\<lbrakk>\<not>(\<exists>obj. Sym obj \<in> dom fi); 
-      \<forall>(l, r) \<in> Map.graph fi. \<exists>f as. Fun f as = l \<and> list_all (nf_term fi) as \<and> nf_term fi r\<rbrakk> 
-    \<Longrightarrow> n_fi fi"
+      \<forall>(l, r) \<in> Map.graph fi. \<exists>f as. (Fun f as = l \<and> list_all (nf_term fi) as) \<and> nf_term fi r\<rbrakk> \<Longrightarrow> n_fi fi"
 | sym_normal: "n_fi fi \<Longrightarrow> nf_term fi (Sym s)"
 | fun_normal: "\<lbrakk>n_fi fi; list_all (nf_term fi) as; fi (Fun f as) = None\<rbrakk> 
     \<Longrightarrow> nf_term fi (Fun f as)"
@@ -139,12 +138,10 @@ next
   qed
 qed
 
-inductive_cases n_fiE: "n_fi fi"
+inductive_cases n_fiE: "n_fi fi" *)
 
-
-context
+context 
   fixes fi::"'sym function_interpretation"
-  assumes nf: "n_fi fi"
 begin
   subsubsection \<open>Reduction under an interpretation and equality\<close>
   inductive reduce::"'sym term \<Rightarrow> 'sym term \<Rightarrow> bool" (infix "\<rightarrow>\<^sub>t" 55)where
@@ -164,6 +161,26 @@ begin
     apply (rule ext)+
     subgoal by (auto simp: Nitpick.rtranclp_unfold intro: refl)
     done
+  
+  inductive n_fi::"bool"
+        and nf_term::"'sym term \<Rightarrow> bool" where
+    int_normalising: "\<lbrakk>\<not>(\<exists>obj. Sym obj \<in> dom fi); 
+        \<forall>(l, r) \<in> Map.graph fi. \<exists>f as. (Fun f as = l \<and> ((list_all nf_term as) \<or> (\<forall>as'. list_all2 (\<rightarrow>\<^sub>t) as as' \<longrightarrow> Fun f as' \<rightarrow>\<^sub>t r))) \<and> nf_term r\<rbrakk> \<Longrightarrow> n_fi"
+  | sym_normal: "n_fi \<Longrightarrow> nf_term  (Sym s)"
+  | fun_normal: "\<lbrakk>n_fi; list_all nf_term as; fi (Fun f as) = None\<rbrakk> 
+      \<Longrightarrow> nf_term (Fun f as)"
+
+inductive_cases n_fiE: "n_fi"
+end
+
+context
+  fixes fi::"'sym function_interpretation"
+  assumes nf: "n_fi fi"
+begin
+abbreviation "red \<equiv> reduce fi"
+abbreviation "t_eq \<equiv> term_eq fi"
+notation "red" ("_ \<rightarrow>\<^sub>t _")
+notation t_eq ("_ =\<^sub>t _")
 
 text \<open>When an interpretation is normalising, equality becomes decidable by inside-out reduction.\<close>  
   fun normalise_term::"'sym term \<Rightarrow> 'sym term" where
@@ -233,7 +250,7 @@ text \<open>When an interpretation is normalising, equality becomes decidable by
     next
       fix t' as'
       assume a: "t' = Fun f as'"
-             "list_all2 (\<rightarrow>\<^sub>t) as as'"
+             "list_all2 (red) as as'"
       from Fun(3)
       have "list_all (nf_term fi) as" by (cases rule: nf_term.cases) auto
       from a(2) Fun(1) this
@@ -245,7 +262,7 @@ text \<open>When an interpretation is normalising, equality becomes decidable by
   qed
 
   lemma nf_cannot_reduce_trans: 
-    assumes "((\<rightarrow>\<^sub>t)\<^sup>*\<^sup>*) t t'"
+    assumes "((red)\<^sup>*\<^sup>*) t t'"
         and "nf_term fi t"
       shows "t = t'"
     using assms
@@ -258,21 +275,21 @@ text \<open>When an interpretation is normalising, equality becomes decidable by
 
 
   text \<open>The normalisation function returns something related to the original term by the 
-        reflexive transitive close of the reduce relation\<close>
-  lemma normalise_in_rtrancl_reduce: "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* t (normalise_term t)"
+        reflexive transitive close of the reduction relation\<close>
+  lemma normalise_in_rtrancl_reduce: "(red)\<^sup>*\<^sup>* t (normalise_term t)"
   proof (induction t)
     case (Sym x)
     then show ?case by simp
   next
     case (Fun f as)
-    have 1: "list_all2 ((\<rightarrow>\<^sub>t)\<^sup>*\<^sup>*) as (map normalise_term as)" 
+    have 1: "list_all2 ((red)\<^sup>*\<^sup>*) as (map normalise_term as)" 
       using Fun.IH by (induction as, auto)
     from this[THEN list_all2_rtranclp', OF reflpI]
-      have "(list_all2 (\<rightarrow>\<^sub>t))\<^sup>*\<^sup>* as (map normalise_term as)" by (auto simp: refl)
+      have "(list_all2 (red))\<^sup>*\<^sup>* as (map normalise_term as)" by (auto simp: refl)
     from rtranclp_mono_rel[OF this, where F = "\<lambda>x. [Fun f x]", 
           simplified list_all2_singleton, OF reduce.app, 
           THEN list_all2_rtranclp, simplified list_all2_singleton]
-    have 2: "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* (Fun f as) (Fun f (map normalise_term as))" by simp
+    have 2: "(red)\<^sup>*\<^sup>* (Fun f as) (Fun f (map normalise_term as))" by simp
     show ?case 
     proof (cases "fi (Fun f (map normalise_term as))")
       case None
@@ -325,19 +342,20 @@ text \<open>When an interpretation is normalising, equality becomes decidable by
     using assms
   proof (induction arbitrary: t'' rule: reduce.induct)
     case (refl t)
-    then show ?case using reduce.refl[of t''] by blast
+    then show ?case using reduce.refl[of fi t''] by blast
   next
     case (step t1 t2)
     obtain f as where
       t1: "t1 = Fun f as"
       using step(1)
-      by (cases rule: n_fiE[OF nf], auto)
+      by (cases rule: n_fiE[OF nf]) auto
 
     from step(1)[simplified t1] 
-    have as_nf: "list_all (nf_term fi) as"
+    consider  "list_all (nf_term fi) as" | "(\<forall>as'. list_all2 (red) as as' \<longrightarrow> Fun f as' \<rightarrow>\<^sub>t t2)"
       by (cases rule: n_fi.cases[OF nf]) auto
-    
-    have t'': "t'' = t1 \<or> t'' = t2"
+    note inner_red = this
+
+    (* have t'': "t'' = t1 \<or> t'' = t2"
     proof (cases rule: reduce_funE[OF step(2)[simplified t1]])
       case 1
       then show ?thesis using t1 by simp
@@ -350,15 +368,22 @@ text \<open>When an interpretation is normalising, equality becomes decidable by
         by simp
     next
       case (3 as')
-      from this(2)
-      have "as' = as"
-        using as_nf nf_cannot_reduce
-        by (induction rule: list_all2_induct) auto
-      with t1 3
-      show ?thesis by simp
-    qed
-    show ?case 
-    proof (cases rule: disjE[OF t''])
+      show ?thesis
+      proof (cases rule: inner_red)
+        case 1
+        from 3(2) this
+        have "as = as'"
+          apply (subst list_all2_eq)
+          by (induction rule: list_all2_induct, auto intro: nf_cannot_reduce)
+        with t1 3(1)
+        show ?thesis by argo 
+      next
+        case 2
+        then show ?thesis using 3 
+      qed
+    qed *)
+    show ?case sorry
+    (* proof (cases rule: disjE[OF t''])
       case 1
       show ?thesis
         using step
@@ -373,10 +398,10 @@ text \<open>When an interpretation is normalising, equality becomes decidable by
         apply (subst 2)
         using refl[of t2]
         by auto
-    qed
+    qed *)
   next
     case (app as as' f)
-    have as_as': "list_all2 (\<rightarrow>\<^sub>t) as as'"
+    have as_as': "list_all2 (red) as as'"
       using app(1) 
       using app(1) by (induction rule: list_all2_induct) auto
     then have t': "Fun f as \<rightarrow>\<^sub>t Fun f as'"
@@ -386,7 +411,7 @@ text \<open>When an interpretation is normalising, equality becomes decidable by
     proof (cases rule: reduce_funE[OF app(2)])
       case 1
       with t'
-      show ?thesis using refl[of "Fun f as'"] by auto
+      show ?thesis using refl[of fi "Fun f as'"] by auto
     next
       case 2
       then have "list_all (nf_term fi) as"
@@ -399,7 +424,7 @@ text \<open>When an interpretation is normalising, equality becomes decidable by
         by (auto dest: nf_cannot_reduce)
       with app(2)
       have "Fun f as' \<rightarrow>\<^sub>t t''" "t'' \<rightarrow>\<^sub>t t''"
-        using refl by simp+
+        using refl[of fi] by simp+
       then show ?thesis by blast
     next
       case (3 as'')
