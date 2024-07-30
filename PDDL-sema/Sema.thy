@@ -4,6 +4,15 @@ theory Sema
   Util
 begin
 
+
+(* Symbols represent one value, which can be determined independently of the state. 
+    We cannot directly parse these, because objects and functions (in terms) are just strings.
+    Therefore, these only occur after we have checked the function and object type declarations
+    for well-formedness and disambiguated terms. *)
+datatype instant_symbol = Var variable | Const object | Num rat
+datatype symbol = Var variable | Const object | Num rat | Duration
+
+
 definition "index_by f l \<equiv> map_of (map (\<lambda>x. (f x,x)) l)"
 
 lemma index_by_eq_Some_eq[simp]:

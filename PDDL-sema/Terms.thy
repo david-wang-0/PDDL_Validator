@@ -162,15 +162,20 @@ begin
     subgoal by (auto simp: Nitpick.rtranclp_unfold intro: refl)
     done
   
-  inductive n_fi::"bool"
-        and nf_term::"'sym term \<Rightarrow> bool" where
+inductive n_fi::"bool"
+      and n_asmt::"'sym term \<Rightarrow> 'sym term \<Rightarrow> bool"
+      and nf_term::"'sym term \<Rightarrow> bool" where
     int_normalising: "\<lbrakk>\<not>(\<exists>obj. Sym obj \<in> dom fi); 
-        \<forall>(l, r) \<in> Map.graph fi. \<exists>f as. (Fun f as = l \<and> ((list_all nf_term as) \<or> (\<forall>as'. list_all2 (\<rightarrow>\<^sub>t) as as' \<longrightarrow> Fun f as' \<rightarrow>\<^sub>t r))) \<and> nf_term r\<rbrakk> \<Longrightarrow> n_fi"
-  | sym_normal: "n_fi \<Longrightarrow> nf_term  (Sym s)"
+        \<forall>(l, r) \<in> Map.graph fi. n_asmt l r\<rbrakk> 
+          \<Longrightarrow> n_fi"
+  | asmt_is_final: "list_all nf_term as \<Longrightarrow> nf_term r \<Longrightarrow> n_asmt (Fun f as) r"
+  | any_asmt: "(\<forall>as'. list_all2 (\<rightarrow>\<^sub>t) as as' \<longrightarrow> Fun f as' \<rightarrow>\<^sub>t r) \<Longrightarrow> nf_term r \<Longrightarrow> n_asmt (Fun f as) r"
+  | sym_normal: "n_fi \<Longrightarrow> nf_term (Sym s)"
   | fun_normal: "\<lbrakk>n_fi; list_all nf_term as; fi (Fun f as) = None\<rbrakk> 
       \<Longrightarrow> nf_term (Fun f as)"
 
 inductive_cases n_fiE: "n_fi"
+inductive_cases n_asmtE: "n_asmt l r"
 end
 
 context
@@ -181,6 +186,10 @@ abbreviation "red \<equiv> reduce fi"
 abbreviation "t_eq \<equiv> term_eq fi"
 notation "red" ("_ \<rightarrow>\<^sub>t _")
 notation t_eq ("_ =\<^sub>t _")
+
+thm n_asmtE[of fi]
+
+lemmas red_funE = reduce_funE[of fi]
 
 text \<open>When an interpretation is normalising, equality becomes decidable by inside-out reduction.\<close>  
   fun normalise_term::"'sym term \<Rightarrow> 'sym term" where
@@ -221,6 +230,7 @@ text \<open>When an interpretation is normalising, equality becomes decidable by
     apply (drule nf_cannot_reduce')
     by simp
 
+
   text \<open>If a term is in normal form, it can only reduce to itself.\<close>
   lemma nf_cannot_reduce: 
     assumes "t \<rightarrow>\<^sub>t t'"
@@ -240,7 +250,7 @@ text \<open>When an interpretation is normalising, equality becomes decidable by
   next
     case (Fun f as)
     show ?case
-    proof (cases rule: reduce_funE[OF Fun(2)])
+    proof (cases rule: red_funE[OF Fun(2)])
       case 1
       then show ?thesis by simp
     next
@@ -248,9 +258,9 @@ text \<open>When an interpretation is normalising, equality becomes decidable by
       with Fun(3)
       show ?thesis using nf_term_not_fst by simp
     next
-      fix t' as'
+      fix as'
       assume a: "t' = Fun f as'"
-             "list_all2 (red) as as'"
+             "list_all2 red as as'"
       from Fun(3)
       have "list_all (nf_term fi) as" by (cases rule: nf_term.cases) auto
       from a(2) Fun(1) this
@@ -262,7 +272,7 @@ text \<open>When an interpretation is normalising, equality becomes decidable by
   qed
 
   lemma nf_cannot_reduce_trans: 
-    assumes "((red)\<^sup>*\<^sup>*) t t'"
+    assumes "(red\<^sup>*\<^sup>*) t t'"
         and "nf_term fi t"
       shows "t = t'"
     using assms
@@ -276,20 +286,20 @@ text \<open>When an interpretation is normalising, equality becomes decidable by
 
   text \<open>The normalisation function returns something related to the original term by the 
         reflexive transitive close of the reduction relation\<close>
-  lemma normalise_in_rtrancl_reduce: "(red)\<^sup>*\<^sup>* t (normalise_term t)"
+  lemma normalise_in_rtrancl_reduce: "red\<^sup>*\<^sup>* t (normalise_term t)"
   proof (induction t)
     case (Sym x)
     then show ?case by simp
   next
     case (Fun f as)
-    have 1: "list_all2 ((red)\<^sup>*\<^sup>*) as (map normalise_term as)" 
+    have 1: "list_all2 (red\<^sup>*\<^sup>*) as (map normalise_term as)" 
       using Fun.IH by (induction as, auto)
     from this[THEN list_all2_rtranclp', OF reflpI]
-      have "(list_all2 (red))\<^sup>*\<^sup>* as (map normalise_term as)" by (auto simp: refl)
+      have "(list_all2 red)\<^sup>*\<^sup>* as (map normalise_term as)" by (auto simp: refl)
     from rtranclp_mono_rel[OF this, where F = "\<lambda>x. [Fun f x]", 
           simplified list_all2_singleton, OF reduce.app, 
           THEN list_all2_rtranclp, simplified list_all2_singleton]
-    have 2: "(red)\<^sup>*\<^sup>* (Fun f as) (Fun f (map normalise_term as))" by simp
+    have 2: "red\<^sup>*\<^sup>* (Fun f as) (Fun f (map normalise_term as))" by simp
     show ?case 
     proof (cases "fi (Fun f (map normalise_term as))")
       case None
@@ -325,8 +335,9 @@ text \<open>When an interpretation is normalising, equality becomes decidable by
       case (Some a)
       have "nf_term fi a"
         apply (cases rule: n_fi.cases[OF nf])
-        using Some in_graphI[where m = fi]
-        by fast
+        apply (drule bspec[OF _ in_graphI[where m = fi, OF Some]])
+        apply (cases rule: n_asmtE[of fi])
+        by auto
       moreover
       from Some
       have "normalise_term (Fun f as) = a" by simp
@@ -348,14 +359,19 @@ text \<open>When an interpretation is normalising, equality becomes decidable by
     obtain f as where
       t1: "t1 = Fun f as"
       using step(1)
-      by (cases rule: n_fiE[OF nf]) auto
+      apply (cases rule: n_fiE[OF nf])
+      apply (cases rule: n_asmt.cases[of fi])
+      by auto
 
     from step(1)[simplified t1] 
-    consider  "list_all (nf_term fi) as" | "(\<forall>as'. list_all2 (red) as as' \<longrightarrow> Fun f as' \<rightarrow>\<^sub>t t2)"
-      by (cases rule: n_fi.cases[OF nf]) auto
+    consider  "list_all (nf_term fi) as" | "(\<forall>as'. list_all2 red as as' \<longrightarrow> Fun f as' \<rightarrow>\<^sub>t t2)"
+      apply (cases rule: n_fi.cases[OF nf]) 
+      apply (drule bspec, assumption)
+      apply (cases rule: n_asmt.cases[of fi])
+      by auto
     note inner_red = this
 
-    (* have t'': "t'' = t1 \<or> t'' = t2"
+    have t'': "t'' = t1 \<or> t'' = t2 \<or> (\<exists>as'. list_all2 red as as' \<and> Fun f as' \<rightarrow>\<^sub>t t2 \<and> t'' = Fun f as')"
     proof (cases rule: reduce_funE[OF step(2)[simplified t1]])
       case 1
       then show ?thesis using t1 by simp
@@ -379,53 +395,64 @@ text \<open>When an interpretation is normalising, equality becomes decidable by
         show ?thesis by argo 
       next
         case 2
-        then show ?thesis using 3 
+        then show ?thesis using 3 by blast
       qed
-    qed *)
-    show ?case sorry
-    (* proof (cases rule: disjE[OF t''])
+    qed
+    then consider "t'' = t1" | "t'' = t2" | "(\<exists>as'. list_all2 local.red as as' \<and> Fun f as' \<rightarrow>\<^sub>t t2 \<and> t'' = Fun f as')" by auto
+    then show ?case
+    proof cases
       case 1
       show ?thesis
         using step
         apply (subst 1)
         apply (subst (asm) 1)
         apply (drule reduce.step)
-        apply (insert refl[of t2])
+        apply (insert refl[of fi t2])
         by auto
     next
       case 2
       show ?thesis
         apply (subst 2)
-        using refl[of t2]
+        using refl[of fi t2]
         by auto
-    qed *)
+    next
+      case 3
+      show ?thesis
+        using 3 refl[of fi t2]
+        by blast
+    qed 
   next
     case (app as as' f)
-    have as_as': "list_all2 (red) as as'"
+    have as_as': "list_all2 red as as'"
       using app(1) 
       using app(1) by (induction rule: list_all2_induct) auto
     then have t': "Fun f as \<rightarrow>\<^sub>t Fun f as'"
       by (rule reduce.app)
       
-    show ?case 
-    proof (cases rule: reduce_funE[OF app(2)])
+    show ?case
+    proof (cases rule: red_funE[OF app(2)])
       case 1
       with t'
       show ?thesis using refl[of fi "Fun f as'"] by auto
     next
       case 2
-      then have "list_all (nf_term fi) as"
+      with as_as' 
+      consider "list_all (nf_term fi) as" | "(Fun f as' \<rightarrow>\<^sub>t t'')"
         apply (cases rule: n_fi.cases[OF nf])
-        by auto
-      with as_as'
-      have "as = as'"
-        apply (subst list_all2_eq)
-        apply (induction rule: list_all2_induct)
-        by (auto dest: nf_cannot_reduce)
-      with app(2)
-      have "Fun f as' \<rightarrow>\<^sub>t t''" "t'' \<rightarrow>\<^sub>t t''"
-        using refl[of fi] by simp+
-      then show ?thesis by blast
+        by (cases rule: n_asmt.cases[of fi]) auto
+      then show ?thesis 
+      proof cases
+        case 1
+        with as_as' 
+        have "as = as'"
+          by (induction rule: list_all2_induct) (auto intro: nf_cannot_reduce simp: list_all2_eq)
+        then show ?thesis 
+          using reduce.step[OF 2] reduce.refl[of fi t'']
+          by blast
+      next
+        case 2
+        then show ?thesis using reduce.refl[of fi t''] by blast
+      qed
     next
       case (3 as'')
       from app.IH
@@ -445,7 +472,7 @@ text \<open>When an interpretation is normalising, equality becomes decidable by
       then have "list_all2 (\<lambda>x y. \<exists>t. x \<rightarrow>\<^sub>t t \<and> y \<rightarrow>\<^sub>t t) as' as''" 
         apply (subst list_all2_conv_all_nth)
         by blast
-      then have "\<exists>as'''. list_all2 (\<rightarrow>\<^sub>t) as' as''' \<and> list_all2 (\<rightarrow>\<^sub>t) as'' as'''"
+      then have "\<exists>as'''. list_all2 (red) as' as''' \<and> list_all2 (red) as'' as'''"
         by (induction rule: list_all2_induct) auto
       then obtain as''' where
         "Fun f as' \<rightarrow>\<^sub>t Fun f as'''"
@@ -457,9 +484,9 @@ text \<open>When an interpretation is normalising, equality becomes decidable by
     qed
 
 lemma reduce_rtrancl_confluent':
-  assumes "((\<rightarrow>\<^sub>t)\<^sup>*\<^sup>*) t t'"
+  assumes "(red\<^sup>*\<^sup>*) t t'"
           "t \<rightarrow>\<^sub>t t''"
-    shows "\<exists>t'''. t' \<rightarrow>\<^sub>t t''' \<and> ((\<rightarrow>\<^sub>t)\<^sup>*\<^sup>*) t'' t'''"
+    shows "\<exists>t'''. t' \<rightarrow>\<^sub>t t''' \<and> (red\<^sup>*\<^sup>*) t'' t'''"
   using assms
 proof (induction arbitrary: t'' rule: rtranclp_induct)
   case base
@@ -467,7 +494,7 @@ proof (induction arbitrary: t'' rule: rtranclp_induct)
 next
   case (step y z)
   then obtain t''' where
-    t''': "y \<rightarrow>\<^sub>t t'''" "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* t'' t'''" by blast
+    t''': "y \<rightarrow>\<^sub>t t'''" "red\<^sup>*\<^sup>* t'' t'''" by blast
   from reduce_confluent[OF this(1) step(2)]
   obtain a where
     "t''' \<rightarrow>\<^sub>t a" "z \<rightarrow>\<^sub>t a" by blast
@@ -476,9 +503,9 @@ next
 qed
 
 lemma reduce_rtrancl_confluent: 
-  assumes "((\<rightarrow>\<^sub>t)\<^sup>*\<^sup>*) t t'"
-          "((\<rightarrow>\<^sub>t)\<^sup>*\<^sup>*) t t''"
-    shows "\<exists>t'''.((\<rightarrow>\<^sub>t)\<^sup>*\<^sup>*) t' t''' \<and> ((\<rightarrow>\<^sub>t)\<^sup>*\<^sup>*) t'' t'''"
+  assumes "(red\<^sup>*\<^sup>*) t t'"
+          "(red\<^sup>*\<^sup>*) t t''"
+    shows "\<exists>t'''.(red\<^sup>*\<^sup>*) t' t''' \<and> (red\<^sup>*\<^sup>*) t'' t'''"
   using assms
 proof (induction arbitrary: t'' rule: rtranclp_induct)
   case base
@@ -488,26 +515,26 @@ proof (induction arbitrary: t'' rule: rtranclp_induct)
 next
   case (step y z)
   then obtain t''' where
-    t''': "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* y t'''" "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* t'' t'''"
+    t''': "red\<^sup>*\<^sup>* y t'''" "red\<^sup>*\<^sup>* t'' t'''"
     by blast
   from reduce_rtrancl_confluent'[OF this(1) step(2)]
   obtain a where
     "t''' \<rightarrow>\<^sub>t a" 
-    "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* z a" by blast
+    "red\<^sup>*\<^sup>* z a" by blast
   from rtranclp.rtrancl_into_rtrancl[OF t'''(2) this(1)] this(2)
   show ?case by auto
 qed
   
 
   lemma unique_nf: 
-    assumes t': "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* t t'" "nf_term fi t'" 
-        and t'': "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* t t''" "nf_term fi t''" 
+    assumes t': "red\<^sup>*\<^sup>* t t'" "nf_term fi t'" 
+        and t'': "red\<^sup>*\<^sup>* t t''" "nf_term fi t''" 
     shows "t'' = t'"
   proof -
     from t'(1) t''(1)
     obtain t''' where
-      "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* t' t'''"
-      "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* t'' t'''"
+      "red\<^sup>*\<^sup>* t' t'''"
+      "red\<^sup>*\<^sup>* t'' t'''"
       using reduce_rtrancl_confluent by blast
     with t'(2) t''(2)
     have "t' = t'''"
@@ -517,8 +544,8 @@ qed
   
   theorem decidable_eq_correct: "a =\<^sub>t b \<longleftrightarrow> check_eq a b"
   proof (rule iffI)
-    assume a: "term_eq a b"
-    then have "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* a (normalise_term b) \<or> (\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* b (normalise_term a)"
+    assume a: "t_eq a b"
+    then have "red\<^sup>*\<^sup>* a (normalise_term b) \<or> red\<^sup>*\<^sup>* b (normalise_term a)"
     proof (induction rule: equivclp_induct)
       case base
       then show ?case using normalise_in_rtrancl_reduce by simp
@@ -526,40 +553,40 @@ qed
       case (step y z)
       from step consider "y \<rightarrow>\<^sub>t z" | "z \<rightarrow>\<^sub>t y" by auto
       note 1 = this
-      from step consider "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* a (normalise_term y)" | "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* y (normalise_term a)" by auto
+      from step consider "red\<^sup>*\<^sup>* a (normalise_term y)" | "red\<^sup>*\<^sup>* y (normalise_term a)" by auto
       note 2 = this
       then show ?case 
       proof (cases rule: 1)
         assume yz: "y \<rightarrow>\<^sub>t z"
         then
-        have yz': "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* y z" by blast
+        have yz': "red\<^sup>*\<^sup>* y z" by blast
         show ?thesis 
         proof (cases rule: 2)
-          assume ay: "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* a (normalise_term y)"
-          have "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* y (normalise_term y)" using normalise_in_rtrancl_reduce by simp
+          assume ay: "red\<^sup>*\<^sup>* a (normalise_term y)"
+          have "red\<^sup>*\<^sup>* y (normalise_term y)" using normalise_in_rtrancl_reduce by simp
           with yz'
-          have "\<exists>y'. (\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* (normalise_term y) y' \<and> (\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* z y'" using reduce_rtrancl_confluent by blast
-          hence "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* z (normalise_term y)" using nf_cannot_reduce_trans normalise_nf[of y] by blast
+          have "\<exists>y'. red\<^sup>*\<^sup>* (normalise_term y) y' \<and> red\<^sup>*\<^sup>* z y'" using reduce_rtrancl_confluent by blast
+          hence "red\<^sup>*\<^sup>* z (normalise_term y)" using nf_cannot_reduce_trans normalise_nf[of y] by blast
           with normalise_in_rtrancl_reduce[of z]
-          have "\<exists>y'. (\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* (normalise_term y) y' \<and> (\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* (normalise_term z) y'" using reduce_rtrancl_confluent by blast
+          have "\<exists>y'. red\<^sup>*\<^sup>* (normalise_term y) y' \<and> red\<^sup>*\<^sup>* (normalise_term z) y'" using reduce_rtrancl_confluent by blast
           hence "normalise_term y = normalise_term z" using nf_cannot_reduce_trans normalise_nf[of z] normalise_nf[of y] by blast
           with ay
           show ?thesis by simp
         next
-          assume ya: "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* y (normalise_term a)"
+          assume ya: "red\<^sup>*\<^sup>* y (normalise_term a)"
           with yz'
-          have "\<exists>z'. (\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* (normalise_term a) z' \<and> (\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* z z'" using reduce_rtrancl_confluent by blast
+          have "\<exists>z'. red\<^sup>*\<^sup>* (normalise_term a) z' \<and> red\<^sup>*\<^sup>* z z'" using reduce_rtrancl_confluent by blast
           then
           show ?thesis using nf_cannot_reduce_trans[OF _ normalise_nf[of a]] by blast
         qed
       next
         assume zy: "z \<rightarrow>\<^sub>t y"
-        then have zy': "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* z y" by blast
+        then have zy': "red\<^sup>*\<^sup>* z y" by blast
         show ?thesis
         proof (cases rule: 2)
-          assume ay: "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* a (normalise_term y)"
+          assume ay: "red\<^sup>*\<^sup>* a (normalise_term y)"
           from zy' normalise_in_rtrancl_reduce[of y]
-          have "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* z (normalise_term y)" using rtranclp_trans by simp
+          have "red\<^sup>*\<^sup>* z (normalise_term y)" using rtranclp_trans by simp
           from reduce_rtrancl_confluent[OF this normalise_in_rtrancl_reduce[of z]]
           have "normalise_term z = normalise_term y" 
             using nf_cannot_reduce_trans[OF _ normalise_nf[of z]] nf_cannot_reduce_trans[OF _ normalise_nf[of y]] 
@@ -567,26 +594,26 @@ qed
           with ay
           show ?thesis by simp
         next
-          assume ya: "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* y (normalise_term a)"
+          assume ya: "red\<^sup>*\<^sup>* y (normalise_term a)"
           from rtranclp_trans[OF zy' this]
           show ?thesis by simp
         qed
       qed
     qed
     then 
-    consider "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* a (normalise_term b)" | "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* b (normalise_term a)" by blast
+    consider "red\<^sup>*\<^sup>* a (normalise_term b)" | "red\<^sup>*\<^sup>* b (normalise_term a)" by blast
     then have "normalise_term a = normalise_term b"
     proof cases
-      assume ab: "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* a (normalise_term b)"
+      assume ab: "red\<^sup>*\<^sup>* a (normalise_term b)"
       from normalise_in_rtrancl_reduce[of a]
-      have "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* a (normalise_term a)" .
+      have "red\<^sup>*\<^sup>* a (normalise_term a)" .
       from reduce_rtrancl_confluent[OF ab this]
       show "normalise_term a = normalise_term b" 
         using nf_cannot_reduce_trans[OF _ normalise_nf] by blast
     next
-      assume ba: "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* b (normalise_term a)"
+      assume ba: "red\<^sup>*\<^sup>* b (normalise_term a)"
       from normalise_in_rtrancl_reduce[of b]
-      have "(\<rightarrow>\<^sub>t)\<^sup>*\<^sup>* b (normalise_term b)" .
+      have "red\<^sup>*\<^sup>* b (normalise_term b)" .
       from reduce_rtrancl_confluent[OF ba this]
       show "normalise_term a = normalise_term b" 
         using nf_cannot_reduce_trans[OF _ normalise_nf] by blast
