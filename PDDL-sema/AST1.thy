@@ -41,7 +41,7 @@ datatype metric_f_exp =
   | IsViolated pref
  *)
   
-type_synonym name = String.literal
+type_synonym name = string
 
 type_synonym pred = name
 type_synonym func = name
@@ -138,16 +138,14 @@ datatype ('x, 'ent) durative_effect =
 | DEff_All 'x "('x, 'ent) durative_effect"
 | DEff_When "('x, 'ent atom) da_GD" "'ent timed_effect"
   
-datatype ('t) simple_action = Simple_Action
-  (name: name)
-  (parameters: "(variable \<times> type) list")
+datatype ('t) simple_action_body = Simple_Action_Body
   (precondition: "((variable \<times> type) list, 't atom) pre_GD")
   (effect: "((variable \<times> type) list, 't) effect option")
 
 type_synonym ast_pre_GD = "((variable \<times> type) list, var_num term atom) pre_GD"
 type_synonym ast_simple_effect = "((variable \<times> type) list, var_num term) effect"
 
-type_synonym ast_simple_action = "var_num term simple_action"
+type_synonym ast_simple_action_body = "var_num term simple_action_body"
 
 type_synonym ast_simple_duration_constraint = "var_num_dur term atom"
 
@@ -161,24 +159,26 @@ type_synonym ast_duration_constraint = "var_num_dur duration_constraint"
 type_synonym ast_da_GD = "((variable \<times> type) list, var_num term atom) da_GD"
 type_synonym ast_durative_effect = "((variable \<times> type) list, var_num_dur term) durative_effect"
 
-datatype ast_durative_action = 
-  Durative_Action 
-    (name: name)
+datatype ast_durative_action_body = DA_Body 
     (duration: "ast_duration_constraint list")
-    (parameters: "(variable \<times> type) list")
     (condition: "ast_da_GD")
     (effect: "ast_durative_effect")
+  
 
+datatype ast_action_body = 
+  SA "ast_simple_action_body"
+  | DA "ast_durative_action_body"
 
 datatype ast_action = 
-  SA "ast_simple_action"
-  | DA "ast_durative_action"
+  Action (name: name)
+    (parameters: "(variable \<times> type) list") 
+    (body: ast_action_body)
 
 datatype pred_decl = PredDecl
   (predicate: pred)
   (argTs: "type list")
 
-datatype fun_decl = FunDecl (of_name: func) "type list" type
+datatype fun_decl = FunDecl (f_name: func) "type list" type
 
 datatype derived_pred = 
   DerivedPred pred (params: "(variable \<times> type) list") ast_pre_GD
@@ -189,7 +189,7 @@ datatype ast_domain = Domain
   (preds: "pred_decl list")
   (funs: "fun_decl list")
   (actions: "ast_action list")
-  (derived: "derived_pred list")
+(*   (derived: "derived_pred list") *)
 (*   (constraints: "constraint list") *)
 
 datatype init_asmt = 

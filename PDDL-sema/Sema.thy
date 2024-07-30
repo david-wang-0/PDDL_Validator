@@ -5,13 +5,6 @@ theory Sema
 begin
 
 
-(* Symbols represent one value, which can be determined independently of the state. 
-    We cannot directly parse these, because objects and functions (in terms) are just strings.
-    Therefore, these only occur after we have checked the function and object type declarations
-    for well-formedness and disambiguated terms. *)
-datatype instant_symbol = Var variable | Const object | Num rat
-datatype symbol = Var variable | Const object | Num rat | Duration
-
 
 definition "index_by f l \<equiv> map_of (map (\<lambda>x. (f x,x)) l)"
 
@@ -42,8 +35,10 @@ lemma rtrancl_image_idem[simp]: "R\<^sup>* `` R\<^sup>* `` s = R\<^sup>* `` s"
 
 
 fun ty_sym::"(variable \<Rightarrow> type option) \<Rightarrow> (object \<Rightarrow> type option) \<Rightarrow> symbol \<Rightarrow> type option" where
-  "ty_sym varT objT (Var v) = varT v"
-| "ty_sym varT objT (Const c) = objT c"
+  "ty_sym varT objT (symbol.Var v) = varT v"
+| "ty_sym varT objT (symbol.Const c) = objT c"
+| "ty_sym varT objT (symbol.Num v) = Some Number"
+| "ty_sym varT objT symbol.Duration = Some Number"
 
 lemma ty_sym_mono: "varT \<subseteq>\<^sub>m varT' \<Longrightarrow> objT \<subseteq>\<^sub>m objT' \<Longrightarrow>
   ty_sym varT objT \<subseteq>\<^sub>m ty_sym varT' objT'"
@@ -54,19 +49,85 @@ lemma ty_sym_mono: "varT \<subseteq>\<^sub>m varT' \<Longrightarrow> objT \<subs
     done
   done
 
-type_synonym simple_action_schema = "symbol term simple_action"
-type_synonym durative_action_schema = "symbol term durative_action"
 
+type_synonym simple_action_schema = "symbol term simple_action"
+
+datatype durative_action_schema =
+  DA_Schema name "symbol duration_constraint"
+  "(variable \<times> type) list"
+  "((variable \<times> type) list, instant_symbol term) da_GD"
+  "((variable \<times> type) list, symbol term) durative_effect"
+
+section \<open>Well-formedness\<close>
 locale ast_domain =
   fixes D::ast_domain
 begin
 
+  definition constT :: "object \<rightharpoonup> type" where
+    "constT \<equiv> map_of (consts D)"
+
+  find_theorems name: "literal*rep"
+             
+  text \<open>An object is not a number.\<close>
+  fun wf_obj_type where
+    "wf_obj_type (Either Ts) \<longleftrightarrow> set Ts \<subseteq> insert (''object'') (fst`set (types D))"
+  | "wf_obj_type Number = False"
+
+  text \<open>Predicates cannot be defined with numeric parameters.\<close>
+  fun wf_pred_decl where
+    "wf_pred_decl (PredDecl p Ts) \<longleftrightarrow> (\<forall>T\<in>set Ts. wf_obj_type T)"
+
+  text \<open>Return types are numbers or sum types.\<close>
+  fun wf_return_type where
+    "wf_return_type (Either Ts) \<longleftrightarrow> set Ts \<subseteq> insert (''object'') (fst`set (types D))"
+  | "wf_return_type Number = True"
+
+  text \<open>It is only possible to inherit from a declared type or object. It is not
+        possible to inherit from number.\<close>
+  definition "wf_types \<equiv> snd`set (types D) \<subseteq> insert ''object'' (fst`set (types D)) \<and> (''number'' \<notin> fst ` set (types D))"
+
+  text \<open>An action schema is well-formed if the parameter names are distinct,
+    and the precondition and effect is well-formed wrt. the parameters.
+  \<close>
+  fun wf_action_schema :: "ast_action \<Rightarrow> bool" where
+    "wf_action_schema (AST_Action n p body) \<longleftrightarrow> (
+        let tyt = ty_term (ty_sym (map_of params) objT)
+        in
+        distinct (map fst params)
+      \<and> wf_fmla tyt pre
+      \<and> wf_cond_effect_list tyt effs)"
+
+  text \<open>The declarations in a domain are well-formed if 
+    \<^item> Types are well-formed,
+    \<^item> No duplicate predicate names,
+    \<^item> No ambiguous fluent/constant declarations
+    \<^item> Declared predicates only apply to numbers
+    \<^item> Constants are not numeric
+    \<^item> Actions are distinctly named
+    \<^item> Actions are well-formed.\<close>
+
+  definition wf_domain :: "bool" where
+    "wf_domain \<equiv>
+      wf_types
+    \<and> distinct (map (pred_decl.predicate) (preds D))
+    \<and> distinct (map f_name (funs D) @ (map (obj_name o fst) (consts D)))
+    \<and> (\<forall>p\<in>set (preds D). wf_pred_decl p)
+    \<and> (\<forall>(c, T) \<in> set (consts D). wf_obj_type T)
+    \<and> distinct (map ast_action.name (actions D))
+    \<and> (\<forall>a\<in>set (actions D). wf_action_schema a)"
+
+definition wf_domain::"ast_domain \<Rightarrow> bool" where
+  "wf_domain \<equiv> wf_types t"
+
 fun filter_map::"('a \<Rightarrow> 'b option) \<Rightarrow> 'a list \<Rightarrow> 'b list" where
   "filter_map f [] = []"
 | "filter_map f (a#as) = (case f a of Some b \<Rightarrow> (b # (filter_map f as)) | None \<Rightarrow> filter_map f as)"
+end
+
+context ast_domain
+begin
 
 definition "obj_fun_names = set (map of_name (ofs D))"
-definition "num_fun_names = set (map nf_name (nfs D))"
 definition "obj_names = set (map (obj_name o fst) (consts D))"
 
 fun disambiguate_term::"variable term \<Rightarrow> symbol term" where
