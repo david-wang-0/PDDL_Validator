@@ -47,7 +47,14 @@ type_synonym pred = name
 type_synonym func = name
 type_synonym pref = name
 
-datatype type = Either (primitives: "name list") | Number
+
+datatype type = Either "name list" | Number
+
+fun primitives::"type \<Rightarrow> name list" where
+  "primitives (Either ps) = ps"
+| "primitives Number = []"
+
+
 datatype variable = Variable (var_name: name)
 datatype object = name: Object (obj_name: name)
 
@@ -138,7 +145,8 @@ datatype ('x, 'ent) durative_effect =
 | DEff_All 'x "('x, 'ent) durative_effect"
 | DEff_When "('x, 'ent atom) da_GD" "'ent timed_effect"
   
-datatype ('t) simple_action_body = Simple_Action_Body
+datatype ('t) simple_action_body = 
+  Simple_Action_Body
   (precondition: "((variable \<times> type) list, 't atom) pre_GD")
   (effect: "((variable \<times> type) list, 't) effect option")
 
@@ -146,8 +154,6 @@ type_synonym ast_pre_GD = "((variable \<times> type) list, var_num term atom) pr
 type_synonym ast_simple_effect = "((variable \<times> type) list, var_num term) effect"
 
 type_synonym ast_simple_action_body = "var_num term simple_action_body"
-
-type_synonym ast_simple_duration_constraint = "var_num_dur term atom"
 
 datatype 't timed_atom =
   AtStart "'t atom"
@@ -159,20 +165,24 @@ type_synonym ast_duration_constraint = "var_num_dur duration_constraint"
 type_synonym ast_da_GD = "((variable \<times> type) list, var_num term atom) da_GD"
 type_synonym ast_durative_effect = "((variable \<times> type) list, var_num_dur term) durative_effect"
 
-datatype ast_durative_action_body = DA_Body 
+datatype ast_durative_action_body = 
+  DA_Body 
     (duration: "ast_duration_constraint list")
     (condition: "ast_da_GD")
     (effect: "ast_durative_effect")
-  
 
-datatype ast_action_body = 
-  SA "ast_simple_action_body"
-  | DA "ast_durative_action_body"
+datatype ('s, 'd) action_body =
+  SA 's
+  | DA 'd
 
-datatype ast_action = 
+type_synonym ast_action_body = "(ast_simple_action_body, ast_durative_action_body) action_body"
+
+datatype 'b action = 
   Action (name: name)
     (parameters: "(variable \<times> type) list") 
-    (body: ast_action_body)
+    (body: 'b)
+
+type_synonym ast_action = "ast_action_body action"
 
 datatype pred_decl = PredDecl
   (predicate: pred)

@@ -294,7 +294,7 @@ begin
     a polymorphic entity type @{typ "'e"} to types. An entity can be
     instantiated by variables or objects later.\<close>
   context
-    fixes ty_ent :: "'ent ty_ent"  \<comment> \<open>Symity's type, None if invalid\<close>
+    fixes ty_ent :: "'ent ty_ent"  \<comment> \<open>Entity's type, None if invalid\<close>
   begin
     
     text \<open>Checks whether an entity has a given type\<close>

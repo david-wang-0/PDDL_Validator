@@ -33,75 +33,230 @@ lemma lookup_zip_idx_eq:
 lemma rtrancl_image_idem[simp]: "R\<^sup>* `` R\<^sup>* `` s = R\<^sup>* `` s"
   by (metis relcomp_Image rtrancl_idemp_self_comp)
 
+context 
+  fixes varT::"variable \<rightharpoonup> type"
+    and objT::"object \<rightharpoonup> type"
+begin
+  fun ty_vn::"var_num \<Rightarrow> type option" where
+    "ty_vn (var_num.Var v) = varT v"
+  | "ty_vn (var_num.Num n) = Some Number"
 
-fun ty_sym::"(variable \<Rightarrow> type option) \<Rightarrow> (object \<Rightarrow> type option) \<Rightarrow> symbol \<Rightarrow> type option" where
-  "ty_sym varT objT (symbol.Var v) = varT v"
-| "ty_sym varT objT (symbol.Const c) = objT c"
-| "ty_sym varT objT (symbol.Num v) = Some Number"
-| "ty_sym varT objT symbol.Duration = Some Number"
+  fun ty_vnd::"var_num_dur \<Rightarrow> type option" where
+    "ty_vnd (var_num_dur.Var v) = varT v"
+  | "ty_vnd (var_num_dur.Num n) = Some Number"
+  | "ty_vnd (var_num_dur.Duration) = Some Number"
 
-lemma ty_sym_mono: "varT \<subseteq>\<^sub>m varT' \<Longrightarrow> objT \<subseteq>\<^sub>m objT' \<Longrightarrow>
-  ty_sym varT objT \<subseteq>\<^sub>m ty_sym varT' objT'"
-  apply (rule map_leI)
-  subgoal for x v
-    apply (cases x)
-    apply (auto dest: map_leD)
-    done
-  done
+  fun ty_isym::"instant_symbol \<Rightarrow> type option" where
+    "ty_isym (instant_symbol.Var v) = varT v"
+  | "ty_isym (instant_symbol.Const c) = objT c"
+  | "ty_isym (instant_symbol.Num n) = Some Number"
 
+  fun ty_sym::"symbol \<Rightarrow> type option" where
+    "ty_sym (symbol.Var v) = varT v"
+  | "ty_sym (symbol.Const c) = objT c"
+  | "ty_sym (symbol.Num v) = Some Number"
+  | "ty_sym symbol.Duration = Some Number"
 
-type_synonym simple_action_schema = "symbol term simple_action"
+  fun ty_ent::"entity \<Rightarrow> type option" where
+    "ty_ent (entity.Const c) = objT c"
+  | "ty_ent (entity.Num n) = Some Number"
+end
+
+fun is_some::"'a option \<Rightarrow> bool" where
+  "is_some (Some _) = True"
+| "is_some None = False"
+
+text \<open>Cleaner type- and well-formedness-checks.\<close>
+context 
+  fixes ty_e::"'a \<rightharpoonup> type"
+    and of_type::"type \<Rightarrow> type \<Rightarrow> bool"
+begin
+  text \<open>Checks whether an entity has a given type\<close>
+  definition is_of_type :: "'a \<Rightarrow> type \<Rightarrow> bool" where
+    "is_of_type v T \<longleftrightarrow> (
+      case ty_e v of
+        Some vT \<Rightarrow> of_type vT T
+      | None \<Rightarrow> False)"
+end
+
+context (* finding the type of terms *)
+  fixes ty_e::"'a \<rightharpoonup> type"
+    and ty_f::"func \<rightharpoonup> (type list \<times> type)" (* need this for executability *)
+    and of_type::"type \<Rightarrow> type \<Rightarrow> bool" 
+begin
+(* well-formedness will anyways recurse, 
+    so separate return types and argument types *)
+
+  fun ty_term::"'a term \<Rightarrow> type option" where
+    "ty_term (Sym a) = ty_e a"
+  | "ty_term (Fun f as) = map_option snd (ty_f f)"
+  
+  fun wf_term::"'a term \<Rightarrow> bool" where
+    "wf_term (Sym a) = is_some (ty_e a)"
+  | "wf_term (Fun f as) = (case (ty_f f) of 
+      Some (Ts, T) \<Rightarrow> list_all2 (is_of_type ty_term of_type) as Ts 
+    | None \<Rightarrow> False)"
+end
+
+context 
+  fixes ty_p::"pred \<rightharpoonup> type list"
+    and ty_t::"'t \<rightharpoonup> type"
+    and wf_t::"(type \<Rightarrow> type \<Rightarrow> bool) \<Rightarrow> 't \<Rightarrow> bool"
+    and of_type::"type \<Rightarrow> type \<Rightarrow> bool"
+begin
+fun wf_atom::"'t atom \<Rightarrow> bool" where
+  "wf_atom (Pred p as) = (case (ty_p p) of 
+    Some Ts \<Rightarrow> 
+      list_all2 (is_of_type ty_t of_type) as Ts 
+      \<and> list_all (wf_t of_type) as
+  | None \<Rightarrow> False)"
+| "wf_atom (Ent_Eq a b) = (wf_t of_type a \<and> wf_t of_type b)"
+| "wf_atom (Num_Lt a b) = (
+    wf_t of_type a \<and> wf_t of_type b 
+    \<and> ty_t a = Some Number \<and> ty_t b = Some Number)"
+| "wf_atom (Num_Le a b) = (
+    wf_t of_type a \<and> wf_t of_type b 
+    \<and> ty_t a = Some Number \<and> ty_t b = Some Number)"
+end
+
+type_synonym simple_action_schema = "symbol term simple_action_body"
 
 datatype durative_action_schema =
-  DA_Schema name "symbol duration_constraint"
-  "(variable \<times> type) list"
+  DA_Schema (duration: "ast_duration_constraint list")
+    (condition: "ast_da_GD")
+    (effect: "ast_durative_effect")
   "((variable \<times> type) list, instant_symbol term) da_GD"
   "((variable \<times> type) list, symbol term) durative_effect"
+
+type_synonym action_schema_body = "(simple_action_schema, durative_action_schema) action_body"
+
+type_synonym action_schema = "action_schema_body action"
 
 section \<open>Well-formedness\<close>
 locale ast_domain =
   fixes D::ast_domain
 begin
 
+  fun subtype_edge where
+    "subtype_edge (ty,superty) = (superty,ty)"
+
+  text \<open>We have to think of types as sets of primitive types.
+        The subtype relationship is the relation from every primitive type to
+        its direct subtypes\<close>
+  definition "subtype_rel \<equiv> set (map subtype_edge (types D))"
+
+  definition of_type :: "type \<Rightarrow> type \<Rightarrow> bool" where
+    "of_type oT T \<equiv> set (primitives oT) \<subseteq> subtype_rel\<^sup>* `` set (primitives T)"
+
+
+(* disambiguation of parsed terms *)
+(* var_num to instant_symbol *)
+(* var_num_dur to symbol *)
+
+fun vn_to_is::"var_num \<Rightarrow> instant_symbol" where
+  "vn_to_is (var_num.Num n) = instant_symbol.Num n"
+| "vn_to_is (var_num.Var v) = instant_symbol.Var v"
+
+fun vnd_to_sym::"var_num_dur \<Rightarrow> symbol" where
+  "vnd_to_sym (var_num_dur.Num n) = symbol.Num n"
+| "vnd_to_sym (var_num_dur.Var v) = symbol.Var v"
+| "vnd_to_sym (var_num_dur.Duration) = symbol.Duration"
+
+context
+  fixes is_const::"name \<Rightarrow> bool"
+    and val_map::"'e \<Rightarrow> 'f"
+    and to_const::"name \<Rightarrow> 'f"
+begin
+definition disambiguate_term::"'e term \<Rightarrow> 'f term" where
+  "disambiguate_term t \<equiv> (case (map_term val_map t) of
+    Sym e \<Rightarrow> Sym e
+  | Fun f [] \<Rightarrow> if (is_const f) then Sym (to_const f) else Fun f []
+  | Fun f as \<Rightarrow> Fun f as
+  )"
+end
+
+definition is_obj::"name \<Rightarrow> bool" where
+  "is_obj n \<equiv> n \<in> set (map (obj_name o fst) (consts D))"
+
+abbreviation "ast_instant_term_to_schema \<equiv> disambiguate_term is_obj vn_to_is (instant_symbol.Const o Object)"
+
+abbreviation "ast_durative_term_to_schema \<equiv> disambiguate_term is_obj vnd_to_sym (symbol.Const o Object)"
+
+
+(* symbol to instant_symbol *)
+(* instant_symbol to entity *)
+context (* instantiation of terms *)
+  fixes e::"'a \<Rightarrow> 'b" 
+begin 
+  
+end
+
+fun ast_action_to_action_schema::"ast_action \<Rightarrow> action_schema"
+
+definition action_schemas::"action_schema list" where
+  "action_schemas = actions D"
+
   definition constT :: "object \<rightharpoonup> type" where
     "constT \<equiv> map_of (consts D)"
 
   find_theorems name: "literal*rep"
+
+  text \<open>A type must consist of at least one primitive.\<close>
+  abbreviation "wf_prims Ts \<equiv> Ts \<noteq> [] \<and> set Ts \<subseteq> insert (''object'') (fst`set (types D))"
              
-  text \<open>An object is not a number.\<close>
+  text \<open>An object cannot be a number.\<close>
   fun wf_obj_type where
-    "wf_obj_type (Either Ts) \<longleftrightarrow> set Ts \<subseteq> insert (''object'') (fst`set (types D))"
+    "wf_obj_type (Either Ts) \<longleftrightarrow> wf_prims Ts"
   | "wf_obj_type Number = False"
 
   text \<open>Predicates cannot be defined with numeric parameters.\<close>
   fun wf_pred_decl where
     "wf_pred_decl (PredDecl p Ts) \<longleftrightarrow> (\<forall>T\<in>set Ts. wf_obj_type T)"
 
-  text \<open>Return types are numbers or sum types.\<close>
-  fun wf_return_type where
-    "wf_return_type (Either Ts) \<longleftrightarrow> set Ts \<subseteq> insert (''object'') (fst`set (types D))"
-  | "wf_return_type Number = True"
+  
+  text \<open>Numbers are not invalid types.\<close>
+  fun wf_type where
+    "wf_type (Either Ts) \<longleftrightarrow> wf_prims Ts"
+  | "wf_type Number = True"
+
+  text \<open>Functions cannot be defined with numeric parameters.\<close>
+  fun wf_fun_decl where
+    "wf_fun_decl (FunDecl f Ts T) =
+      ((\<forall>T\<in>set Ts. wf_obj_type T) \<and> wf_type T)"
+
+(*  \<and> f \<notin> {''+'', ''-'', ''*'', ''/''} *)
 
   text \<open>It is only possible to inherit from a declared type or object. It is not
         possible to inherit from number.\<close>
-  definition "wf_types \<equiv> snd`set (types D) \<subseteq> insert ''object'' (fst`set (types D)) \<and> (''number'' \<notin> fst ` set (types D))"
+  definition "wf_types \<equiv> 
+    snd`set (types D) \<subseteq> insert ''object'' (fst`set (types D)) 
+    \<and> (''number'' \<notin> fst ` set (types D))"
+  
+  definition fun_sig::"func \<rightharpoonup> (type list \<times> type)" where
+    "fun_sig \<equiv> map_of (map (\<lambda>FunDecl f ts t \<Rightarrow> (f, (ts, t))) (funs D))"
 
-  text \<open>An action schema is well-formed if the parameter names are distinct,
-    and the precondition and effect is well-formed wrt. the parameters.
-  \<close>
+  text \<open>The only functions which are allowed to take numeric arguments are 
+          predefined.\<close>
+  definition nf_sig::"func \<rightharpoonup> (type list \<times> type)" where
+    "nf_sig f = (
+      if (f = ''+'' \<or> f = ''-'' \<or> f = ''*'' \<or> f = ''/'') 
+      then Some ([Number, Number], Number) 
+      else fun_sig f)"
+
   fun wf_action_schema :: "ast_action \<Rightarrow> bool" where
     "wf_action_schema (AST_Action n p body) \<longleftrightarrow> (
         let tyt = ty_term (ty_sym (map_of params) objT)
         in
         distinct (map fst params)
       \<and> wf_fmla tyt pre
-      \<and> wf_cond_effect_list tyt effs)"
+      \<and> wf_effect tyt effs)"
 
   text \<open>The declarations in a domain are well-formed if 
     \<^item> Types are well-formed,
-    \<^item> No duplicate predicate names,
+    \<^item> No duplicate predicate names
+    \<^item> Declared predicates cannot be applied to numbers
     \<^item> No ambiguous fluent/constant declarations
-    \<^item> Declared predicates only apply to numbers
+    \<^item> Functions cannot be applied to numbers
     \<^item> Constants are not numeric
     \<^item> Actions are distinctly named
     \<^item> Actions are well-formed.\<close>
@@ -110,20 +265,28 @@ begin
     "wf_domain \<equiv>
       wf_types
     \<and> distinct (map (pred_decl.predicate) (preds D))
-    \<and> distinct (map f_name (funs D) @ (map (obj_name o fst) (consts D)))
     \<and> (\<forall>p\<in>set (preds D). wf_pred_decl p)
+    \<and> distinct (map f_name (funs D) @ (map (obj_name o fst) (consts D)))
+    \<and> (\<forall>f \<in> set (funs D). wf_fun_decl f)
     \<and> (\<forall>(c, T) \<in> set (consts D). wf_obj_type T)
-    \<and> distinct (map ast_action.name (actions D))
+    \<and> distinct (map action.name (actions D))
     \<and> (\<forall>a\<in>set (actions D). wf_action_schema a)"
 
-definition wf_domain::"ast_domain \<Rightarrow> bool" where
-  "wf_domain \<equiv> wf_types t"
 
+
+lemma "wf_type T \<Longrightarrow> of_type T Number \<Longrightarrow> T = Number"
+  by (cases T, auto simp: of_type_def subtype_rel_def)
+  
 fun filter_map::"('a \<Rightarrow> 'b option) \<Rightarrow> 'a list \<Rightarrow> 'b list" where
   "filter_map f [] = []"
 | "filter_map f (a#as) = (case f a of Some b \<Rightarrow> (b # (filter_map f as)) | None \<Rightarrow> filter_map f as)"
 end
-
+text \<open>Locale to express a well-formed domain\<close>
+locale wf_ast_domain = ast_domain +
+  assumes wf_domain: wf_domain
+begin
+  (* TODO: function arguments cannot be  *)
+end
 context ast_domain
 begin
 
@@ -215,6 +378,49 @@ datatype ('x, 'ent) fixed_timed_action =
     (eff: "('x, 'ent) fixed_effect")
 
 type_synonym dur_eff_1 = "((variable \<times> type) list, symbol term) durative_effect"
+
+
+context
+  fixes varT::"variable \<rightharpoonup> type"
+    and objT::"object \<rightharpoonup> type"
+  assumes le: "varT \<subseteq>\<^sub>m varT'" "objT \<subseteq>\<^sub>m objT'"
+begin
+
+  lemma ty_vn_mono: "ty_vn varT \<subseteq>\<^sub>m ty_vn varT'"
+    apply (rule map_leI)
+    subgoal for x v 
+      using le 
+      by (cases x, auto dest: map_leD)
+    done
+
+  lemma ty_vnd_mono: "ty_vnd varT \<subseteq>\<^sub>m ty_vnd varT' "
+    apply (rule map_leI)
+    subgoal for x v 
+      using le 
+      by (cases x, auto dest: map_leD)
+    done
+
+  lemma ty_isym_mono: "ty_isym varT objT \<subseteq>\<^sub>m ty_isym varT' objT'"
+    apply (rule map_leI)
+    subgoal for x v 
+      using le 
+      by (cases x, auto dest: map_leD)
+    done
+  
+  lemma ty_sym_mono: "ty_sym varT objT \<subseteq>\<^sub>m ty_sym varT' objT'"
+    apply (rule map_leI)
+    subgoal for x v 
+      using le 
+      by (cases x, auto dest: map_leD)
+    done
+
+  lemma ty_ent_mono: "ty_ent objT \<subseteq>\<^sub>m ty_ent objT'"
+    apply (rule map_leI)
+    subgoal for x v 
+      using le 
+      by (cases x, auto dest: map_leD)
+    done
+end
 
 locale ast_problem = ast_domain "domain P"
   for P::ast_problem
