@@ -64,7 +64,7 @@ fun atom_vars::"symbol term atom \<Rightarrow> variable set" where
 | "atom_vars (Num_Le a b) = term_vars a \<union> term_vars b"
 | "atom_vars (Num_Lt a b) = term_vars a \<union> term_vars b"
 
-fun f_vars::"((variable \<times> 'x) list, symbol term atom) GD \<Rightarrow> variable set" where
+fun f_vars::"((variable \<times> 'x) list, symbol term) GD \<Rightarrow> variable set" where
   "f_vars (GD.Atom a) = atom_vars a"
 | "f_vars GD.Bot = {}"
 | "f_vars (GD.Not f) = f_vars f"
@@ -74,7 +74,7 @@ fun f_vars::"((variable \<times> 'x) list, symbol term atom) GD \<Rightarrow> va
 | "f_vars (GD.ForAll vts f) = f_vars f - (set (map fst vts))"
 | "f_vars (GD.Exists vts f) = f_vars f - (set (map fst vts))"
 
-fun f_vars'::"(variable \<times> 'x, symbol term atom) GD \<Rightarrow> variable set" where
+fun f_vars'::"(variable \<times> 'x, symbol term) GD \<Rightarrow> variable set" where
   "f_vars' (GD.Atom a) = atom_vars a"
 | "f_vars' GD.Bot = {}"
 | "f_vars' (GD.Not f) = f_vars' f"
@@ -84,7 +84,7 @@ fun f_vars'::"(variable \<times> 'x, symbol term atom) GD \<Rightarrow> variable
 | "f_vars' (GD.ForAll (v, os) f) = f_vars' f - {v}"
 | "f_vars' (GD.Exists (v, os) f) = f_vars' f - {v}"
 
-fun ground_GD_sem::"(unit, entity term atom) GD \<Rightarrow> bool option" where
+fun ground_GD_sem::"(unit, entity term) GD \<Rightarrow> bool option" where
   "ground_GD_sem (GD.Atom a)   = at_sem a"
 | "ground_GD_sem GD.Bot        = Some False"
 | "ground_GD_sem (GD.Not gd)   = map_option (\<lambda>x. \<not>x) (ground_GD_sem gd)"
@@ -117,7 +117,7 @@ fun inst_sym::"(variable \<Rightarrow> object) \<Rightarrow> time \<Rightarrow> 
 | "inst_sym f dur (symbol.Num n) = entity.Num n"
 | "inst_sym f dur (symbol.Duration) = entity.Num dur"
 
-fun ground_GD::"(symbol \<Rightarrow> entity) \<Rightarrow> (variable \<times> (object list), symbol term atom) GD \<Rightarrow> (unit, entity term atom) GD" where
+fun ground_GD::"(symbol \<Rightarrow> entity) \<Rightarrow> (variable \<times> (object list), symbol term) GD \<Rightarrow> (unit, entity term) GD" where
   "ground_GD f (GD.Atom a) = GD.Atom (map_atom (map_term f) a)"
 | "ground_GD f GD.Bot = GD.Bot"
 | "ground_GD f (GD.Not x) = GD.Not (ground_GD f x)"
@@ -142,7 +142,7 @@ fun split_quant::"(('a \<times> 'b) list, 'c) GD \<Rightarrow> ('a \<times> 'b, 
 
 text \<open>This is the process of instantiating and executing an action.\<close>
 
-definition GD_sem::"(symbol \<Rightarrow> entity) \<Rightarrow> ((variable \<times> type) list, symbol term atom) GD \<Rightarrow> bool option" where
+definition GD_sem::"(symbol \<Rightarrow> entity) \<Rightarrow> ((variable \<times> type) list, symbol term) GD \<Rightarrow> bool option" where
   "GD_sem f \<phi> = ground_GD_sem (ground_GD f (replace_types_with_objects (split_quant \<phi>)))"
 
 end

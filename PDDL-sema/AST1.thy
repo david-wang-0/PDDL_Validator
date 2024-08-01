@@ -6,27 +6,27 @@ begin
 
 (* 
 (* This is used for constraints *)
-datatype ('x, atoms: 'a) ltl_form = 
-  Atom 'a
+datatype ('x, atoms: 't) ltl_form = 
+  Atom 't
 | Bot
-| Not "('x, 'a) ltl_form"
-| And "('x, 'a) ltl_form" "('x, 'a) ltl_form"
-| Or "('x, 'a) ltl_form" "('x, 'a) ltl_form"
-| Imp "('x, 'a) ltl_form" "('x, 'a) ltl_form"
-| ForAll "'x" "('x, 'a) ltl_form"
-| AtEnd "('x, 'a) ltl_form"
-| Always "('x, 'a) ltl_form"
-| SometimeAfter "('x, 'a) ltl_form" "('x, 'a) ltl_form"
-| SometimeBefore "('x, 'a) ltl_form" "('x, 'a) ltl_form"
-| AlwaysWithin rat "('x, 'a) ltl_form" "('x, 'a) ltl_form"
-| HoldDuring rat rat "('x, 'a) ltl_form"
-| HoldAfter rat "('x, 'a) ltl_form"
+| Not "('x, 't) ltl_form"
+| And "('x, 't) ltl_form" "('x, 't) ltl_form"
+| Or "('x, 't) ltl_form" "('x, 't) ltl_form"
+| Imp "('x, 't) ltl_form" "('x, 't) ltl_form"
+| ForAll "'x" "('x, 't) ltl_form"
+| AtEnd "('x, 't) ltl_form"
+| Always "('x, 't) ltl_form"
+| SometimeAfter "('x, 't) ltl_form" "('x, 't) ltl_form"
+| SometimeBefore "('x, 't) ltl_form" "('x, 't) ltl_form"
+| AlwaysWithin rat "('x, 't) ltl_form" "('x, 't) ltl_form"
+| HoldDuring rat rat "('x, 't) ltl_form"
+| HoldAfter rat "('x, 't) ltl_form"
 
-datatype ('x, 'a) pref_con_GD =
-  con_GD "('x, 'a) ltl_form"
-  | ForAll 'x "('x, 'a) pref_con_GD"
-  | And "('x, 'a) pref_con_GD list"
-  | Pref pref "('x, 'a) ltl_form"
+datatype ('x, 't) pref_con_GD =
+  con_GD "('x, 't) ltl_form"
+  | ForAll 'x "('x, 't) pref_con_GD"
+  | And "('x, 't) pref_con_GD list"
+  | Pref pref "('x, 't) ltl_form"
 
 type_synonym constraint = "((variable \<times> type) list, symbol term atom) pref_con_GD"
 
@@ -52,7 +52,7 @@ datatype type = Either "name list" | Number
 
 fun primitives::"type \<Rightarrow> name list" where
   "primitives (Either ps) = ps"
-| "primitives Number = []"
+| "primitives Number = [''number'']"
 
 
 datatype variable = Variable (var_name: name)
@@ -78,36 +78,36 @@ datatype (sym: 'sym) "term" =
   Sym 'sym
 | Fun func (arguments: "'sym term list") 
 
-datatype (ent: 'ent) atom = 
-  Pred (pred: pred) (arguments: "'ent list")
-| Ent_Eq (lhs: 'ent) (rhs: 'ent)
-| Num_Le "'ent" "'ent"
-| Num_Lt "'ent" "'ent"
+datatype (ent: 't) atom = 
+  Pred (pred: pred) (arguments: "'t list")
+| Ent_Eq (lhs: 't) (rhs: 't)
+| Num_Le "'t" "'t"
+| Num_Lt "'t" "'t"
 
-datatype ('x, atoms: 'a) GD = 
-  Atom 'a
+datatype ('x, ent: 't) GD = 
+  Atom "'t atom"
 | Bot
-| Not "('x, 'a) GD"
-| And "('x, 'a) GD" "('x, 'a) GD"
-| Or "('x, 'a) GD" "('x, 'a) GD"
-| Imp "('x, 'a) GD" "('x, 'a) GD"
-| ForAll 'x "('x, 'a) GD"
-| Exists 'x "('x, 'a) GD"
+| Not "('x, 't) GD"
+| And "('x, 't) GD" "('x, 't) GD"
+| Or "('x, 't) GD" "('x, 't) GD"
+| Imp "('x, 't) GD" "('x, 't) GD"
+| ForAll 'x "('x, 't) GD"
+| Exists 'x "('x, 't) GD"
 
-datatype ('x, 'a) pre_GD =
-  PrefGD "pref option" "('x, 'a) GD"
-| ForAll 'x "('x, 'a) pre_GD"
-| And "('x, 'a) pre_GD" "('x, 'a) pre_GD"
+datatype ('x, 't) pre_GD =
+  PrefGD "pref option" "('x, 't) GD"
+| ForAll 'x "('x, 't) pre_GD"
+| And "('x, 't) pre_GD" "('x, 't) pre_GD"
 
-datatype ('x, atoms: 'a) timed_GD =
-  OverAll "('x, 'a) GD"
-| AtStart "('x, 'a) GD"
-| AtEnd "('x, 'a) GD"
+datatype ('x, terms: 't) timed_GD =
+  OverAll "('x, 't) GD"
+| AtStart "('x, 't) GD"
+| AtEnd "('x, 't) GD"
 
-datatype ('x, atoms: 'a) da_GD =
-  ForAll "'x" "('x, 'a) da_GD"
-| And "('x, 'a) da_GD" "('x, 'a) da_GD"
-| PrefTimedGD "pref option" "('x, 'a) timed_GD"
+datatype ('x, 't) da_GD =
+  ForAll "'x" "('x, 't) da_GD"
+| And "('x, 't) da_GD" "('x, 't) da_GD"
+| PrefTimedGD "pref option" "('x, 't) timed_GD"
 
 datatype upd_op = 
   Assign
@@ -116,54 +116,55 @@ datatype upd_op =
 | Increase
 | Decrease
 
-datatype (ent: 'ent) f_upd = Fun_Upd upd_op func "'ent list" (ret_val: "'ent option")
+datatype (ent: 't) f_upd = Fun_Upd upd_op func "'t list" (ret_val: "'t option")
 
-datatype 'ent update =
-  S_FU "'ent f_upd"
-| S_Add "'ent atom"
-| S_Del "'ent atom"
+datatype 't update =
+  S_FU "'t f_upd"
+| S_Add "'t atom"
+| S_Del "'t atom"
 
-datatype ('x, 'ent) effect =
-  Eff "'ent update"
-| Eff_And "('x, 'ent) effect list"
-| Eff_All 'x "('x, 'ent) effect"
-| Eff_When "('x, 'ent atom) GD" "('x, 'ent) effect"
+datatype ('x, 't) effect =
+  Eff "'t update"
+| Eff_And "('x, 't) effect list"
+| Eff_All 'x "('x, 't) effect"
+| Eff_When "('x, 't atom) GD" "('x, 't) effect"
 
 datatype f_exp_t = 
   Time
   | MultTime "var_num term"
 
-datatype 'ent timed_effect = 
-  Upd_At_Start "'ent update"
-| Upd_At_End "'ent update"
-| ContScaleUp func "'ent list" f_exp_t
-| ContScaleDown func "'ent list" f_exp_t
+datatype 't timed_effect = 
+  Upd_At_Start "'t update"
+| Upd_At_End "'t update"
+| ContScaleUp func "'t list" f_exp_t
+| ContScaleDown func "'t list" f_exp_t
 
-datatype ('x, 'ent) durative_effect =
-  Timed_Effect "'ent timed_effect"
-| DEff_And "('x, 'ent) durative_effect" "('x, 'ent) durative_effect" 
-| DEff_All 'x "('x, 'ent) durative_effect"
-| DEff_When "('x, 'ent atom) da_GD" "'ent timed_effect"
+datatype ('x, 't) durative_effect =
+  Timed_Effect "'t timed_effect"
+| DEff_And "('x, 't) durative_effect" "('x, 't) durative_effect" 
+| DEff_All 'x "('x, 't) durative_effect"
+| DEff_When "('x, 't) da_GD" "'t timed_effect"
   
-datatype ('t) simple_action_body = 
+datatype ('x, 't) simple_action_body = 
   Simple_Action_Body
-  (precondition: "((variable \<times> type) list, 't atom) pre_GD")
-  (effect: "((variable \<times> type) list, 't) effect option")
+  (precondition: "('x, 't) pre_GD")
+  (effect: "('x, 't) effect option")
 
-type_synonym ast_pre_GD = "((variable \<times> type) list, var_num term atom) pre_GD"
-type_synonym ast_simple_effect = "((variable \<times> type) list, var_num term) effect"
+type_synonym typed_params = "(variable \<times> type) list"
 
-type_synonym ast_simple_action_body = "var_num term simple_action_body"
+type_synonym ast_pre_GD = "(typed_params, var_num term) pre_GD"
+type_synonym ast_simple_effect = "(typed_params, var_num term) effect"
+type_synonym ast_simple_action_body = "(typed_params, var_num term) simple_action_body"
 
 datatype 't timed_atom =
   AtStart "'t atom"
   | AtEnd "'t atom"
 
-type_synonym 't duration_constraint = "'t timed_atom"
+type_synonym 't duration_constraint = "'t term timed_atom"
 
 type_synonym ast_duration_constraint = "var_num_dur duration_constraint"
-type_synonym ast_da_GD = "((variable \<times> type) list, var_num term atom) da_GD"
-type_synonym ast_durative_effect = "((variable \<times> type) list, var_num_dur term) durative_effect"
+type_synonym ast_da_GD = "(typed_params, var_num term) da_GD"
+type_synonym ast_durative_effect = "(typed_params, var_num_dur term) durative_effect"
 
 datatype ast_durative_action_body = 
   DA_Body 
@@ -175,11 +176,12 @@ datatype ('s, 'd) action_body =
   SA 's
   | DA 'd
 
-type_synonym ast_action_body = "(ast_simple_action_body, ast_durative_action_body) action_body"
+type_synonym ast_action_body = 
+  "(ast_simple_action_body, ast_durative_action_body) action_body"
 
 datatype 'b action = 
   Action (name: name)
-    (parameters: "(variable \<times> type) list") 
+    (parameters: "typed_params") 
     (body: 'b)
 
 type_synonym ast_action = "ast_action_body action"
@@ -191,7 +193,7 @@ datatype pred_decl = PredDecl
 datatype fun_decl = FunDecl (f_name: func) "type list" type
 
 datatype derived_pred = 
-  DerivedPred pred (params: "(variable \<times> type) list") ast_pre_GD
+  DerivedPred pred (params: "typed_params") ast_pre_GD
 
 datatype ast_domain = Domain 
   (types: "(name \<times> name) list") \<comment> \<open> \<open>(type, supertype)\<close> declarations. \<close>
@@ -327,16 +329,16 @@ definition ast_effect_subst where
 text \<open>\<^term>\<open>f_ent\<close> extracts the entities from a GD. Ent in this context
       are entities to which preds and numeric functions are applied. For instance,
       these could be {@typ object term}s, {@typ object}s, {@typ symbol term}s, etc.\<close>
-definition f_ent::"'ent atom GD \<Rightarrow> 'ent set" where
+definition f_ent::"'t atom GD \<Rightarrow> 't set" where
   "f_ent \<phi> = \<Union> (atom.ent ` atoms \<phi>)"
 
-text \<open>Given an {@typ atom} which contains {@typ 'ent term}s, this
-      function extracts members of {@typ 'ent}. In the case of {@typ symbol term},
+text \<open>Given an {@typ atom} which contains {@typ 't term}s, this
+      function extracts members of {@typ 't}. In the case of {@typ symbol term},
       this would return all {@typ symbol}s in the atom.\<close>
-definition atom_syms::"'ent term atom \<Rightarrow> 'ent set" where
+definition atom_syms::"'t term atom \<Rightarrow> 't set" where
   "atom_syms a = \<Union> (sym ` atom.ent a)"
 
-definition f_syms::"'ent term atom GD \<Rightarrow> 'ent set" where
+definition f_syms::"'t term atom GD \<Rightarrow> 't set" where
   "f_syms \<phi> = \<Union> (atom_syms ` atoms \<phi>)"
 
 definition f_vars::"pre_GD_form \<Rightarrow> variable set" where
@@ -371,13 +373,13 @@ fun eff_syms::"simple_effect_schema \<Rightarrow> symbol set" where
   \<union> \<Union> (of_upd_syms ` (set tu))
   \<union> \<Union> (nf_upd_syms ` (set nu))"
 
-fun cond_effect_ent::"'ent atom GD \<times> 'ent ast_effect \<Rightarrow> 'ent set" where
+fun cond_effect_ent::"'t atom GD \<times> 't ast_effect \<Rightarrow> 't set" where
   "cond_effect_ent (pre, eff) = f_ent pre \<union> ast_effect.ent eff"
 
 fun cond_effect_vars::"pre_GD_form \<times> simple_effect_schema \<Rightarrow> variable set" where
   "cond_effect_vars (pre, eff) = f_vars pre \<union> eff_vars eff"
 
-abbreviation map_cond_effect::"('a \<Rightarrow> 'b) \<Rightarrow> 'a atom GD \<times> 'a ast_effect 
+abbreviation map_cond_effect::"('t \<Rightarrow> 'b) \<Rightarrow> 't atom GD \<times> 't ast_effect 
   \<Rightarrow> 'b atom GD \<times> 'b ast_effect" where
 "map_cond_effect f \<equiv> map_prod (map_GD (map_atom f)) (map_ast_effect f)"
 

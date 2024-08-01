@@ -33,10 +33,14 @@ lemma lookup_zip_idx_eq:
 lemma rtrancl_image_idem[simp]: "R\<^sup>* `` R\<^sup>* `` s = R\<^sup>* `` s"
   by (metis relcomp_Image rtrancl_idemp_self_comp)
 
+section \<open>Type- and well-formedness checks\<close>
+
 context 
   fixes varT::"variable \<rightharpoonup> type"
     and objT::"object \<rightharpoonup> type"
 begin
+  text \<open>Assigning types to various sets of symbols, which may
+    occur in terms.\<close>
   fun ty_vn::"var_num \<Rightarrow> type option" where
     "ty_vn (var_num.Var v) = varT v"
   | "ty_vn (var_num.Num n) = Some Number"
@@ -101,32 +105,43 @@ end
 context 
   fixes ty_p::"pred \<rightharpoonup> type list"
     and ty_t::"'t \<rightharpoonup> type"
-    and wf_t::"(type \<Rightarrow> type \<Rightarrow> bool) \<Rightarrow> 't \<Rightarrow> bool"
+    and wf_t::"'t \<Rightarrow> bool"
     and of_type::"type \<Rightarrow> type \<Rightarrow> bool"
 begin
 fun wf_atom::"'t atom \<Rightarrow> bool" where
   "wf_atom (Pred p as) = (case (ty_p p) of 
     Some Ts \<Rightarrow> 
       list_all2 (is_of_type ty_t of_type) as Ts 
-      \<and> list_all (wf_t of_type) as
+      \<and> list_all wf_t as
   | None \<Rightarrow> False)"
-| "wf_atom (Ent_Eq a b) = (wf_t of_type a \<and> wf_t of_type b)"
+| "wf_atom (Ent_Eq a b) = (wf_t a \<and> wf_t b)"
 | "wf_atom (Num_Lt a b) = (
-    wf_t of_type a \<and> wf_t of_type b 
+    wf_t a \<and> wf_t b 
     \<and> ty_t a = Some Number \<and> ty_t b = Some Number)"
 | "wf_atom (Num_Le a b) = (
-    wf_t of_type a \<and> wf_t of_type b 
+    wf_t a \<and> wf_t b 
     \<and> ty_t a = Some Number \<and> ty_t b = Some Number)"
 end
 
-type_synonym simple_action_schema = "symbol term simple_action_body"
+context 
+  fixes wf_atom::"('t \<rightharpoonup> type) \<Rightarrow> 't atom \<Rightarrow> bool"
+    and wf_t::"('t \<rightharpoonup> type) \<Rightarrow> 't \<Rightarrow> bool"
+begin
+  
+end
+
+
+
+type_synonym simple_action_schema = "(typed_params, instant_symbol term) simple_action_body"
+
+type_synonym duration_constraint_schema = "symbol duration_constraint"
+type_synonym da_GD_schema = "(typed_params, instant_symbol term) da_GD"
+type_synonym durative_effect_schema = "(typed_params, symbol term) durative_effect"
 
 datatype durative_action_schema =
-  DA_Schema (duration: "ast_duration_constraint list")
-    (condition: "ast_da_GD")
-    (effect: "ast_durative_effect")
-  "((variable \<times> type) list, instant_symbol term) da_GD"
-  "((variable \<times> type) list, symbol term) durative_effect"
+  DA_Schema (duration: "duration_constraint_schema list")
+    (condition: "da_GD_schema")
+    (effect: "durative_effect_schema")
 
 type_synonym action_schema_body = "(simple_action_schema, durative_action_schema) action_body"
 
@@ -148,61 +163,63 @@ begin
   definition of_type :: "type \<Rightarrow> type \<Rightarrow> bool" where
     "of_type oT T \<equiv> set (primitives oT) \<subseteq> subtype_rel\<^sup>* `` set (primitives T)"
 
-
-(* disambiguation of parsed terms *)
-(* var_num to instant_symbol *)
-(* var_num_dur to symbol *)
-
-fun vn_to_is::"var_num \<Rightarrow> instant_symbol" where
-  "vn_to_is (var_num.Num n) = instant_symbol.Num n"
-| "vn_to_is (var_num.Var v) = instant_symbol.Var v"
-
-fun vnd_to_sym::"var_num_dur \<Rightarrow> symbol" where
-  "vnd_to_sym (var_num_dur.Num n) = symbol.Num n"
-| "vnd_to_sym (var_num_dur.Var v) = symbol.Var v"
-| "vnd_to_sym (var_num_dur.Duration) = symbol.Duration"
-
-context
-  fixes is_const::"name \<Rightarrow> bool"
-    and val_map::"'e \<Rightarrow> 'f"
-    and to_const::"name \<Rightarrow> 'f"
-begin
-definition disambiguate_term::"'e term \<Rightarrow> 'f term" where
-  "disambiguate_term t \<equiv> (case (map_term val_map t) of
-    Sym e \<Rightarrow> Sym e
-  | Fun f [] \<Rightarrow> if (is_const f) then Sym (to_const f) else Fun f []
-  | Fun f as \<Rightarrow> Fun f as
-  )"
-end
-
-definition is_obj::"name \<Rightarrow> bool" where
-  "is_obj n \<equiv> n \<in> set (map (obj_name o fst) (consts D))"
-
-abbreviation "ast_instant_term_to_schema \<equiv> disambiguate_term is_obj vn_to_is (instant_symbol.Const o Object)"
-
-abbreviation "ast_durative_term_to_schema \<equiv> disambiguate_term is_obj vnd_to_sym (symbol.Const o Object)"
-
-
-(* symbol to instant_symbol *)
-(* instant_symbol to entity *)
-context (* instantiation of terms *)
-  fixes e::"'a \<Rightarrow> 'b" 
-begin 
+  fun vn_to_is::"var_num \<Rightarrow> instant_symbol" where
+    "vn_to_is (var_num.Num n) = instant_symbol.Num n"
+  | "vn_to_is (var_num.Var v) = instant_symbol.Var v"
   
+  fun vnd_to_sym::"var_num_dur \<Rightarrow> symbol" where
+    "vnd_to_sym (var_num_dur.Num n) = symbol.Num n"
+  | "vnd_to_sym (var_num_dur.Var v) = symbol.Var v"
+  | "vnd_to_sym (var_num_dur.Duration) = symbol.Duration"
+  
+  context
+    fixes is_const::"name \<Rightarrow> bool"
+      and val_map::"'e \<Rightarrow> 'f"
+      and to_const::"name \<Rightarrow> 'f"
+  begin
+    definition disambiguate_term::"'e term \<Rightarrow> 'f term" where
+      "disambiguate_term t \<equiv> (case (map_term val_map t) of
+        Sym e \<Rightarrow> Sym e
+      | Fun f [] \<Rightarrow> if (is_const f) then Sym (to_const f) else Fun f []
+      | Fun f as \<Rightarrow> Fun f as
+      )"
+  end
+  
+  definition is_obj::"name \<Rightarrow> bool" where
+    "is_obj n \<equiv> n \<in> set (map (obj_name o fst) (consts D))"
+  
+  abbreviation "ast_instant_term_to_schema \<equiv> 
+    disambiguate_term is_obj vn_to_is (instant_symbol.Const o Object)"
+  
+  abbreviation "ast_durative_term_to_schema \<equiv> 
+    disambiguate_term is_obj vnd_to_sym (symbol.Const o Object)"
+  
+  abbreviation "ast_simple_action_body_to_schema \<equiv> 
+    map_simple_action_body id ast_instant_term_to_schema"
+  
+  fun ast_durative_action_body_to_schema::"ast_durative_action_body \<Rightarrow> durative_action_schema" where
+    "ast_durative_action_body_to_schema (DA_Body dc pre eff) = 
+      DA_Schema 
+        (map (map_timed_atom ast_durative_term_to_schema) dc) 
+        (map_da_GD id ast_instant_term_to_schema pre) 
+        (map_durative_effect id ast_durative_term_to_schema eff)"
+
+  abbreviation "ast_action_body_to_schema \<equiv> 
+    map_action_body ast_simple_action_body_to_schema ast_durative_action_body_to_schema"
+  
+  definition action_schemas::"action_schema list" where
+    "action_schemas = map (map_action ast_action_body_to_schema) (actions D)"
 end
 
-fun ast_action_to_action_schema::"ast_action \<Rightarrow> action_schema"
-
-definition action_schemas::"action_schema list" where
-  "action_schemas = actions D"
-
+text \<open>Well-formedness.\<close>
+context ast_domain
+begin
   definition constT :: "object \<rightharpoonup> type" where
     "constT \<equiv> map_of (consts D)"
 
-  find_theorems name: "literal*rep"
-
   text \<open>A type must consist of at least one primitive.\<close>
-  abbreviation "wf_prims Ts \<equiv> Ts \<noteq> [] \<and> set Ts \<subseteq> insert (''object'') (fst`set (types D))"
+  abbreviation "wf_prims Ts \<equiv> Ts \<noteq> [] 
+    \<and> set Ts \<subseteq> insert (''object'') (fst`set (types D))"
              
   text \<open>An object cannot be a number.\<close>
   fun wf_obj_type where
@@ -272,78 +289,87 @@ definition action_schemas::"action_schema list" where
     \<and> distinct (map action.name (actions D))
     \<and> (\<forall>a\<in>set (actions D). wf_action_schema a)"
 
-
-
-lemma "wf_type T \<Longrightarrow> of_type T Number \<Longrightarrow> T = Number"
-  by (cases T, auto simp: of_type_def subtype_rel_def)
+  text \<open>The type of numbers is distinct from other types.\<close>
+  lemma num_is_own_subtype': "(''number'', T) \<in> (subtype_rel\<^sup>*) \<Longrightarrow> wf_types \<Longrightarrow> T = ''number''"
+  proof (induction rule: rtrancl_induct)
+    case base
+    then show ?case by simp
+  next
+    case (step y z)
+    moreover have "(''number'', T) \<notin> subtype_rel" for T 
+      using \<open>wf_types\<close>
+      unfolding subtype_rel_def wf_types_def
+      by force
+    ultimately show ?case by fastforce
+  qed
   
-fun filter_map::"('a \<Rightarrow> 'b option) \<Rightarrow> 'a list \<Rightarrow> 'b list" where
-  "filter_map f [] = []"
-| "filter_map f (a#as) = (case f a of Some b \<Rightarrow> (b # (filter_map f as)) | None \<Rightarrow> filter_map f as)"
+  lemma num_is_own_supertype': 
+    assumes "(T, ''number'') \<in> subtype_rel\<^sup>*" "wf_types" 
+    shows "T = ''number''"
+  proof -
+    from \<open>wf_types\<close>[simplified wf_types_def]
+    have "\<forall>T. (T, ''number'') \<notin> subtype_rel" 
+      unfolding subtype_rel_def by auto
+    with \<open>(T, ''number'') \<in> subtype_rel\<^sup>*\<close>
+    show "T = ''number''" by (cases rule: rtranclE, auto)
+  qed
+  
+  lemma num_is_not_subtype: "wf_types \<Longrightarrow> wf_type T \<Longrightarrow> of_type Number T \<Longrightarrow> T = Number"
+  proof (induction T)
+    case (Either ts)
+    hence "''number'' \<in> (subtype_rel\<^sup>* `` set ts)" unfolding of_type_def by simp
+    hence "\<exists>T \<in> set ts. (T, ''number'') \<in> subtype_rel\<^sup>*" using Image_iff by blast
+    hence "''number'' \<in> set ts" using num_is_own_supertype'[OF _ \<open>wf_types\<close>] by blast
+    moreover
+    from \<open>wf_type (Either ts)\<close> \<open>wf_types\<close>
+    have "''number'' \<notin> set ts" unfolding subtype_rel_def wf_types_def by auto
+    ultimately
+    show ?case by blast
+  next
+    case Number
+    then show ?case by auto
+  qed
+  
+  lemma num_is_not_supertype: "wf_types \<Longrightarrow> wf_type T \<Longrightarrow> of_type T Number \<Longrightarrow> T = Number"
+  proof (induction T)
+    case (Either ts)
+    then have "set ts \<subseteq> (subtype_rel\<^sup>* `` {''number''})" using of_type_def by simp
+    hence "\<forall>T \<in> set ts. (''number'', T) \<in> subtype_rel\<^sup>*" using Image_iff by blast
+    hence "\<forall>T \<in> set ts. T = ''number''" using num_is_own_subtype'[OF _ \<open>wf_types\<close>] by blast
+    moreover
+    from \<open>wf_type (Either ts)\<close> \<open>wf_types\<close>
+    have "ts \<noteq> []" by simp
+    ultimately
+    have "set ts = {''number''}" 
+      by (cases ts, auto)
+    moreover
+    from \<open>wf_type (Either ts)\<close> \<open>wf_types\<close>
+    have "''number'' \<notin> set ts" unfolding subtype_rel_def wf_types_def by auto
+    ultimately
+    show ?case by simp
+  next
+    case Number
+    then show ?case by auto
+  qed
+
 end
 text \<open>Locale to express a well-formed domain\<close>
 locale wf_ast_domain = ast_domain +
   assumes wf_domain: wf_domain
 begin
-  (* TODO: function arguments cannot be  *)
 end
-context ast_domain
+
+locale ast_problem = ast_domain "domain P"
+  for P::ast_problem
 begin
-
-definition "obj_fun_names = set (map of_name (ofs D))"
-definition "obj_names = set (map (obj_name o fst) (consts D))"
-
-fun disambiguate_term::"variable term \<Rightarrow> symbol term" where
-  "disambiguate_term (Sym v) = Sym (Var v)"
-| "disambiguate_term (Fun f (a#as)) = Fun f (map disambiguate_term (a#as))"
-| "disambiguate_term (Fun f []) = (
-    if f \<in> obj_names then Sym (Const (Object f)) else (Fun f [])
-  )"
-
-abbreviation "disambiguate_f_exp \<equiv> map_f_exp disambiguate_term"
-
-fun f_exp_eq_to_eq::"variable term f_exp \<Rightarrow> variable term f_exp \<Rightarrow> symbol term atom" where
-  "f_exp_eq_to_eq (f_exp.NFun f1 as1) (f_exp.NFun f2 as2) = 
-    (if (f1 \<in> obj_names \<or> f2 \<in> obj_names \<or> f1 \<in> obj_fun_names \<or> f2 \<in> obj_fun_names) 
-    then Ent_Eq (disambiguate_term (Fun f1 as1)) (disambiguate_term (Fun f2 as2))
-    else Num_Eq (f_exp.NFun f1 (map disambiguate_term as1)) (f_exp.NFun f2 (map disambiguate_term as2))
-   )"
-| "f_exp_eq_to_eq e1 e2 = Num_Eq (disambiguate_f_exp e1) (disambiguate_f_exp e2)"
-
-(* Equality cannot be unambiguously parsed, so we have this pre-processing step *)
-fun disambiguate_atom::"variable term atom \<Rightarrow> symbol term atom" where
-  "disambiguate_atom (Pred p as) = Pred p (map disambiguate_term as)"
-| "disambiguate_atom (Ent_Eq a b) = Ent_Eq (disambiguate_term a) (disambiguate_term b)"
-| "disambiguate_atom (Num_Eq a b) = f_exp_eq_to_eq a b"
-| "disambiguate_atom (Num_Le a b) = Num_Le (disambiguate_f_exp a) (disambiguate_f_exp b)"
-| "disambiguate_atom (Num_Lt a b) = Num_Lt (disambiguate_f_exp a) (disambiguate_f_exp b)"
-
-fun process_ast_simple_action::"ast_simple_action \<Rightarrow> simple_action_schema" where
-  "process_ast_simple_action (Simple_Action n p pre eff) = 
-    Simple_Action n p (map_pre_GD id disambiguate_atom pre) (map_simple_effect id disambiguate_term eff)"
-
-fun process_ast_durative_action::"ast_durative_action \<Rightarrow> durative_action_schema" where
-  "process_ast_durative_action (Durative_Action n d p pre eff) =
-    Durative_Action n (map (map_duration_constraint disambiguate_term) d) p (map_da_GD id disambiguate_atom pre) (map_durative_effect id disambiguate_term eff)"
-
-abbreviation simple_actions::"ast_action list \<Rightarrow> simple_action_schema list" where
-  "simple_actions \<equiv> filter_map (\<lambda>(SA a) \<Rightarrow> Some (process_ast_simple_action a) | _ \<Rightarrow> None)"
-
-definition simple_action_schemas where
-  "simple_action_schemas \<equiv> simple_actions (actions D)"
-
-abbreviation durative_actions::"ast_action list \<Rightarrow> durative_action_schema list" where
-  "durative_actions \<equiv> filter_map (\<lambda>(DA a) \<Rightarrow> Some (process_ast_durative_action a) | _ \<Rightarrow> None)"
-
-definition durative_action_schemas where
-  "durative_action_schemas \<equiv> durative_actions (actions D)"
-
-abbreviation resolve_simple_action_schema::"name \<rightharpoonup> simple_action_schema" where
-  "resolve_simple_action_schema \<equiv> index_by simple_action.name simple_action_schemas"
-
-abbreviation resolve_durative_action_schema::"name \<rightharpoonup> durative_action_schema" where
-  "resolve_durative_action_schema \<equiv> index_by durative_action.name durative_action_schemas"
-
+text \<open>Create snap actions\<close>
+  (* symbol to instant_symbol *)
+  (* instant_symbol to entity *)
+  context (* instantiation of terms *)
+    fixes e::"'a \<Rightarrow> 'b" 
+  begin 
+    
+  end
 end
 
 datatype ('x, 'a) fixed_GD =
